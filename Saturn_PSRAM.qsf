@@ -51,6 +51,7 @@ set_global_assignment -name PLACEMENT_EFFORT_MULTIPLIER 2.0
 set_global_assignment -name SEED 1
 
 set_global_assignment -name VERILOG_MACRO "MISTER_PSRAM=1"
+set_global_assignment -name VERILOG_MACRO "SATURN_PSRAM_TRIM=1"
 set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ALSA=1"
 
 # sys_psram.tcl must precede sys.tcl so the six shared expansion pins are

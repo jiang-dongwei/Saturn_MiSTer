@@ -340,18 +340,26 @@ module emu
 		"P2O[76],Swap Joysticks,No,Yes;",
 		"P2O[27],Pad 1 SNAC,OFF,ON;",
 		"P2-;",
+	`ifdef SATURN_PSRAM_TRIM
+		"D5P2O[18:15],Pad 1,Digital,Unavailable,Wheel,Mission Stick,3D Pad,Dual Mission,Mouse,Keyboard,Off;",
+	`else
 		"D5P2O[18:15],Pad 1,Digital,Virt LGun,Wheel,Mission Stick,3D Pad,Dual Mission,Mouse,Keyboard,Off;",
 		"P2-;",
 		"D6P2O[46],LGun P1 XY Ctrl,Joy 1,Mouse;",
 		"D6P2O[47],LGun P1 Buttons,Joy 1,Mouse;",
 		"D6P2O[49:48],LGun P1 Crosshair,Small,Medium,Big,None;",
+	`endif
 		"P2-;",
 		"P2-;",
+	`ifdef SATURN_PSRAM_TRIM
+		"D5P2O[45:42],Pad 2,Digital,Unavailable,Wheel,Mission Stick,3D Pad,Dual Mission,Mouse,Keyboard,Off;",
+	`else
 		"D5P2O[45:42],Pad 2,Digital,Virt LGun,Wheel,Mission Stick,3D Pad,Dual Mission,Mouse,Keyboard,Off;",
 		"P2-;",
 		"D7P2O[57],LGun P2 XY Ctrl,Joy 2,Mouse;",
 		"D7P2O[58],LGun P2 Buttons,Joy 2,Mouse;",
 		"D7P2O[60:59],LGun P2 Crosshair,Small,Medium,Big,None;",
+	`endif
 `else
 		
 `endif
@@ -1225,6 +1233,7 @@ module emu
 	
 	
 `ifndef DEBUG
+`ifndef SATURN_PSRAM_TRIM
 	wire lg_p1_ena = (status[18:15]==4'd1);
 	
 	wire       lg_p1_sensor;
@@ -1337,6 +1346,21 @@ module emu
 		.BTN_C(lg_p2_c),
 		.BTN_START(lg_p2_start)		// (used as the Start button signal, to HPS2PAD).
 	);
+`else
+	wire lg_p1_ena = 0;
+	wire lg_p1_a = 0;
+	wire lg_p1_start = 0;
+	wire lg_p1_sensor = 0;
+	wire [2:0] lg_p1_target = '0;
+	wire [1:0] gun_p1_cross_size = '0;
+
+	wire lg_p2_ena = 0;
+	wire lg_p2_a = 0;
+	wire lg_p2_start = 0;
+	wire lg_p2_sensor = 0;
+	wire [2:0] lg_p2_target = '0;
+	wire [1:0] gun_p2_cross_size = '0;
+`endif
 `else
 	wire lg_p1_ena = 0;
 	wire lg_p1_a = 0;
