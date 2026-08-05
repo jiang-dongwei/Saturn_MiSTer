@@ -25,7 +25,7 @@ module psram_qpi_engine
 	input      [23:0]  request_address,
 	input       [4:0]  request_bytes,
 	input       [31:0] request_write_data,
-	output reg [127:0] request_read_data,
+	output     [127:0] request_read_data,
 	output reg         request_done,
 	output reg         request_error,
 
@@ -75,6 +75,7 @@ wire [127:0] phy_read_data;
 
 assign request_ready = (control_state == C_READY) && !phy_busy;
 assign busy = (control_state != C_READY) || phy_busy;
+assign request_read_data = phy_read_data;
 
 psram_qpi_phy #(.GUARD_CYCLES(GUARD_CYCLES)) phy
 (
@@ -131,7 +132,6 @@ always @(posedge clk) begin
 		phy_read_enable      <= 1'b0;
 		phy_bytes            <= 5'd0;
 		phy_write_data       <= 32'd0;
-		request_read_data   <= 128'd0;
 		request_done        <= 1'b0;
 		request_error       <= 1'b0;
 		init_done           <= 1'b0;
@@ -225,7 +225,6 @@ always @(posedge clk) begin
 			end
 
 			C_REQUEST: if (phy_done) begin
-				request_read_data <= phy_read_data;
 				request_done      <= 1'b1;
 				control_state     <= C_READY;
 			end
