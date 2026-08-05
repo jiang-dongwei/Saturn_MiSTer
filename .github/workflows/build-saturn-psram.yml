@@ -45,7 +45,7 @@ jobs:
 
       - name: Pull Quartus 17 image
         shell: bash
-        run: docker pull theypsilon/quartus-lite-c5:17.0-heavy
+        run: docker pull theypsilon/quartus-lite-c5:17.0.2
 
       - name: Compile Saturn_PSRAM
         shell: bash
@@ -54,7 +54,7 @@ jobs:
           docker run --rm \
             --volume "$GITHUB_WORKSPACE:/project" \
             --workdir /project \
-            theypsilon/quartus-lite-c5:17.0-heavy \
+            theypsilon/quartus-lite-c5:17.0.2 \
             bash -lc 'set -o pipefail; quartus_sh --flow compile Saturn_PSRAM 2>&1 | tee .ci/Saturn_PSRAM-build.log'
 
       - name: Verify RBF and summarize reports
