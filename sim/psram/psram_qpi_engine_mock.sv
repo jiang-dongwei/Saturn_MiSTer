@@ -17,7 +17,7 @@ module psram_qpi_engine
 	input              request_write,
 	input      [23:0]  request_address,
 	input       [4:0]  request_bytes,
-	input      [127:0] request_write_data,
+	input       [31:0] request_write_data,
 	output reg [127:0] request_read_data,
 	output reg         request_done,
 	output reg         request_error,
@@ -40,7 +40,7 @@ reg [31:0] lfsr;
 reg        saved_write;
 reg [23:0] saved_address;
 reg  [4:0] saved_bytes;
-reg [127:0] saved_write_data;
+reg [31:0] saved_write_data;
 reg [127:0] read_temp;
 integer byte_index;
 
@@ -62,7 +62,7 @@ always @(posedge clk) begin
 		saved_write         <= 1'b0;
 		saved_address       <= 24'd0;
 		saved_bytes         <= 5'd0;
-		saved_write_data    <= 128'd0;
+		saved_write_data    <= 32'd0;
 		request_read_data   <= 128'd0;
 		request_done        <= 1'b0;
 		request_error       <= 1'b0;
@@ -82,7 +82,9 @@ always @(posedge clk) begin
 	else if (!active) begin
 		if (request_valid) begin
 			accepted_count <= accepted_count + 1;
-			if ((request_bytes == 0) || (request_bytes > 16)) begin
+			if ((request_bytes == 0) ||
+			    (request_write ? (request_bytes > 4) :
+			                     (request_bytes > 16))) begin
 				request_done  <= 1'b1;
 				request_error <= 1'b1;
 			end

@@ -6,9 +6,9 @@
 // diagnostic remains a frozen hardware reference, while this engine adds the
 // longer transfers needed by the full Saturn core.
 //
-// Request data is right-aligned. For example, a four-byte write uses
-// write_data[31:0], and a four-byte read is returned in read_data[31:0]. The
-// first byte on the QPI wire is the most significant byte of the valid field.
+// Write requests are 1..4 bytes and right-aligned in write_data[31:0]. Read
+// requests are 1..16 bytes and right-aligned in read_data[127:0]. The first
+// byte on the QPI wire is the most significant byte of the valid field.
 module psram_qpi_engine
 #(
 	parameter integer POWERUP_CYCLES = 20000,
@@ -24,7 +24,7 @@ module psram_qpi_engine
 	input              request_write,
 	input      [23:0]  request_address,
 	input       [4:0]  request_bytes,
-	input      [127:0] request_write_data,
+	input       [31:0] request_write_data,
 	output reg [127:0] request_read_data,
 	output reg         request_done,
 	output reg         request_error,
@@ -39,23 +39,26 @@ module psram_qpi_engine
 	inout       [3:0]  PSRAM_DQ
 );
 
-localparam [4:0] C_POWER      = 5'd0;
-localparam [4:0] C_F5_START   = 5'd1;
-localparam [4:0] C_F5_WAIT    = 5'd2;
-localparam [4:0] C_66_START   = 5'd3;
-localparam [4:0] C_66_WAIT    = 5'd4;
-localparam [4:0] C_99_START   = 5'd5;
-localparam [4:0] C_99_WAIT    = 5'd6;
-localparam [4:0] C_ID_START   = 5'd7;
-localparam [4:0] C_ID_WAIT    = 5'd8;
-localparam [4:0] C_QPI_START  = 5'd9;
-localparam [4:0] C_QPI_WAIT   = 5'd10;
-localparam [4:0] C_READY      = 5'd11;
-localparam [4:0] C_REQUEST    = 5'd12;
-localparam [4:0] C_FAILED     = 5'd13;
+localparam [3:0] C_POWER      = 4'd0;
+localparam [3:0] C_F5_START   = 4'd1;
+localparam [3:0] C_F5_WAIT    = 4'd2;
+localparam [3:0] C_66_START   = 4'd3;
+localparam [3:0] C_66_WAIT    = 4'd4;
+localparam [3:0] C_99_START   = 4'd5;
+localparam [3:0] C_99_WAIT    = 4'd6;
+localparam [3:0] C_ID_START   = 4'd7;
+localparam [3:0] C_ID_WAIT    = 4'd8;
+localparam [3:0] C_QPI_START  = 4'd9;
+localparam [3:0] C_QPI_WAIT   = 4'd10;
+localparam [3:0] C_READY      = 4'd11;
+localparam [3:0] C_REQUEST    = 4'd12;
+localparam [3:0] C_FAILED     = 4'd13;
 
-reg [4:0]  control_state;
-reg [31:0] power_count;
+localparam integer POWER_COUNTER_WIDTH =
+	(POWERUP_CYCLES < 2) ? 1 : $clog2(POWERUP_CYCLES);
+
+reg [3:0] control_state;
+reg [POWER_COUNTER_WIDTH-1:0] power_count;
 
 reg         phy_start;
 reg         phy_qpi;
@@ -65,7 +68,7 @@ reg  [23:0] phy_address;
 reg         phy_write_enable;
 reg         phy_read_enable;
 reg  [4:0]  phy_bytes;
-reg [127:0] phy_write_data;
+reg  [31:0] phy_write_data;
 wire        phy_busy;
 wire        phy_done;
 wire [127:0] phy_read_data;
@@ -106,7 +109,7 @@ task configure_command;
 		phy_write_enable    <= 1'b0;
 		phy_read_enable     <= 1'b0;
 		phy_bytes           <= 5'd0;
-		phy_write_data      <= 128'd0;
+		phy_write_data      <= 32'd0;
 		phy_start           <= 1'b1;
 	end
 endtask
@@ -118,7 +121,7 @@ always @(posedge clk) begin
 
 	if (reset) begin
 		control_state       <= C_POWER;
-		power_count         <= 32'd0;
+		power_count         <= {POWER_COUNTER_WIDTH{1'b0}};
 		phy_start           <= 1'b0;
 		phy_qpi             <= 1'b0;
 		phy_command          <= 8'd0;
@@ -127,7 +130,7 @@ always @(posedge clk) begin
 		phy_write_enable     <= 1'b0;
 		phy_read_enable      <= 1'b0;
 		phy_bytes            <= 5'd0;
-		phy_write_data       <= 128'd0;
+		phy_write_data       <= 32'd0;
 		request_read_data   <= 128'd0;
 		request_done        <= 1'b0;
 		request_error       <= 1'b0;
@@ -140,7 +143,7 @@ always @(posedge clk) begin
 			C_POWER: begin
 				if ((POWERUP_CYCLES == 0) ||
 				    (power_count >= POWERUP_CYCLES - 1)) begin
-					power_count   <= 32'd0;
+					power_count   <= {POWER_COUNTER_WIDTH{1'b0}};
 					control_state <= C_F5_START;
 				end
 				else power_count <= power_count + 1'b1;
@@ -200,7 +203,9 @@ always @(posedge clk) begin
 
 			C_READY: begin
 				if (request_valid && !phy_busy) begin
-					if ((request_bytes == 0) || (request_bytes > 16)) begin
+					if ((request_bytes == 0) ||
+					    (request_write ? (request_bytes > 4) :
+					                     (request_bytes > 16))) begin
 						request_error <= 1'b1;
 						request_done  <= 1'b1;
 					end
@@ -257,7 +262,7 @@ module psram_qpi_phy
 	input              write_enable,
 	input              read_enable,
 	input       [4:0]  byte_count,
-	input      [127:0] write_data,
+	input       [31:0] write_data,
 	input       [5:0]  half_divider,
 	output reg         busy,
 	output reg         done,
@@ -267,16 +272,16 @@ module psram_qpi_phy
 	inout       [3:0]  PSRAM_DQ
 );
 
-localparam [3:0] P_IDLE  = 4'd0;
-localparam [3:0] P_CMD   = 4'd1;
-localparam [3:0] P_ADDR  = 4'd2;
-localparam [3:0] P_DUMMY = 4'd3;
-localparam [3:0] P_WRITE = 4'd4;
-localparam [3:0] P_READ  = 4'd5;
-localparam [3:0] P_HOLD  = 4'd6;
-localparam [3:0] P_GAP   = 4'd7;
+localparam [2:0] P_IDLE  = 3'd0;
+localparam [2:0] P_CMD   = 3'd1;
+localparam [2:0] P_ADDR  = 3'd2;
+localparam [2:0] P_DUMMY = 3'd3;
+localparam [2:0] P_WRITE = 3'd4;
+localparam [2:0] P_READ  = 3'd5;
+localparam [2:0] P_HOLD  = 3'd6;
+localparam [2:0] P_GAP   = 3'd7;
 
-reg [3:0] state;
+reg [2:0] state;
 reg [3:0] dq_out;
 reg       dq_oe;
 wire [3:0] dq_in = PSRAM_DQ;
@@ -284,14 +289,13 @@ reg [3:0] dq_sample;
 
 reg [7:0]  command_shift;
 reg [23:0] address_shift;
-reg [127:0] write_shift;
+reg [31:0] write_shift;
 reg [7:0] units_left;
 reg [5:0] divider_count;
 reg [7:0] hold_count;
 reg [7:0] gap_count;
 
 reg         transaction_qpi;
-reg  [7:0]  transaction_command;
 reg         transaction_address;
 reg         transaction_write;
 reg         transaction_read;
@@ -306,13 +310,13 @@ function [5:0] nonzero_divider;
 	end
 endfunction
 
-function [127:0] align_write_data;
-	input [127:0] value;
+function [31:0] align_write_data;
+	input [31:0] value;
 	input [4:0] count;
 	begin
 		// The public interface is right-aligned; the wire shifter consumes
 		// its most-significant nibble first.
-		align_write_data = value << ((5'd16 - count) * 8);
+		align_write_data = value << ((5'd4 - count) * 8);
 	end
 endfunction
 
@@ -341,13 +345,12 @@ always @(posedge clk) begin
 		dq_oe               <= 1'b0;
 		command_shift       <= 8'd0;
 		address_shift       <= 24'd0;
-		write_shift         <= 128'd0;
+		write_shift         <= 32'd0;
 		units_left          <= 8'd0;
 		divider_count       <= 6'd0;
 		hold_count          <= 8'd0;
 		gap_count           <= 8'd0;
 		transaction_qpi     <= 1'b0;
-		transaction_command  <= 8'd0;
 		transaction_address <= 1'b0;
 		transaction_write   <= 1'b0;
 		transaction_read    <= 1'b0;
@@ -370,14 +373,15 @@ always @(posedge clk) begin
 					PSRAM_CE_N          <= 1'b0;
 					read_data           <= 128'd0;
 					transaction_qpi     <= qpi;
-					transaction_command  <= command;
 					transaction_address <= address_enable;
 					transaction_write   <= write_enable;
 					transaction_read    <= read_enable;
 					transaction_bytes   <= byte_count;
 					command_shift       <= command;
 					address_shift       <= address;
-					write_shift         <= align_write_data(write_data, byte_count);
+					write_shift         <= write_enable ?
+					                       align_write_data(write_data, byte_count) :
+					                       32'd0;
 					units_left          <= qpi ? 8'd2 : 8'd8;
 					divider_count       <= nonzero_divider(half_divider) - 1'b1;
 					dq_oe               <= 1'b1;
@@ -431,14 +435,14 @@ always @(posedge clk) begin
 										units_left <= transaction_qpi ?
 										              {transaction_bytes, 1'b0} :
 										              {transaction_bytes, 3'b000};
-										dq_out     <= transaction_qpi ? write_shift[127:124] :
-										                               {3'b000, write_shift[127]};
+										dq_out     <= transaction_qpi ? write_shift[31:28] :
+										                               {3'b000, write_shift[31]};
 									end
 									else if (transaction_read) begin
 										dq_oe <= 1'b0;
 										if (transaction_qpi) begin
 											state      <= P_DUMMY;
-											units_left <= (transaction_command == 8'h0B) ? 8'd4 : 8'd6;
+											units_left <= 8'd6;
 										end
 										else begin
 											state      <= P_READ;
@@ -467,14 +471,14 @@ always @(posedge clk) begin
 										units_left <= transaction_qpi ?
 										              {transaction_bytes, 1'b0} :
 										              {transaction_bytes, 3'b000};
-										dq_out     <= transaction_qpi ? write_shift[127:124] :
-										                               {3'b000, write_shift[127]};
+										dq_out     <= transaction_qpi ? write_shift[31:28] :
+										                               {3'b000, write_shift[31]};
 									end
 									else if (transaction_read) begin
 										dq_oe <= 1'b0;
 										if (transaction_qpi) begin
 											state      <= P_DUMMY;
-											units_left <= (transaction_command == 8'h0B) ? 8'd4 : 8'd6;
+											units_left <= 8'd6;
 										end
 										else begin
 											state      <= P_READ;
@@ -509,12 +513,12 @@ always @(posedge clk) begin
 								else begin
 									units_left <= units_left - 1'b1;
 									if (transaction_qpi) begin
-										write_shift <= {write_shift[123:0], 4'd0};
-										dq_out     <= write_shift[123:120];
+										write_shift <= {write_shift[27:0], 4'd0};
+										dq_out     <= write_shift[27:24];
 									end
 									else begin
-										write_shift <= {write_shift[126:0], 1'b0};
-										dq_out     <= {3'b000, write_shift[126]};
+										write_shift <= {write_shift[30:0], 1'b0};
+										dq_out     <= {3'b000, write_shift[30]};
 									end
 								end
 							end

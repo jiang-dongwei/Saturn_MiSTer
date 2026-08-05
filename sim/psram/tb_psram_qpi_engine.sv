@@ -11,7 +11,7 @@ wire request_ready;
 reg request_write = 1'b0;
 reg [23:0] request_address = 24'd0;
 reg [4:0] request_bytes = 5'd0;
-reg [127:0] request_write_data = 128'd0;
+reg [31:0] request_write_data = 32'd0;
 wire [127:0] request_read_data;
 wire request_done;
 wire request_error;
@@ -86,7 +86,7 @@ dut_bad_id
 	.request_write(1'b0),
 	.request_address(24'd0),
 	.request_bytes(5'd0),
-	.request_write_data(128'd0),
+	.request_write_data(32'd0),
 	.request_read_data(),
 	.request_done(),
 	.request_error(),
@@ -154,7 +154,7 @@ end
 task issue_write;
 	input [23:0] address_value;
 	input [4:0] byte_count;
-	input [127:0] data_value;
+	input [31:0] data_value;
 	integer timeout;
 	begin
 		timeout = 0;
@@ -208,7 +208,7 @@ task issue_read;
 		request_write      = 1'b0;
 		request_address    = address_value;
 		request_bytes      = byte_count;
-		request_write_data = 128'd0;
+		request_write_data = 32'd0;
 		request_valid      = 1'b1;
 		@(negedge clk);
 		request_valid      = 1'b0;
@@ -245,7 +245,7 @@ task issue_invalid_zero_length;
 		request_write      = 1'b0;
 		request_address    = 24'h000200;
 		request_bytes      = 5'd0;
-		request_write_data = 128'd0;
+		request_write_data = 32'd0;
 		request_valid      = 1'b1;
 		@(negedge clk);
 		request_valid      = 1'b0;
@@ -296,43 +296,43 @@ initial begin
 
 	issue_invalid_zero_length();
 
-	issue_write(24'h000100, 5'd4, 128'h000000000000000000000000D15EA5C3);
+	issue_write(24'h000100, 5'd4, 32'hD15EA5C3);
 	issue_read (24'h000100, 5'd4, readback);
 	if (readback[31:0] !== 32'hD15EA5C3) begin
 		$display("FAIL: 4-byte readback %08h", readback[31:0]);
 		$fatal;
 	end
 
-	issue_write(24'h000110, 5'd16,
-	            128'h00112233445566778899AABBCCDDEEFF);
+	issue_write(24'h000110, 5'd4, 32'h00112233);
+	issue_write(24'h000114, 5'd4, 32'h44556677);
+	issue_write(24'h000118, 5'd4, 32'h8899AABB);
+	issue_write(24'h00011C, 5'd4, 32'hCCDDEEFF);
 	issue_read (24'h000110, 5'd16, readback);
 	if (readback !== 128'h00112233445566778899AABBCCDDEEFF) begin
 		$display("FAIL: 16-byte readback %032h", readback);
 		$fatal;
 	end
 
-	issue_write(24'h000115, 5'd1,
-	            128'h000000000000000000000000000000A7);
+	issue_write(24'h000115, 5'd1, 32'h000000A7);
 	issue_read (24'h000110, 5'd16, readback);
 	if (readback !== 128'h0011223344A766778899AABBCCDDEEFF) begin
 		$display("FAIL: 1-byte update readback %032h", readback);
 		$fatal;
 	end
 
-	issue_write(24'h00011E, 5'd2,
-	            128'h00000000000000000000000000005AC3);
+	issue_write(24'h00011E, 5'd2, 32'h00005AC3);
 	issue_read (24'h00011E, 5'd2, readback);
 	if (readback[15:0] !== 16'h5AC3) begin
 		$display("FAIL: 2-byte readback %04h", readback[15:0]);
 		$fatal;
 	end
 
-	if (transaction_count < 13) begin
+	if (transaction_count < 16) begin
 		$display("FAIL: only %0d CE# transactions observed", transaction_count);
 		$fatal;
 	end
 
-	$display("PASS: S2-A runtime QPI engine initialized ID=%04h and passed 1/2/4/16-byte transfers",
+	$display("PASS: S2-A runtime QPI engine initialized ID=%04h and passed 1/2/4-byte writes plus 1/2/4/16-byte reads",
 	         device_id);
 	$finish;
 end

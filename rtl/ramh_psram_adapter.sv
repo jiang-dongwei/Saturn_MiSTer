@@ -48,7 +48,7 @@ wire        engine_request_ready;
 reg         engine_request_write;
 reg  [23:0] engine_request_address;
 reg   [4:0] engine_request_bytes;
-reg [127:0] engine_request_write_data;
+reg  [31:0] engine_request_write_data;
 wire [127:0] engine_request_read_data;
 wire         engine_request_done;
 wire         engine_request_error;
@@ -142,12 +142,12 @@ function [3:0] write_run_mask;
 	end
 endfunction
 
-function [127:0] write_run_data;
+function [31:0] write_run_data;
 	input [31:0] value;
 	input  [1:0] offset;
 	input  [2:0] count;
 	begin
-		write_run_data = 128'd0;
+		write_run_data = 32'd0;
 		case (offset)
 			2'd0: begin
 				case (count)
@@ -215,7 +215,7 @@ always @(posedge clk) begin
 		engine_request_write      <= 1'b0;
 		engine_request_address    <= 24'd0;
 		engine_request_bytes      <= 5'd0;
-		engine_request_write_data <= 128'd0;
+		engine_request_write_data <= 32'd0;
 		pending_addr              <= '0;
 		pending_write_data        <= 32'd0;
 		pending_write_mask        <= 4'd0;
@@ -264,7 +264,7 @@ always @(posedge clk) begin
 						                              pending_addr[19:4],
 						                              4'd0};
 						engine_request_bytes      <= 5'd16;
-						engine_request_write_data <= 128'd0;
+						engine_request_write_data <= 32'd0;
 						engine_request_valid      <= 1'b1;
 						state                     <= A_READ_WAIT;
 					end
