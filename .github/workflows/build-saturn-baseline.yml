@@ -1,0 +1,85 @@
+name: Build Saturn Baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/saturn-psram-diag
+    paths:
+      - '.github/workflows/build-saturn-baseline.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saturn-baseline-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quartus:
+    name: Quartus 17 baseline compilation
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          docker system prune --all --force
+          df -h
+
+      - name: Pull Quartus 17 image
+        shell: bash
+        run: docker pull theypsilon/quartus-lite-c5:17.0-heavy
+
+      - name: Compile Saturn baseline
+        shell: bash
+        run: |
+          mkdir -p .ci
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/project" \
+            --workdir /project \
+            theypsilon/quartus-lite-c5:17.0-heavy \
+            bash -lc 'set -o pipefail; quartus_sh --flow compile Saturn 2>&1 | tee .ci/Saturn-build.log'
+
+      - name: Verify RBF and summarize reports
+        shell: bash
+        run: |
+          test -s output_files/Saturn.rbf
+          sha256sum output_files/Saturn.rbf | tee .ci/Saturn-rbf.sha256
+          {
+            echo '## Saturn baseline Quartus result'
+            echo
+            echo '```text'
+            grep -hE 'Quartus Prime Full Compilation|Logic utilization|Total registers|Total block memory bits|Total pins|Slack|Timing requirements' \
+              output_files/Saturn.flow.rpt \
+              output_files/Saturn.fit.rpt \
+              output_files/Saturn.sta.rpt 2>/dev/null | tail -n 100 || true
+            echo
+            cat .ci/Saturn-rbf.sha256
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload RBF and Quartus reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Saturn-baseline-${{ github.run_number }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            .ci/Saturn-build.log
+            .ci/Saturn-rbf.sha256
+            output_files/Saturn.rbf
+            output_files/Saturn.flow.rpt
+            output_files/Saturn.map.rpt
+            output_files/Saturn.fit.rpt
+            output_files/Saturn.sta.rpt
+            output_files/Saturn.asm.rpt
