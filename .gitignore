@@ -2,6 +2,9 @@ db
 greybox_tmp
 incremental_db
 output_files
+output_files_psram
+.ci
+.emv2
 simulation
 hc_output
 scaler
@@ -28,6 +31,7 @@ build_id.v
 c5_pin_model_dump.txt
 *.sopcinfo
 *.csv
+sim/psram/*_timing.txt
 *.f
 *.cmp
 *.sip

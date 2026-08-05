@@ -46,8 +46,10 @@ module sys_top
 	//////////// SDR ///////////
 	output [12:0] SDRAM_A,
 	inout  [15:0] SDRAM_DQ,
+`ifndef MISTER_PSRAM
 	output        SDRAM_DQML,
 	output        SDRAM_DQMH,
+`endif
 	output        SDRAM_nWE,
 	output        SDRAM_nCAS,
 	output        SDRAM_nRAS,
@@ -55,6 +57,13 @@ module sys_top
 	output  [1:0] SDRAM_BA,
 	output        SDRAM_CLK,
 	output        SDRAM_CKE,
+
+`ifdef MISTER_PSRAM
+	//////// 3SQR QPI PSRAM ////
+	output        PSRAM_CLK,
+	output        PSRAM_CE_N,
+	inout   [3:0] PSRAM_DQ,
+`endif
 
 `ifdef MISTER_DUAL_SDRAM
 	////////// SDR #2 //////////
@@ -96,10 +105,12 @@ module sys_top
 `endif
 
 	////////// I/O ALT /////////
+`ifndef MISTER_PSRAM
 	output        SD_SPI_CS,
 	input         SD_SPI_MISO,
 	output        SD_SPI_CLK,
 	output        SD_SPI_MOSI,
+`endif
 
 	inout         SDCD_SPDIF,
 	output        IO_SCL,
@@ -123,6 +134,17 @@ module sys_top
 	///////// USER IO ///////////
 	inout   [6:0] USER_IO
 );
+
+`ifdef MISTER_PSRAM
+// These legacy top-level ports are deliberately internal in the adapter
+// revision so Quartus cannot auto-place them onto unrelated free pins.
+wire SDRAM_DQML;
+wire SDRAM_DQMH;
+wire SD_SPI_CS;
+wire SD_SPI_CLK;
+wire SD_SPI_MOSI;
+wire SD_SPI_MISO = 1'b1;
+`endif
 
 //////////////////////  Secondary SD  ///////////////////////////////////
 wire SD_CS, SD_CLK, SD_MOSI, SD_MISO, SD_CD;
@@ -154,7 +176,12 @@ wire led_u = ~led_user;
 wire led_locked;
 
 //LEDs on de10-nano board
+`ifdef MISTER_PSRAM_DIAG
+wire [7:0] diag_led;
+assign LED = diag_led;
+`else
 assign LED = (led_overtake & led_state) | (~led_overtake & {1'b0,led_locked,1'b0, ~led_p, 1'b0, ~led_d, 1'b0, ~led_u});
+`endif
 
 wire [2:0] mcp_btn;
 wire       mcp_sdcd;
@@ -1789,6 +1816,9 @@ emu emu
 	.LED_USER(led_user),
 	.LED_POWER(led_power),
 	.LED_DISK(led_disk),
+`ifdef MISTER_PSRAM_DIAG
+	.DIAG_LED(diag_led),
+`endif
 
 	.CLK_AUDIO(clk_audio),
 	.AUDIO_L(audio_l),
@@ -1820,6 +1850,12 @@ emu emu
 	.SDRAM_nCAS(SDRAM_nCAS),
 	.SDRAM_CLK(SDRAM_CLK),
 	.SDRAM_CKE(SDRAM_CKE),
+
+`ifdef MISTER_PSRAM
+	.PSRAM_CLK(PSRAM_CLK),
+	.PSRAM_CE_N(PSRAM_CE_N),
+	.PSRAM_DQ(PSRAM_DQ),
+`endif
 
 `ifdef MISTER_DUAL_SDRAM
 	.SDRAM2_DQ(SDRAM2_DQ),

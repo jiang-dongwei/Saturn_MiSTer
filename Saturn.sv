@@ -139,6 +139,13 @@ module emu
 	output        SDRAM_nRAS,
 	output        SDRAM_nWE,
 
+`ifdef MISTER_PSRAM
+	// 3SQR QPI PSRAM adapter used as the Saturn High Work RAM backend.
+	output        PSRAM_CLK,
+	output        PSRAM_CE_N,
+	inout   [3:0] PSRAM_DQ,
+`endif
+
 `ifdef MISTER_DUAL_SDRAM
 	//Secondary SDRAM
 	//Set all output SDRAM_* signals to Z ASAP if SDRAM2_EN is 0
@@ -1462,6 +1469,11 @@ module emu
 		.ramh_din ('0),
 		.ramh_wr  ('0),
 		.ramh_rd  (0),
+`elsif MISTER_PSRAM
+		.ramh_addr('0),
+		.ramh_din ('0),
+		.ramh_wr  ('0),
+		.ramh_rd  (0),
 `else
 		.ramh_addr(MEM_A[19:2]),
 		.ramh_din (ramh_din),
@@ -1623,7 +1635,42 @@ module emu
 		.busy(sdr2_busy)
 	);
 `endif
-	
+
+`ifdef MISTER_PSRAM
+	// Replace only Saturn RAMH (High Work RAM). All other memories retain the
+	// same backends as the standard single-SDRAM build.
+	wire [31:0] psram_ramh_do;
+	wire        psram_ramh_busy;
+	wire        psram_qpi_init_done;
+	wire        psram_qpi_init_error;
+	wire [15:0] psram_qpi_device_id;
+	wire        psram_adapter_error;
+
+	ramh_psram_adapter ramh_psram
+	(
+		.clk(clk_ram),
+		.reset(reset || rst_ram),
+
+		.addr(MEM_A[19:2]),
+		.din(ramh_din),
+		.wr(ramh_wr),
+		.rd(~RAMH_CS_N & ~MEM_RD_N),
+		.burst(RAMH_BURST),
+		.dout(psram_ramh_do),
+		.rfs(~RAMH_CS_N & RAMH_RFS),
+		.busy(psram_ramh_busy),
+
+		.qpi_init_done(psram_qpi_init_done),
+		.qpi_init_error(psram_qpi_init_error),
+		.qpi_device_id(psram_qpi_device_id),
+		.adapter_error(psram_adapter_error),
+
+		.PSRAM_CLK(PSRAM_CLK),
+		.PSRAM_CE_N(PSRAM_CE_N),
+		.PSRAM_DQ(PSRAM_DQ)
+	);
+`endif
+
 `ifdef MISTER_DUAL_SDRAM
 
 	assign MEM_DI     = !RAMH_CS_N ? sdr2_do : 
@@ -1631,12 +1678,25 @@ module emu
 	                    !STVIO_CS_N ? {24'hFFFFFF,STVIO_DO} : 
 `endif
 							  raml_do;
-	assign MEM_WAIT_N = !RAMH_CS_N ? ~sdr2_busy : 
+	assign MEM_WAIT_N = !RAMH_CS_N ? ~sdr2_busy :
 `ifdef STV_BUILD
-	                    !STVIO_CS_N ? 1'b1 : 
+	                    !STVIO_CS_N ? 1'b1 :
 `endif
 							  ~raml_busy;
-							  
+
+`elsif MISTER_PSRAM
+
+	assign MEM_DI     = !RAMH_CS_N ? psram_ramh_do :
+`ifdef STV_BUILD
+	                    !STVIO_CS_N ? {24'hFFFFFF,STVIO_DO} :
+`endif
+							  raml_do;
+	assign MEM_WAIT_N = !RAMH_CS_N ? ~psram_ramh_busy :
+`ifdef STV_BUILD
+	                    !STVIO_CS_N ? 1'b1 :
+`endif
+							  ~raml_busy;
+
 `else
 
 	assign MEM_DI     = !RAMH_CS_N ? ramh_do : 

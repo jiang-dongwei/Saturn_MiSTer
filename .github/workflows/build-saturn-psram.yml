@@ -1,0 +1,93 @@
+name: Build Saturn PSRAM
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/saturn-psram-diag
+    paths:
+      - '.github/workflows/build-saturn-psram.yml'
+      - 'Saturn.sv'
+      - 'Saturn.sdc'
+      - 'Saturn_PSRAM.qpf'
+      - 'Saturn_PSRAM.qsf'
+      - 'files.qip'
+      - 'files_psram.qip'
+      - 'rtl/**'
+      - 'sys/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saturn-psram-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quartus:
+    name: Quartus 17 full compilation
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          docker system prune --all --force
+          df -h
+
+      - name: Pull Quartus 17 image
+        shell: bash
+        run: docker pull theypsilon/quartus-lite-c5:17.0-heavy
+
+      - name: Compile Saturn_PSRAM
+        shell: bash
+        run: |
+          mkdir -p .ci
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/project" \
+            --workdir /project \
+            theypsilon/quartus-lite-c5:17.0-heavy \
+            bash -lc 'set -o pipefail; quartus_sh --flow compile Saturn_PSRAM 2>&1 | tee .ci/Saturn_PSRAM-build.log'
+
+      - name: Verify RBF and summarize reports
+        shell: bash
+        run: |
+          test -s output_files_psram/Saturn_PSRAM.rbf
+          sha256sum output_files_psram/Saturn_PSRAM.rbf | tee .ci/Saturn_PSRAM-rbf.sha256
+          {
+            echo '## Saturn_PSRAM Quartus result'
+            echo
+            echo '```text'
+            grep -hE 'Quartus Prime Full Compilation|Total logic elements|Total registers|Total block memory bits|Total pins|Slack|Timing requirements' \
+              output_files_psram/Saturn_PSRAM.flow.rpt \
+              output_files_psram/Saturn_PSRAM.fit.rpt \
+              output_files_psram/Saturn_PSRAM.sta.rpt 2>/dev/null | tail -n 80 || true
+            echo
+            cat .ci/Saturn_PSRAM-rbf.sha256
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload RBF and Quartus reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Saturn_PSRAM-${{ github.run_number }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            .ci/Saturn_PSRAM-build.log
+            .ci/Saturn_PSRAM-rbf.sha256
+            output_files_psram/Saturn_PSRAM.rbf
+            output_files_psram/Saturn_PSRAM.flow.rpt
+            output_files_psram/Saturn_PSRAM.map.rpt
+            output_files_psram/Saturn_PSRAM.fit.rpt
+            output_files_psram/Saturn_PSRAM.sta.rpt
+            output_files_psram/Saturn_PSRAM.asm.rpt

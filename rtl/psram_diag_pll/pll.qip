@@ -1,0 +1,5 @@
+# Minimal source list for the diagnostic PLL. The generated modules use unique
+# entity names so this QIP can coexist with Saturn's rtl/pll.qip.
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "pll.v"]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "pll/pll_0002.v"]
+set_global_assignment -name QIP_FILE [file join $::quartus(qip_path) "pll/pll_0002.qip"]

@@ -1,0 +1,3 @@
+# Runtime PSRAM backend used only by the Saturn_PSRAM revision.
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/psram_qpi_engine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/ramh_psram_adapter.sv
