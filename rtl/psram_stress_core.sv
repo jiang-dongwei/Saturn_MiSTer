@@ -11,7 +11,8 @@ module psram_stress_core
 	parameter [7:0]   GUARD_CYCLES   = 8'd8,
 	parameter integer READ_LINE_BYTES = 16,
 	parameter integer CONFIRM_ON_MISMATCH = 0,
-	parameter integer DUPLICATE_WRITES = 0
+	parameter integer DUPLICATE_WRITES = 0,
+	parameter integer DIRECT_READ_CAPTURE = 0
 )
 (
 	input              clk,
@@ -53,7 +54,8 @@ ramh_psram_adapter
 	.POWERUP_CYCLES(POWERUP_CYCLES),
 	.HALF_DIVIDER(HALF_DIVIDER),
 	.GUARD_CYCLES(GUARD_CYCLES),
-	.READ_LINE_BYTES(READ_LINE_BYTES)
+	.READ_LINE_BYTES(READ_LINE_BYTES),
+	.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE)
 )
 adapter
 (

@@ -171,50 +171,96 @@ wire init_error;
 wire stress_failed;
 wire stress_activity;
 
-`ifdef PSRAM_STRESS_DWRITE
+`ifdef PSRAM_STRESS_LATE_SAMPLE
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
+localparam [7:0] STRESS_GUARD_CYCLES = 8'd8;
 localparam integer STRESS_READ_LINE_BYTES = 4;
 localparam [1:0] STRESS_MODE_CODE = 2'd3;
 localparam integer STRESS_CONFIRM_ON_MISMATCH = 1;
 localparam integer STRESS_DUPLICATE_WRITES = 1;
+localparam integer STRESS_DIRECT_READ_CAPTURE = 1;
+localparam integer STRESS_LATE_SAMPLE_VIEW = 1;
+localparam integer STRESS_LONG_GAP_VIEW = 0;
+`elsif PSRAM_STRESS_LONG_GAP
+localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
+localparam [7:0] STRESS_GUARD_CYCLES = 8'd32;
+localparam integer STRESS_READ_LINE_BYTES = 4;
+localparam [1:0] STRESS_MODE_CODE = 2'd3;
+localparam integer STRESS_CONFIRM_ON_MISMATCH = 1;
+localparam integer STRESS_DUPLICATE_WRITES = 1;
+localparam integer STRESS_DIRECT_READ_CAPTURE = 0;
+localparam integer STRESS_LATE_SAMPLE_VIEW = 0;
+localparam integer STRESS_LONG_GAP_VIEW = 1;
+`elsif PSRAM_STRESS_DWRITE
+localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
+localparam [7:0] STRESS_GUARD_CYCLES = 8'd8;
+localparam integer STRESS_READ_LINE_BYTES = 4;
+localparam [1:0] STRESS_MODE_CODE = 2'd3;
+localparam integer STRESS_CONFIRM_ON_MISMATCH = 1;
+localparam integer STRESS_DUPLICATE_WRITES = 1;
+localparam integer STRESS_DIRECT_READ_CAPTURE = 0;
+localparam integer STRESS_LATE_SAMPLE_VIEW = 0;
+localparam integer STRESS_LONG_GAP_VIEW = 0;
 `elsif PSRAM_STRESS_CONFIRM
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
+localparam [7:0] STRESS_GUARD_CYCLES = 8'd8;
 localparam integer STRESS_READ_LINE_BYTES = 4;
 localparam [1:0] STRESS_MODE_CODE = 2'd3;
 localparam integer STRESS_CONFIRM_ON_MISMATCH = 1;
 localparam integer STRESS_DUPLICATE_WRITES = 0;
+localparam integer STRESS_DIRECT_READ_CAPTURE = 0;
+localparam integer STRESS_LATE_SAMPLE_VIEW = 0;
+localparam integer STRESS_LONG_GAP_VIEW = 0;
 `elsif PSRAM_STRESS_SAFE
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
+localparam [7:0] STRESS_GUARD_CYCLES = 8'd8;
 localparam integer STRESS_READ_LINE_BYTES = 4;
 localparam [1:0] STRESS_MODE_CODE = 2'd3;
 localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
 localparam integer STRESS_DUPLICATE_WRITES = 0;
+localparam integer STRESS_DIRECT_READ_CAPTURE = 0;
+localparam integer STRESS_LATE_SAMPLE_VIEW = 0;
+localparam integer STRESS_LONG_GAP_VIEW = 0;
 `elsif PSRAM_STRESS_4B
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd2;
+localparam [7:0] STRESS_GUARD_CYCLES = 8'd8;
 localparam integer STRESS_READ_LINE_BYTES = 4;
 localparam [1:0] STRESS_MODE_CODE = 2'd1;
 localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
 localparam integer STRESS_DUPLICATE_WRITES = 0;
+localparam integer STRESS_DIRECT_READ_CAPTURE = 0;
+localparam integer STRESS_LATE_SAMPLE_VIEW = 0;
+localparam integer STRESS_LONG_GAP_VIEW = 0;
 `elsif PSRAM_STRESS_SLOW
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
+localparam [7:0] STRESS_GUARD_CYCLES = 8'd8;
 localparam integer STRESS_READ_LINE_BYTES = 16;
 localparam [1:0] STRESS_MODE_CODE = 2'd2;
 localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
 localparam integer STRESS_DUPLICATE_WRITES = 0;
+localparam integer STRESS_DIRECT_READ_CAPTURE = 0;
+localparam integer STRESS_LATE_SAMPLE_VIEW = 0;
+localparam integer STRESS_LONG_GAP_VIEW = 0;
 `else
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd2;
+localparam [7:0] STRESS_GUARD_CYCLES = 8'd8;
 localparam integer STRESS_READ_LINE_BYTES = 16;
 localparam [1:0] STRESS_MODE_CODE = 2'd0;
 localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
 localparam integer STRESS_DUPLICATE_WRITES = 0;
+localparam integer STRESS_DIRECT_READ_CAPTURE = 0;
+localparam integer STRESS_LATE_SAMPLE_VIEW = 0;
+localparam integer STRESS_LONG_GAP_VIEW = 0;
 `endif
 
 psram_stress_core
 #(
 	.HALF_DIVIDER(STRESS_HALF_DIVIDER),
+	.GUARD_CYCLES(STRESS_GUARD_CYCLES),
 	.READ_LINE_BYTES(STRESS_READ_LINE_BYTES),
 	.CONFIRM_ON_MISMATCH(STRESS_CONFIRM_ON_MISMATCH),
-	.DUPLICATE_WRITES(STRESS_DUPLICATE_WRITES)
+	.DUPLICATE_WRITES(STRESS_DUPLICATE_WRITES),
+	.DIRECT_READ_CAPTURE(STRESS_DIRECT_READ_CAPTURE)
 )
 stress
 (
@@ -246,7 +292,9 @@ psram_stress_video
 #(
 	.MODE_CODE(STRESS_MODE_CODE),
 	.CONFIRM_VIEW(STRESS_CONFIRM_ON_MISMATCH),
-	.DWRITE_VIEW(STRESS_DUPLICATE_WRITES)
+	.DWRITE_VIEW(STRESS_DUPLICATE_WRITES),
+	.LATE_SAMPLE_VIEW(STRESS_LATE_SAMPLE_VIEW),
+	.LONG_GAP_VIEW(STRESS_LONG_GAP_VIEW)
 )
 video
 (

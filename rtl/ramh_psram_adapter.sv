@@ -12,7 +12,8 @@ module ramh_psram_adapter
 	parameter integer POWERUP_CYCLES = 20000,
 	parameter [5:0]   HALF_DIVIDER   = 6'd2,
 	parameter [7:0]   GUARD_CYCLES   = 8'd8,
-	parameter integer READ_LINE_BYTES = 16
+	parameter integer READ_LINE_BYTES = 16,
+	parameter integer DIRECT_READ_CAPTURE = 0
 )
 (
 	input              clk,
@@ -191,7 +192,8 @@ psram_qpi_engine
 #(
 	.POWERUP_CYCLES(POWERUP_CYCLES),
 	.HALF_DIVIDER(HALF_DIVIDER),
-	.GUARD_CYCLES(GUARD_CYCLES)
+	.GUARD_CYCLES(GUARD_CYCLES),
+	.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE)
 )
 engine
 (

@@ -27,7 +27,11 @@ wire psram_clk;
 wire psram_ce_n;
 tri [3:0] psram_dq;
 
-`ifdef PSRAM_STRESS_TB_DWRITE
+`ifdef PSRAM_STRESS_TB_LATE_SAMPLE
+localparam integer TB_READ_LINE_BYTES = 4;
+`elsif PSRAM_STRESS_TB_LONG_GAP
+localparam integer TB_READ_LINE_BYTES = 4;
+`elsif PSRAM_STRESS_TB_DWRITE
 localparam integer TB_READ_LINE_BYTES = 4;
 `elsif PSRAM_STRESS_TB_CONFIRM
 localparam integer TB_READ_LINE_BYTES = 4;
@@ -38,26 +42,48 @@ localparam integer TB_READ_LINE_BYTES = 4;
 `else
 localparam integer TB_READ_LINE_BYTES = 16;
 `endif
-`ifdef PSRAM_STRESS_TB_DWRITE
+`ifdef PSRAM_STRESS_TB_LATE_SAMPLE
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd1;
 localparam integer TB_CONFIRM_ON_MISMATCH = 1;
 localparam integer TB_DUPLICATE_WRITES = 1;
+localparam integer TB_DIRECT_READ_CAPTURE = 1;
+`elsif PSRAM_STRESS_TB_LONG_GAP
+localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd8;
+localparam integer TB_CONFIRM_ON_MISMATCH = 1;
+localparam integer TB_DUPLICATE_WRITES = 1;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
+`elsif PSRAM_STRESS_TB_DWRITE
+localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd1;
+localparam integer TB_CONFIRM_ON_MISMATCH = 1;
+localparam integer TB_DUPLICATE_WRITES = 1;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `elsif PSRAM_STRESS_TB_CONFIRM
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd1;
 localparam integer TB_CONFIRM_ON_MISMATCH = 1;
 localparam integer TB_DUPLICATE_WRITES = 0;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `elsif PSRAM_STRESS_TB_SAFE
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd1;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 localparam integer TB_DUPLICATE_WRITES = 0;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `elsif PSRAM_STRESS_TB_SLOW
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd1;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 localparam integer TB_DUPLICATE_WRITES = 0;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `else
 localparam [5:0] TB_HALF_DIVIDER = 6'd2;
+localparam [7:0] TB_GUARD_CYCLES = 8'd1;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 localparam integer TB_DUPLICATE_WRITES = 0;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `endif
 
 psram_stress_core
@@ -65,10 +91,11 @@ psram_stress_core
 	.WORD_COUNT(64),
 	.POWERUP_CYCLES(2),
 	.HALF_DIVIDER(TB_HALF_DIVIDER),
-	.GUARD_CYCLES(1),
+	.GUARD_CYCLES(TB_GUARD_CYCLES),
 	.READ_LINE_BYTES(TB_READ_LINE_BYTES),
 	.CONFIRM_ON_MISMATCH(TB_CONFIRM_ON_MISMATCH),
-	.DUPLICATE_WRITES(TB_DUPLICATE_WRITES)
+	.DUPLICATE_WRITES(TB_DUPLICATE_WRITES),
+	.DIRECT_READ_CAPTURE(TB_DIRECT_READ_CAPTURE)
 )
 dut
 (

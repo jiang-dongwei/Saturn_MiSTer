@@ -7,7 +7,8 @@ module psram_qpi_engine
 #(
 	parameter integer POWERUP_CYCLES = 8,
 	parameter [5:0]   HALF_DIVIDER   = 6'd2,
-	parameter [7:0]   GUARD_CYCLES   = 8'd8
+	parameter [7:0]   GUARD_CYCLES   = 8'd8,
+	parameter integer DIRECT_READ_CAPTURE = 0
 )
 (
 	input              clk,

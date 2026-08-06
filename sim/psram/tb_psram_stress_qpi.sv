@@ -27,7 +27,11 @@ wire psram_clk;
 wire psram_ce_n;
 tri [3:0] psram_dq;
 
-`ifdef PSRAM_STRESS_TB_DWRITE
+`ifdef PSRAM_STRESS_TB_LATE_SAMPLE
+localparam integer TB_READ_LINE_BYTES = 4;
+`elsif PSRAM_STRESS_TB_LONG_GAP
+localparam integer TB_READ_LINE_BYTES = 4;
+`elsif PSRAM_STRESS_TB_DWRITE
 localparam integer TB_READ_LINE_BYTES = 4;
 `elsif PSRAM_STRESS_TB_CONFIRM
 localparam integer TB_READ_LINE_BYTES = 4;
@@ -38,26 +42,48 @@ localparam integer TB_READ_LINE_BYTES = 4;
 `else
 localparam integer TB_READ_LINE_BYTES = 16;
 `endif
-`ifdef PSRAM_STRESS_TB_DWRITE
+`ifdef PSRAM_STRESS_TB_LATE_SAMPLE
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 1;
 localparam integer TB_DUPLICATE_WRITES = 1;
+localparam integer TB_DIRECT_READ_CAPTURE = 1;
+`elsif PSRAM_STRESS_TB_LONG_GAP
+localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd8;
+localparam integer TB_CONFIRM_ON_MISMATCH = 1;
+localparam integer TB_DUPLICATE_WRITES = 1;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
+`elsif PSRAM_STRESS_TB_DWRITE
+localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd2;
+localparam integer TB_CONFIRM_ON_MISMATCH = 1;
+localparam integer TB_DUPLICATE_WRITES = 1;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `elsif PSRAM_STRESS_TB_CONFIRM
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 1;
 localparam integer TB_DUPLICATE_WRITES = 0;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `elsif PSRAM_STRESS_TB_SAFE
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 localparam integer TB_DUPLICATE_WRITES = 0;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `elsif PSRAM_STRESS_TB_SLOW
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam [7:0] TB_GUARD_CYCLES = 8'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 localparam integer TB_DUPLICATE_WRITES = 0;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `else
 localparam [5:0] TB_HALF_DIVIDER = 6'd2;
+localparam [7:0] TB_GUARD_CYCLES = 8'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 localparam integer TB_DUPLICATE_WRITES = 0;
+localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `endif
 
 psram_stress_core
@@ -65,10 +91,11 @@ psram_stress_core
 	.WORD_COUNT(16),
 	.POWERUP_CYCLES(2),
 	.HALF_DIVIDER(TB_HALF_DIVIDER),
-	.GUARD_CYCLES(2),
+	.GUARD_CYCLES(TB_GUARD_CYCLES),
 	.READ_LINE_BYTES(TB_READ_LINE_BYTES),
 	.CONFIRM_ON_MISMATCH(TB_CONFIRM_ON_MISMATCH),
-	.DUPLICATE_WRITES(TB_DUPLICATE_WRITES)
+	.DUPLICATE_WRITES(TB_DUPLICATE_WRITES),
+	.DIRECT_READ_CAPTURE(TB_DIRECT_READ_CAPTURE)
 )
 dut
 (
@@ -108,9 +135,49 @@ memory
 	.dq(psram_dq)
 );
 
+integer ce_high_cycles = 0;
+reg gap_tracking = 1'b0;
+reg gap_observed = 1'b0;
+always @(posedge clk) begin
+	if (reset) begin
+		ce_high_cycles <= 0;
+		gap_tracking <= 1'b0;
+		gap_observed <= 1'b0;
+	end
+	else if (init_done) begin
+		if (!gap_tracking && psram_ce_n) begin
+			ce_high_cycles <= 1;
+			gap_tracking <= 1'b1;
+		end
+		else if (gap_tracking && psram_ce_n)
+			ce_high_cycles <= ce_high_cycles + 1;
+		else if (gap_tracking && !psram_ce_n) begin
+			// The monitor starts one sampled edge after CE# rises, so include
+			// the transition edge when comparing against the RTL guard count.
+			if ((ce_high_cycles + 1) < TB_GUARD_CYCLES) begin
+				$display("FAIL: CE# gap %0d cycles, expected at least %0d",
+				         ce_high_cycles + 1, TB_GUARD_CYCLES);
+				$fatal(1);
+			end
+			gap_observed <= 1'b1;
+			gap_tracking <= 1'b0;
+		end
+	end
+end
+
 initial begin
 	repeat (6) @(posedge clk);
 	reset <= 1'b0;
+	if ($test$plusargs("CORRUPT_LEGACY_SAMPLE")) begin
+		wait (init_done);
+		force dut.adapter.engine.phy.dq_sample = 4'h0;
+	end
+	if ($test$plusargs("LONG_GAP_CHECK")) begin
+		wait (gap_observed);
+		$display("PASS: CE# high gap is at least %0d control cycles",
+		         TB_GUARD_CYCLES);
+		$finish;
+	end
 	wait (loop_count >= 1);
 	if (failed || init_error || (device_id != 16'h0D5D)) begin
 		$display("FAIL: bit-level QPI stress phase=%02x id=%04x exp=%08x act=%08x",

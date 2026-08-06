@@ -1,4 +1,4 @@
-name: Build Saturn PSRAM Stress DoubleWrite
+name: Build Saturn PSRAM Stress ReadFix Pair
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: saturn-psram-stress-dwrite-${{ github.ref }}
+  group: saturn-psram-stress-readfix-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: docker pull theypsilon/quartus-lite-c5:17.0.2
 
-      - name: Compile Saturn_PSRAM_Stress_DoubleWrite
+      - name: Compile LateSample and LongGap in one container
         shell: bash
         run: |
           mkdir -p .ci
@@ -42,23 +42,29 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/project" \
             --workdir /project \
             theypsilon/quartus-lite-c5:17.0.2 \
-            bash -lc 'set -o pipefail; quartus_sh --flow compile Saturn_PSRAM_Stress_DoubleWrite 2>&1 | tee .ci/Saturn_PSRAM_Stress_DoubleWrite-build.log'
+            bash -lc 'set -euo pipefail; quartus_sh --flow compile Saturn_PSRAM_Stress_LateSample 2>&1 | tee .ci/Saturn_PSRAM_Stress_LateSample-build.log; quartus_sh --flow compile Saturn_PSRAM_Stress_LongGap 2>&1 | tee .ci/Saturn_PSRAM_Stress_LongGap-build.log'
 
       - name: Verify RBF and summarize reports
         shell: bash
         run: |
-          test -s output_files_stress_dwrite/Saturn_PSRAM_Stress_DoubleWrite.rbf
-          sha256sum output_files_stress_dwrite/Saturn_PSRAM_Stress_DoubleWrite.rbf | tee .ci/Saturn_PSRAM_Stress_DoubleWrite-rbf.sha256
+          test -s output_files_stress_late/Saturn_PSRAM_Stress_LateSample.rbf
+          test -s output_files_stress_gap/Saturn_PSRAM_Stress_LongGap.rbf
+          sha256sum output_files_stress_late/Saturn_PSRAM_Stress_LateSample.rbf | tee .ci/Saturn_PSRAM_Stress_LateSample-rbf.sha256
+          sha256sum output_files_stress_gap/Saturn_PSRAM_Stress_LongGap.rbf | tee .ci/Saturn_PSRAM_Stress_LongGap-rbf.sha256
           {
-            echo '## Saturn_PSRAM_Stress_DoubleWrite Quartus result'
+            echo '## Saturn PSRAM read-fix pair Quartus result'
             echo
             echo '```text'
             grep -hE 'Quartus Prime Full Compilation|Total logic elements|Total registers|Total block memory bits|Total pins|Slack|Timing requirements' \
-              output_files_stress_dwrite/Saturn_PSRAM_Stress_DoubleWrite.flow.rpt \
-              output_files_stress_dwrite/Saturn_PSRAM_Stress_DoubleWrite.fit.rpt \
-              output_files_stress_dwrite/Saturn_PSRAM_Stress_DoubleWrite.sta.rpt 2>/dev/null | tail -n 80 || true
+              output_files_stress_late/Saturn_PSRAM_Stress_LateSample.flow.rpt \
+              output_files_stress_late/Saturn_PSRAM_Stress_LateSample.fit.rpt \
+              output_files_stress_late/Saturn_PSRAM_Stress_LateSample.sta.rpt \
+              output_files_stress_gap/Saturn_PSRAM_Stress_LongGap.flow.rpt \
+              output_files_stress_gap/Saturn_PSRAM_Stress_LongGap.fit.rpt \
+              output_files_stress_gap/Saturn_PSRAM_Stress_LongGap.sta.rpt 2>/dev/null | tail -n 160 || true
             echo
-            cat .ci/Saturn_PSRAM_Stress_DoubleWrite-rbf.sha256
+            cat .ci/Saturn_PSRAM_Stress_LateSample-rbf.sha256
+            cat .ci/Saturn_PSRAM_Stress_LongGap-rbf.sha256
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -66,15 +72,23 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Saturn_PSRAM_Stress_DoubleWrite-${{ github.run_number }}
+          name: Saturn_PSRAM_Stress_ReadFix-${{ github.run_number }}
           if-no-files-found: warn
           retention-days: 30
           path: |
-            .ci/Saturn_PSRAM_Stress_DoubleWrite-build.log
-            .ci/Saturn_PSRAM_Stress_DoubleWrite-rbf.sha256
-            output_files_stress_dwrite/Saturn_PSRAM_Stress_DoubleWrite.rbf
-            output_files_stress_dwrite/Saturn_PSRAM_Stress_DoubleWrite.flow.rpt
-            output_files_stress_dwrite/Saturn_PSRAM_Stress_DoubleWrite.map.rpt
-            output_files_stress_dwrite/Saturn_PSRAM_Stress_DoubleWrite.fit.rpt
-            output_files_stress_dwrite/Saturn_PSRAM_Stress_DoubleWrite.sta.rpt
-            output_files_stress_dwrite/Saturn_PSRAM_Stress_DoubleWrite.asm.rpt
+            .ci/Saturn_PSRAM_Stress_LateSample-build.log
+            .ci/Saturn_PSRAM_Stress_LateSample-rbf.sha256
+            .ci/Saturn_PSRAM_Stress_LongGap-build.log
+            .ci/Saturn_PSRAM_Stress_LongGap-rbf.sha256
+            output_files_stress_late/Saturn_PSRAM_Stress_LateSample.rbf
+            output_files_stress_late/Saturn_PSRAM_Stress_LateSample.flow.rpt
+            output_files_stress_late/Saturn_PSRAM_Stress_LateSample.map.rpt
+            output_files_stress_late/Saturn_PSRAM_Stress_LateSample.fit.rpt
+            output_files_stress_late/Saturn_PSRAM_Stress_LateSample.sta.rpt
+            output_files_stress_late/Saturn_PSRAM_Stress_LateSample.asm.rpt
+            output_files_stress_gap/Saturn_PSRAM_Stress_LongGap.rbf
+            output_files_stress_gap/Saturn_PSRAM_Stress_LongGap.flow.rpt
+            output_files_stress_gap/Saturn_PSRAM_Stress_LongGap.map.rpt
+            output_files_stress_gap/Saturn_PSRAM_Stress_LongGap.fit.rpt
+            output_files_stress_gap/Saturn_PSRAM_Stress_LongGap.sta.rpt
+            output_files_stress_gap/Saturn_PSRAM_Stress_LongGap.asm.rpt

@@ -13,7 +13,8 @@ module psram_qpi_engine
 #(
 	parameter integer POWERUP_CYCLES = 20000,
 	parameter [5:0]   HALF_DIVIDER   = 6'd2,
-	parameter [7:0]   GUARD_CYCLES   = 8'd8
+	parameter [7:0]   GUARD_CYCLES   = 8'd8,
+	parameter integer DIRECT_READ_CAPTURE = 0
 )
 (
 	input              clk,
@@ -76,7 +77,12 @@ wire [127:0] phy_read_data;
 assign request_ready = (control_state == C_READY) && !phy_busy;
 assign busy = (control_state != C_READY) || phy_busy;
 
-psram_qpi_phy #(.GUARD_CYCLES(GUARD_CYCLES)) phy
+psram_qpi_phy
+#(
+	.GUARD_CYCLES(GUARD_CYCLES),
+	.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE)
+)
+phy
 (
 	.clk(clk),
 	.reset(reset),
@@ -249,7 +255,8 @@ endmodule
 // edge, preserving the Stage 58 timing strategy.
 module psram_qpi_phy
 #(
-	parameter [7:0] GUARD_CYCLES = 8'd8
+	parameter [7:0] GUARD_CYCLES = 8'd8,
+	parameter integer DIRECT_READ_CAPTURE = 0
 )
 (
 	input              clk,
@@ -526,7 +533,8 @@ always @(posedge clk) begin
 							P_READ: begin
 								if (transaction_qpi)
 									read_data <= {read_data[123:0],
-									              (half_divider == 6'd1) ? dq_in : dq_sample};
+									              ((DIRECT_READ_CAPTURE != 0) ||
+									               (half_divider == 6'd1)) ? dq_in : dq_sample};
 								else
 									read_data <= {read_data[126:0], dq_sample[1]};
 
