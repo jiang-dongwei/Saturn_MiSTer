@@ -3,5 +3,4 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/psram_qpi_engine.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ramh_psram_adapter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/psram_stress_core.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/psram_stress_video.sv
-set_global_assignment -name SDC_FILE Saturn_PSRAM_Stress.sdc
 set_global_assignment -name SYSTEMVERILOG_FILE Saturn_PSRAM_Stress.sv

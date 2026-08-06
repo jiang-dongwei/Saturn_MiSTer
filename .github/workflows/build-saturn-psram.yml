@@ -1,26 +1,13 @@
-name: Build Saturn PSRAM
+name: Build Saturn PSRAM Stress Slow
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feature/saturn-psram-diag
-    paths:
-      - '.github/workflows/build-saturn-psram.yml'
-      - 'Saturn.sv'
-      - 'Saturn.sdc'
-      - 'Saturn_PSRAM.qpf'
-      - 'Saturn_PSRAM.qsf'
-      - 'files.qip'
-      - 'files_psram.qip'
-      - 'rtl/**'
-      - 'sys/**'
 
 permissions:
   contents: read
 
 concurrency:
-  group: saturn-psram-${{ github.ref }}
+  group: saturn-psram-stress-slow-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -47,7 +34,7 @@ jobs:
         shell: bash
         run: docker pull theypsilon/quartus-lite-c5:17.0.2
 
-      - name: Compile Saturn_PSRAM
+      - name: Compile Saturn_PSRAM_Stress_Slow
         shell: bash
         run: |
           mkdir -p .ci
@@ -55,23 +42,23 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/project" \
             --workdir /project \
             theypsilon/quartus-lite-c5:17.0.2 \
-            bash -lc 'set -o pipefail; quartus_sh --flow compile Saturn_PSRAM 2>&1 | tee .ci/Saturn_PSRAM-build.log'
+            bash -lc 'set -o pipefail; quartus_sh --flow compile Saturn_PSRAM_Stress_Slow 2>&1 | tee .ci/Saturn_PSRAM_Stress_Slow-build.log'
 
       - name: Verify RBF and summarize reports
         shell: bash
         run: |
-          test -s output_files_psram/Saturn_PSRAM.rbf
-          sha256sum output_files_psram/Saturn_PSRAM.rbf | tee .ci/Saturn_PSRAM-rbf.sha256
+          test -s output_files_stress_slow/Saturn_PSRAM_Stress_Slow.rbf
+          sha256sum output_files_stress_slow/Saturn_PSRAM_Stress_Slow.rbf | tee .ci/Saturn_PSRAM_Stress_Slow-rbf.sha256
           {
-            echo '## Saturn_PSRAM Quartus result'
+            echo '## Saturn_PSRAM_Stress_Slow Quartus result'
             echo
             echo '```text'
             grep -hE 'Quartus Prime Full Compilation|Total logic elements|Total registers|Total block memory bits|Total pins|Slack|Timing requirements' \
-              output_files_psram/Saturn_PSRAM.flow.rpt \
-              output_files_psram/Saturn_PSRAM.fit.rpt \
-              output_files_psram/Saturn_PSRAM.sta.rpt 2>/dev/null | tail -n 80 || true
+              output_files_stress_slow/Saturn_PSRAM_Stress_Slow.flow.rpt \
+              output_files_stress_slow/Saturn_PSRAM_Stress_Slow.fit.rpt \
+              output_files_stress_slow/Saturn_PSRAM_Stress_Slow.sta.rpt 2>/dev/null | tail -n 80 || true
             echo
-            cat .ci/Saturn_PSRAM-rbf.sha256
+            cat .ci/Saturn_PSRAM_Stress_Slow-rbf.sha256
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -79,15 +66,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Saturn_PSRAM-${{ github.run_number }}
+          name: Saturn_PSRAM_Stress_Slow-${{ github.run_number }}
           if-no-files-found: warn
           retention-days: 30
           path: |
-            .ci/Saturn_PSRAM-build.log
-            .ci/Saturn_PSRAM-rbf.sha256
-            output_files_psram/Saturn_PSRAM.rbf
-            output_files_psram/Saturn_PSRAM.flow.rpt
-            output_files_psram/Saturn_PSRAM.map.rpt
-            output_files_psram/Saturn_PSRAM.fit.rpt
-            output_files_psram/Saturn_PSRAM.sta.rpt
-            output_files_psram/Saturn_PSRAM.asm.rpt
+            .ci/Saturn_PSRAM_Stress_Slow-build.log
+            .ci/Saturn_PSRAM_Stress_Slow-rbf.sha256
+            output_files_stress_slow/Saturn_PSRAM_Stress_Slow.rbf
+            output_files_stress_slow/Saturn_PSRAM_Stress_Slow.flow.rpt
+            output_files_stress_slow/Saturn_PSRAM_Stress_Slow.map.rpt
+            output_files_stress_slow/Saturn_PSRAM_Stress_Slow.fit.rpt
+            output_files_stress_slow/Saturn_PSRAM_Stress_Slow.sta.rpt
+            output_files_stress_slow/Saturn_PSRAM_Stress_Slow.asm.rpt

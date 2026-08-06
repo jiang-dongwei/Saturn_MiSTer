@@ -25,12 +25,24 @@ wire psram_clk;
 wire psram_ce_n;
 tri [3:0] psram_dq;
 
+`ifdef PSRAM_STRESS_TB_4B
+localparam integer TB_READ_LINE_BYTES = 4;
+`else
+localparam integer TB_READ_LINE_BYTES = 16;
+`endif
+`ifdef PSRAM_STRESS_TB_SLOW
+localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+`else
+localparam [5:0] TB_HALF_DIVIDER = 6'd2;
+`endif
+
 psram_stress_core
 #(
 	.WORD_COUNT(16),
 	.POWERUP_CYCLES(2),
-	.HALF_DIVIDER(2),
-	.GUARD_CYCLES(2)
+	.HALF_DIVIDER(TB_HALF_DIVIDER),
+	.GUARD_CYCLES(2),
+	.READ_LINE_BYTES(TB_READ_LINE_BYTES)
 )
 dut
 (

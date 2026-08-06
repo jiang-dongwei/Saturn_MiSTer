@@ -1,8 +1,8 @@
-# Standalone MiSTer stress test for the Saturn RAMH QPI PSRAM backend.
+# Diagnostic variant B: original 16-byte RAMH line read at 8.47 MHz QPI.
 set_global_assignment -name TOP_LEVEL_ENTITY sys_top
 set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"
 set_global_assignment -name GENERATE_RBF_FILE ON
-set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files_stress
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files_stress_slow
 set_global_assignment -name NUM_PARALLEL_PROCESSORS 1
 set_global_assignment -name SAVE_DISK_SPACE OFF
 set_global_assignment -name SMART_RECOMPILE ON
@@ -22,14 +22,13 @@ set_global_assignment -name VERILOG_MACRO "MISTER_PSRAM=1"
 set_global_assignment -name VERILOG_MACRO "MISTER_PSRAM_DIAG=1"
 set_global_assignment -name VERILOG_MACRO "MISTER_DOWNSCALE_NN=1"
 set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ALSA=1"
+set_global_assignment -name VERILOG_MACRO "PSRAM_STRESS_SLOW=1"
 
-# Remove the six adapter pins from legacy functions before applying the
-# explicit 3SQR mapping.
 source sys/sys_psram.tcl
 source sys/sys.tcl
 source sys/sys_analog.tcl
 source files_psram_stress.qip
-set_global_assignment -name SDC_FILE Saturn_PSRAM_Stress.sdc
+set_global_assignment -name SDC_FILE Saturn_PSRAM_Stress_Slow.sdc
 
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to PSRAM_CE_N
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to PSRAM_DQ[*]

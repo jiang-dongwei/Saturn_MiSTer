@@ -8,7 +8,8 @@ module psram_stress_core
 	parameter integer WORD_COUNT     = 262144,
 	parameter integer POWERUP_CYCLES = 20000,
 	parameter [5:0]   HALF_DIVIDER   = 6'd2,
-	parameter [7:0]   GUARD_CYCLES   = 8'd8
+	parameter [7:0]   GUARD_CYCLES   = 8'd8,
+	parameter integer READ_LINE_BYTES = 16
 )
 (
 	input              clk,
@@ -47,7 +48,8 @@ ramh_psram_adapter
 #(
 	.POWERUP_CYCLES(POWERUP_CYCLES),
 	.HALF_DIVIDER(HALF_DIVIDER),
-	.GUARD_CYCLES(GUARD_CYCLES)
+	.GUARD_CYCLES(GUARD_CYCLES),
+	.READ_LINE_BYTES(READ_LINE_BYTES)
 )
 adapter
 (

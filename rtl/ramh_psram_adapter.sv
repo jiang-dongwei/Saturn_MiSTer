@@ -3,13 +3,16 @@
 // Saturn RAMH to QPI PSRAM adapter.
 //
 // The CPU-side interface intentionally mirrors the logical side of sdram2.
-// RAMH addresses are 32-bit word addresses. Reads fill one aligned 16-byte
-// line; writes go directly to PSRAM and invalidate a matching line.
+// RAMH addresses are 32-bit word addresses. By default reads fill one aligned
+// 16-byte line; READ_LINE_BYTES=4 is a diagnostic mode which fetches only the
+// requested 32-bit word. Writes go directly to PSRAM and invalidate a matching
+// cached entry.
 module ramh_psram_adapter
 #(
 	parameter integer POWERUP_CYCLES = 20000,
 	parameter [5:0]   HALF_DIVIDER   = 6'd2,
-	parameter [7:0]   GUARD_CYCLES   = 8'd8
+	parameter [7:0]   GUARD_CYCLES   = 8'd8,
+	parameter integer READ_LINE_BYTES = 16
 )
 (
 	input              clk,
@@ -58,13 +61,16 @@ reg [31:0] pending_write_data;
 reg  [3:0] pending_write_mask;
 
 reg         line_valid;
-reg [15:0] line_tag;
+reg [17:0] line_tag;
 reg [127:0] line_data;
 
 reg read_armed;
 reg write_armed;
 
-wire cache_match = line_valid && (line_tag == addr[19:4]);
+wire diagnostic_word_read = (READ_LINE_BYTES == 4);
+wire [17:0] current_line_tag = diagnostic_word_read ?
+	                            addr : {addr[19:4], 2'b00};
+wire cache_match = line_valid && (line_tag == current_line_tag);
 wire pending_cpu_read  = rd && read_armed && !cache_match;
 wire pending_cpu_write = (|wr) && write_armed;
 
@@ -76,12 +82,15 @@ assign busy = reset || !qpi_init_done || qpi_init_error || adapter_error ||
 always @* begin
 	dout = 32'd0;
 	if (cache_match) begin
-		case (addr[3:2])
-			2'd0: dout = line_data[127:96];
-			2'd1: dout = line_data[ 95:64];
-			2'd2: dout = line_data[ 63:32];
-			default: dout = line_data[31:0];
-		endcase
+		if (diagnostic_word_read) dout = line_data[31:0];
+		else begin
+			case (addr[3:2])
+				2'd0: dout = line_data[127:96];
+				2'd1: dout = line_data[ 95:64];
+				2'd2: dout = line_data[ 63:32];
+				default: dout = line_data[31:0];
+			endcase
+		end
 	end
 end
 
@@ -220,7 +229,7 @@ always @(posedge clk) begin
 		pending_write_data        <= 32'd0;
 		pending_write_mask        <= 4'd0;
 		line_valid                <= 1'b0;
-		line_tag                  <= 16'd0;
+		line_tag                  <= 18'd0;
 		line_data                 <= 128'd0;
 		read_armed                <= 1'b1;
 		write_armed               <= 1'b1;
@@ -243,7 +252,7 @@ always @(posedge clk) begin
 							pending_addr       <= addr;
 							pending_write_data <= din;
 							pending_write_mask <= wr;
-							if (line_valid && (line_tag == addr[19:4]))
+							if (line_valid && (line_tag == current_line_tag))
 								line_valid <= 1'b0;
 							state <= A_WRITE_REQ;
 						end
@@ -260,10 +269,10 @@ always @(posedge clk) begin
 				A_READ_REQ: begin
 					if (engine_request_ready) begin
 						engine_request_write      <= 1'b0;
-						engine_request_address    <= {4'd0,
-						                              pending_addr[19:4],
-						                              4'd0};
-						engine_request_bytes      <= 5'd16;
+						engine_request_address    <= diagnostic_word_read ?
+						                              {4'd0, pending_addr, 2'd0} :
+						                              {4'd0, pending_addr[19:4], 4'd0};
+						engine_request_bytes      <= READ_LINE_BYTES;
 						engine_request_write_data <= 32'd0;
 						engine_request_valid      <= 1'b1;
 						state                     <= A_READ_WAIT;
@@ -278,7 +287,9 @@ always @(posedge clk) begin
 						end
 						else begin
 							line_data  <= engine_request_read_data;
-							line_tag   <= pending_addr[19:4];
+							line_tag   <= diagnostic_word_read ?
+							              pending_addr :
+							              {pending_addr[19:4], 2'b00};
 							line_valid <= 1'b1;
 							state      <= A_IDLE;
 						end

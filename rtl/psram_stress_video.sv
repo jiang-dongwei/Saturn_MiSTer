@@ -1,5 +1,8 @@
 // 320x240 status display for the standalone Saturn RAMH/PSRAM stress core.
 module psram_stress_video
+#(
+	parameter [1:0] MODE_CODE = 2'd0
+)
 (
 	input             clk,
 	input       [1:0] result_code,
@@ -58,7 +61,9 @@ localparam [383:0] TXT_EXPECTED = {"EXPECTED:", {39{8'h20}}};
 localparam [383:0] TXT_ACTUAL = {"ACTUAL:", {41{8'h20}}};
 localparam [383:0] TXT_XOR = {"XOR:", {44{8'h20}}};
 localparam [383:0] TXT_MASK = {"BYTE MASK:", {38{8'h20}}};
-localparam [383:0] TXT_HELP1 = {"QPI 16.93 MHZ RAMH 1 MIB", {24{8'h20}}};
+localparam [383:0] TXT_HELP1 = {"QPI 16.93 MHZ 16B LINE", {26{8'h20}}};
+localparam [383:0] TXT_HELP1_4B = {"QPI 16.93 MHZ 4B READ", {27{8'h20}}};
+localparam [383:0] TXT_HELP1_SLOW = {"QPI 8.47 MHZ 16B LINE", {27{8'h20}}};
 localparam [383:0] TXT_HELP2 = {"CONTINUOUS TEST; FIRST ERROR FREEZES", {12{8'h20}}};
 localparam [383:0] TXT_HELP3 = {"LED7 FAIL LED6 LOOP PASS", {24{8'h20}}};
 
@@ -184,7 +189,13 @@ function [7:0] screen_char;
 				value = fixed_char(TXT_MASK, column);
 				if (column == 12) value = hex_char(byte_mask);
 			end
-			26: value = fixed_char(TXT_HELP1, column);
+			26: begin
+				case (MODE_CODE)
+					2'd1: value = fixed_char(TXT_HELP1_4B, column);
+					2'd2: value = fixed_char(TXT_HELP1_SLOW, column);
+					default: value = fixed_char(TXT_HELP1, column);
+				endcase
+			end
 			27: value = fixed_char(TXT_HELP2, column);
 			28: value = fixed_char(TXT_HELP3, column);
 			default: begin end

@@ -169,7 +169,26 @@ wire init_error;
 wire stress_failed;
 wire stress_activity;
 
-psram_stress_core stress
+`ifdef PSRAM_STRESS_4B
+localparam [5:0] STRESS_HALF_DIVIDER = 6'd2;
+localparam integer STRESS_READ_LINE_BYTES = 4;
+localparam [1:0] STRESS_MODE_CODE = 2'd1;
+`elsif PSRAM_STRESS_SLOW
+localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
+localparam integer STRESS_READ_LINE_BYTES = 16;
+localparam [1:0] STRESS_MODE_CODE = 2'd2;
+`else
+localparam [5:0] STRESS_HALF_DIVIDER = 6'd2;
+localparam integer STRESS_READ_LINE_BYTES = 16;
+localparam [1:0] STRESS_MODE_CODE = 2'd0;
+`endif
+
+psram_stress_core
+#(
+	.HALF_DIVIDER(STRESS_HALF_DIVIDER),
+	.READ_LINE_BYTES(STRESS_READ_LINE_BYTES)
+)
+stress
 (
 	.clk(clk_67),
 	.reset(stress_reset),
@@ -193,7 +212,11 @@ psram_stress_core stress
 	.PSRAM_DQ(PSRAM_DQ)
 );
 
-psram_stress_video video
+psram_stress_video
+#(
+	.MODE_CODE(STRESS_MODE_CODE)
+)
+video
 (
 	.clk(clk_33),
 	.result_code(result_code),
