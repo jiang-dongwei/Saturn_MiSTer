@@ -2,7 +2,8 @@
 module psram_stress_video
 #(
 	parameter [1:0] MODE_CODE = 2'd0,
-	parameter integer CONFIRM_VIEW = 0
+	parameter integer CONFIRM_VIEW = 0,
+	parameter integer DWRITE_VIEW = 0
 )
 (
 	input             clk,
@@ -72,6 +73,7 @@ localparam [383:0] TXT_HELP1_4B = {"QPI 16.93 MHZ 4B READ", {27{8'h20}}};
 localparam [383:0] TXT_HELP1_SLOW = {"QPI 8.47 MHZ 16B LINE", {27{8'h20}}};
 localparam [383:0] TXT_HELP1_SAFE = {"QPI 8.47 MHZ 4B READ", {28{8'h20}}};
 localparam [383:0] TXT_HELP1_CONFIRM = {"QPI 8.47 MHZ 4B REREAD", {26{8'h20}}};
+localparam [383:0] TXT_HELP1_DWRITE = {"QPI 8.47 MHZ 4B DOUBLE WRITE", {20{8'h20}}};
 localparam [383:0] TXT_HELP2 = {"CONTINUOUS TEST; FIRST ERROR FREEZES", {12{8'h20}}};
 localparam [383:0] TXT_HELP3 = {"LED7 FAIL LED6 LOOP PASS", {24{8'h20}}};
 
@@ -219,7 +221,9 @@ function [7:0] screen_char;
 				end
 			end
 			26: begin
-				if (CONFIRM_VIEW != 0)
+				if (DWRITE_VIEW != 0)
+					value = fixed_char(TXT_HELP1_DWRITE, column);
+				else if (CONFIRM_VIEW != 0)
 					value = fixed_char(TXT_HELP1_CONFIRM, column);
 				else begin
 					case (MODE_CODE)

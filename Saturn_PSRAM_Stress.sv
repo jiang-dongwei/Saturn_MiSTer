@@ -171,38 +171,50 @@ wire init_error;
 wire stress_failed;
 wire stress_activity;
 
-`ifdef PSRAM_STRESS_CONFIRM
+`ifdef PSRAM_STRESS_DWRITE
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
 localparam integer STRESS_READ_LINE_BYTES = 4;
 localparam [1:0] STRESS_MODE_CODE = 2'd3;
 localparam integer STRESS_CONFIRM_ON_MISMATCH = 1;
+localparam integer STRESS_DUPLICATE_WRITES = 1;
+`elsif PSRAM_STRESS_CONFIRM
+localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
+localparam integer STRESS_READ_LINE_BYTES = 4;
+localparam [1:0] STRESS_MODE_CODE = 2'd3;
+localparam integer STRESS_CONFIRM_ON_MISMATCH = 1;
+localparam integer STRESS_DUPLICATE_WRITES = 0;
 `elsif PSRAM_STRESS_SAFE
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
 localparam integer STRESS_READ_LINE_BYTES = 4;
 localparam [1:0] STRESS_MODE_CODE = 2'd3;
 localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
+localparam integer STRESS_DUPLICATE_WRITES = 0;
 `elsif PSRAM_STRESS_4B
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd2;
 localparam integer STRESS_READ_LINE_BYTES = 4;
 localparam [1:0] STRESS_MODE_CODE = 2'd1;
 localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
+localparam integer STRESS_DUPLICATE_WRITES = 0;
 `elsif PSRAM_STRESS_SLOW
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
 localparam integer STRESS_READ_LINE_BYTES = 16;
 localparam [1:0] STRESS_MODE_CODE = 2'd2;
 localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
+localparam integer STRESS_DUPLICATE_WRITES = 0;
 `else
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd2;
 localparam integer STRESS_READ_LINE_BYTES = 16;
 localparam [1:0] STRESS_MODE_CODE = 2'd0;
 localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
+localparam integer STRESS_DUPLICATE_WRITES = 0;
 `endif
 
 psram_stress_core
 #(
 	.HALF_DIVIDER(STRESS_HALF_DIVIDER),
 	.READ_LINE_BYTES(STRESS_READ_LINE_BYTES),
-	.CONFIRM_ON_MISMATCH(STRESS_CONFIRM_ON_MISMATCH)
+	.CONFIRM_ON_MISMATCH(STRESS_CONFIRM_ON_MISMATCH),
+	.DUPLICATE_WRITES(STRESS_DUPLICATE_WRITES)
 )
 stress
 (
@@ -233,7 +245,8 @@ stress
 psram_stress_video
 #(
 	.MODE_CODE(STRESS_MODE_CODE),
-	.CONFIRM_VIEW(STRESS_CONFIRM_ON_MISMATCH)
+	.CONFIRM_VIEW(STRESS_CONFIRM_ON_MISMATCH),
+	.DWRITE_VIEW(STRESS_DUPLICATE_WRITES)
 )
 video
 (

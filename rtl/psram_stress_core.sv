@@ -10,7 +10,8 @@ module psram_stress_core
 	parameter [5:0]   HALF_DIVIDER   = 6'd2,
 	parameter [7:0]   GUARD_CYCLES   = 8'd8,
 	parameter integer READ_LINE_BYTES = 16,
-	parameter integer CONFIRM_ON_MISMATCH = 0
+	parameter integer CONFIRM_ON_MISMATCH = 0,
+	parameter integer DUPLICATE_WRITES = 0
 )
 (
 	input              clk,
@@ -78,7 +79,8 @@ adapter
 ramh_psram_stress
 #(
 	.WORD_COUNT(WORD_COUNT),
-	.CONFIRM_ON_MISMATCH(CONFIRM_ON_MISMATCH)
+	.CONFIRM_ON_MISMATCH(CONFIRM_ON_MISMATCH),
+	.DUPLICATE_WRITES(DUPLICATE_WRITES)
 )
 tester
 (
@@ -117,7 +119,8 @@ endmodule
 module ramh_psram_stress
 #(
 	parameter integer WORD_COUNT = 262144,
-	parameter integer CONFIRM_ON_MISMATCH = 0
+	parameter integer CONFIRM_ON_MISMATCH = 0,
+	parameter integer DUPLICATE_WRITES = 0
 )
 (
 	input              clk,
@@ -182,6 +185,7 @@ reg [4:0] hstate;
 reg [1:0] txn_state;
 reg       txn_start;
 reg       txn_done;
+reg       write_repeated;
 reg       cmd_read;
 reg [17:0] cmd_address;
 reg [31:0] cmd_data;
@@ -340,6 +344,7 @@ always @(posedge clk) begin
 	if (reset) begin
 		txn_state <= T_IDLE;
 		txn_done  <= 1'b0;
+		write_repeated <= 1'b0;
 		ramh_addr <= 18'd0;
 		ramh_din  <= 32'd0;
 		ramh_wr   <= 4'd0;
@@ -357,6 +362,7 @@ always @(posedge clk) begin
 					ramh_wr   <= cmd_read ? 4'd0 : cmd_mask;
 					ramh_rd   <= cmd_read;
 					txn_state <= T_PULSE;
+					write_repeated <= 1'b0;
 				end
 			end
 			T_PULSE: begin
@@ -366,8 +372,19 @@ always @(posedge clk) begin
 			end
 			default: begin
 				if (!ramh_busy) begin
-					txn_done  <= 1'b1;
-					txn_state <= T_IDLE;
+					if ((DUPLICATE_WRITES != 0) && !cmd_read &&
+					    !write_repeated) begin
+						ramh_addr <= cmd_address;
+						ramh_din  <= cmd_data;
+						ramh_wr   <= cmd_mask;
+						ramh_rd   <= 1'b0;
+						write_repeated <= 1'b1;
+						txn_state <= T_PULSE;
+					end
+					else begin
+						txn_done  <= 1'b1;
+						txn_state <= T_IDLE;
+					end
 				end
 			end
 		endcase

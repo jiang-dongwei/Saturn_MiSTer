@@ -32,6 +32,8 @@ module psram_qpi_engine
 
 reg [7:0] memory [0:65535];
 integer accepted_count = 0;
+integer write_accepted_count = 0;
+integer dropped_write_count = 0;
 
 reg [31:0] power_count;
 reg        active;
@@ -48,6 +50,7 @@ integer byte_index;
 // existing S2 regressions unchanged. The stress-core testbench can set it
 // hierarchically to emulate an address-line/read-decoder fault.
 reg [23:0] read_address_xor = 24'd0;
+reg        drop_next_write = 1'b0;
 
 assign request_ready = init_done && !active;
 assign busy = !init_done || active;
@@ -87,6 +90,8 @@ always @(posedge clk) begin
 	else if (!active) begin
 		if (request_valid) begin
 			accepted_count <= accepted_count + 1;
+			if (request_write)
+				write_accepted_count <= write_accepted_count + 1;
 			if ((request_bytes == 0) ||
 			    (request_write ? (request_bytes > 4) :
 			                     (request_bytes > 16))) begin
@@ -109,10 +114,16 @@ always @(posedge clk) begin
 		latency_count <= latency_count - 1'b1;
 	else begin
 		if (saved_write) begin
-			for (byte_index = 0; byte_index < saved_bytes;
-			     byte_index = byte_index + 1) begin
-				memory[(saved_address[15:0] + byte_index) & 16'hFFFF] <=
-					saved_write_data >> ((saved_bytes - 1 - byte_index) * 8);
+			if (drop_next_write) begin
+				drop_next_write <= 1'b0;
+				dropped_write_count <= dropped_write_count + 1;
+			end
+			else begin
+				for (byte_index = 0; byte_index < saved_bytes;
+				     byte_index = byte_index + 1) begin
+					memory[(saved_address[15:0] + byte_index) & 16'hFFFF] <=
+						saved_write_data >> ((saved_bytes - 1 - byte_index) * 8);
+				end
 			end
 		end
 		else begin

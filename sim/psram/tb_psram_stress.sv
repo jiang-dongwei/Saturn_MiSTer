@@ -27,7 +27,9 @@ wire psram_clk;
 wire psram_ce_n;
 tri [3:0] psram_dq;
 
-`ifdef PSRAM_STRESS_TB_CONFIRM
+`ifdef PSRAM_STRESS_TB_DWRITE
+localparam integer TB_READ_LINE_BYTES = 4;
+`elsif PSRAM_STRESS_TB_CONFIRM
 localparam integer TB_READ_LINE_BYTES = 4;
 `elsif PSRAM_STRESS_TB_SAFE
 localparam integer TB_READ_LINE_BYTES = 4;
@@ -36,18 +38,26 @@ localparam integer TB_READ_LINE_BYTES = 4;
 `else
 localparam integer TB_READ_LINE_BYTES = 16;
 `endif
-`ifdef PSRAM_STRESS_TB_CONFIRM
+`ifdef PSRAM_STRESS_TB_DWRITE
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
 localparam integer TB_CONFIRM_ON_MISMATCH = 1;
+localparam integer TB_DUPLICATE_WRITES = 1;
+`elsif PSRAM_STRESS_TB_CONFIRM
+localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam integer TB_CONFIRM_ON_MISMATCH = 1;
+localparam integer TB_DUPLICATE_WRITES = 0;
 `elsif PSRAM_STRESS_TB_SAFE
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
+localparam integer TB_DUPLICATE_WRITES = 0;
 `elsif PSRAM_STRESS_TB_SLOW
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
+localparam integer TB_DUPLICATE_WRITES = 0;
 `else
 localparam [5:0] TB_HALF_DIVIDER = 6'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
+localparam integer TB_DUPLICATE_WRITES = 0;
 `endif
 
 psram_stress_core
@@ -57,7 +67,8 @@ psram_stress_core
 	.HALF_DIVIDER(TB_HALF_DIVIDER),
 	.GUARD_CYCLES(1),
 	.READ_LINE_BYTES(TB_READ_LINE_BYTES),
-	.CONFIRM_ON_MISMATCH(TB_CONFIRM_ON_MISMATCH)
+	.CONFIRM_ON_MISMATCH(TB_CONFIRM_ON_MISMATCH),
+	.DUPLICATE_WRITES(TB_DUPLICATE_WRITES)
 )
 dut
 (
@@ -106,10 +117,38 @@ endtask
 
 initial begin
 	integer confirm_start_count;
+	integer write_start_count;
 	repeat (6) @(posedge clk);
 	reset <= 1'b0;
 
-	if ($test$plusargs("CONFIRM_RECOVER")) begin
+	if ($test$plusargs("DWRITE_DROP")) begin
+		dut.adapter.engine.memory[32] = 8'hFF;
+		dut.adapter.engine.memory[33] = 8'hFF;
+		dut.adapter.engine.memory[34] = 8'hFF;
+		dut.adapter.engine.memory[35] = 8'hFF;
+		wait ((dut.tester.hstate == 5'd1) &&
+		      (dut.tester.pattern_id == 0) &&
+		      (dut.tester.word_index == 18'd8));
+		write_start_count = dut.adapter.engine.write_accepted_count;
+		dut.adapter.engine.drop_next_write = 1'b1;
+		wait ((dut.tester.hstate == 5'd1) &&
+		      (dut.tester.word_index == 18'd9));
+		#1;
+		if ((dut.adapter.engine.write_accepted_count - write_start_count) != 2) begin
+			$display("FAIL: expected two physical writes, got %0d",
+			         dut.adapter.engine.write_accepted_count - write_start_count);
+			$fatal(1);
+		end
+		wait (failed || ((phase_code == 8'h20) &&
+		                (dut.tester.word_index > 18'd8)));
+		if (failed || (dut.adapter.engine.dropped_write_count != 1)) begin
+			$display("FAIL: duplicated write did not recover dropped first write");
+			$fatal(1);
+		end
+		$display("PASS: second physical write recovered one dropped first write");
+		$finish;
+	end
+	else if ($test$plusargs("CONFIRM_RECOVER")) begin
 		wait ((phase_code == 8'h20) && (pattern_id == 0));
 		dut.adapter.engine.memory[32] =
 			dut.adapter.engine.memory[32] ^ 8'h01;
