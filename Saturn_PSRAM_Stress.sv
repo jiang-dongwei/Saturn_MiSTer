@@ -169,7 +169,11 @@ wire init_error;
 wire stress_failed;
 wire stress_activity;
 
-`ifdef PSRAM_STRESS_4B
+`ifdef PSRAM_STRESS_SAFE
+localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
+localparam integer STRESS_READ_LINE_BYTES = 4;
+localparam [1:0] STRESS_MODE_CODE = 2'd3;
+`elsif PSRAM_STRESS_4B
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd2;
 localparam integer STRESS_READ_LINE_BYTES = 4;
 localparam [1:0] STRESS_MODE_CODE = 2'd1;

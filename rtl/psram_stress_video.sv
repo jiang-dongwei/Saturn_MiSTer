@@ -64,6 +64,7 @@ localparam [383:0] TXT_MASK = {"BYTE MASK:", {38{8'h20}}};
 localparam [383:0] TXT_HELP1 = {"QPI 16.93 MHZ 16B LINE", {26{8'h20}}};
 localparam [383:0] TXT_HELP1_4B = {"QPI 16.93 MHZ 4B READ", {27{8'h20}}};
 localparam [383:0] TXT_HELP1_SLOW = {"QPI 8.47 MHZ 16B LINE", {27{8'h20}}};
+localparam [383:0] TXT_HELP1_SAFE = {"QPI 8.47 MHZ 4B READ", {28{8'h20}}};
 localparam [383:0] TXT_HELP2 = {"CONTINUOUS TEST; FIRST ERROR FREEZES", {12{8'h20}}};
 localparam [383:0] TXT_HELP3 = {"LED7 FAIL LED6 LOOP PASS", {24{8'h20}}};
 
@@ -193,6 +194,7 @@ function [7:0] screen_char;
 				case (MODE_CODE)
 					2'd1: value = fixed_char(TXT_HELP1_4B, column);
 					2'd2: value = fixed_char(TXT_HELP1_SLOW, column);
+					2'd3: value = fixed_char(TXT_HELP1_SAFE, column);
 					default: value = fixed_char(TXT_HELP1, column);
 				endcase
 			end
