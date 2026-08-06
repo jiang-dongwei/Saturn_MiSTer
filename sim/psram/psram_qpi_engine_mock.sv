@@ -44,6 +44,11 @@ reg [31:0] saved_write_data;
 reg [127:0] read_temp;
 integer byte_index;
 
+// Testbench-only fault hook. It defaults to zero and therefore leaves all
+// existing S2 regressions unchanged. The stress-core testbench can set it
+// hierarchically to emulate an address-line/read-decoder fault.
+reg [23:0] read_address_xor = 24'd0;
+
 assign request_ready = init_done && !active;
 assign busy = !init_done || active;
 assign PSRAM_CLK = 1'b0;
@@ -115,7 +120,8 @@ always @(posedge clk) begin
 			for (byte_index = 0; byte_index < saved_bytes;
 			     byte_index = byte_index + 1) begin
 				read_temp = (read_temp << 8) |
-				            memory[(saved_address[15:0] + byte_index) &
+				            memory[((saved_address[15:0] ^
+				                     read_address_xor[15:0]) + byte_index) &
 				                   16'hFFFF];
 			end
 			request_read_data <= read_temp;
