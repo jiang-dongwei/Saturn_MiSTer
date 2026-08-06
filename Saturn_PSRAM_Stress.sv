@@ -162,6 +162,8 @@ wire [23:0] current_address;
 wire [31:0] expected_data;
 wire [31:0] actual_data;
 wire [31:0] xor_data;
+wire [31:0] confirm_data1;
+wire [31:0] confirm_data2;
 wire [3:0] byte_mask;
 wire [15:0] device_id;
 wire init_done;
@@ -169,28 +171,38 @@ wire init_error;
 wire stress_failed;
 wire stress_activity;
 
-`ifdef PSRAM_STRESS_SAFE
+`ifdef PSRAM_STRESS_CONFIRM
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
 localparam integer STRESS_READ_LINE_BYTES = 4;
 localparam [1:0] STRESS_MODE_CODE = 2'd3;
+localparam integer STRESS_CONFIRM_ON_MISMATCH = 1;
+`elsif PSRAM_STRESS_SAFE
+localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
+localparam integer STRESS_READ_LINE_BYTES = 4;
+localparam [1:0] STRESS_MODE_CODE = 2'd3;
+localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
 `elsif PSRAM_STRESS_4B
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd2;
 localparam integer STRESS_READ_LINE_BYTES = 4;
 localparam [1:0] STRESS_MODE_CODE = 2'd1;
+localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
 `elsif PSRAM_STRESS_SLOW
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
 localparam integer STRESS_READ_LINE_BYTES = 16;
 localparam [1:0] STRESS_MODE_CODE = 2'd2;
+localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
 `else
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd2;
 localparam integer STRESS_READ_LINE_BYTES = 16;
 localparam [1:0] STRESS_MODE_CODE = 2'd0;
+localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
 `endif
 
 psram_stress_core
 #(
 	.HALF_DIVIDER(STRESS_HALF_DIVIDER),
-	.READ_LINE_BYTES(STRESS_READ_LINE_BYTES)
+	.READ_LINE_BYTES(STRESS_READ_LINE_BYTES),
+	.CONFIRM_ON_MISMATCH(STRESS_CONFIRM_ON_MISMATCH)
 )
 stress
 (
@@ -205,6 +217,8 @@ stress
 	.expected_data(expected_data),
 	.actual_data(actual_data),
 	.xor_data(xor_data),
+	.confirm_data1(confirm_data1),
+	.confirm_data2(confirm_data2),
 	.byte_mask(byte_mask),
 	.device_id(device_id),
 	.init_done(init_done),
@@ -218,7 +232,8 @@ stress
 
 psram_stress_video
 #(
-	.MODE_CODE(STRESS_MODE_CODE)
+	.MODE_CODE(STRESS_MODE_CODE),
+	.CONFIRM_VIEW(STRESS_CONFIRM_ON_MISMATCH)
 )
 video
 (
@@ -233,6 +248,8 @@ video
 	.expected_data(expected_data),
 	.actual_data(actual_data),
 	.xor_data(xor_data),
+	.confirm_data1(confirm_data1),
+	.confirm_data2(confirm_data2),
 	.byte_mask(byte_mask),
 	.ce_pixel(CE_PIXEL),
 	.red(VGA_R),

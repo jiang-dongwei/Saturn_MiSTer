@@ -15,6 +15,8 @@ wire [23:0] current_address;
 wire [31:0] expected_data;
 wire [31:0] actual_data;
 wire [31:0] xor_data;
+wire [31:0] confirm_data1;
+wire [31:0] confirm_data2;
 wire [3:0] byte_mask;
 wire [15:0] device_id;
 wire init_done;
@@ -25,15 +27,27 @@ wire psram_clk;
 wire psram_ce_n;
 tri [3:0] psram_dq;
 
-`ifdef PSRAM_STRESS_TB_4B
+`ifdef PSRAM_STRESS_TB_CONFIRM
+localparam integer TB_READ_LINE_BYTES = 4;
+`elsif PSRAM_STRESS_TB_SAFE
+localparam integer TB_READ_LINE_BYTES = 4;
+`elsif PSRAM_STRESS_TB_4B
 localparam integer TB_READ_LINE_BYTES = 4;
 `else
 localparam integer TB_READ_LINE_BYTES = 16;
 `endif
-`ifdef PSRAM_STRESS_TB_SLOW
+`ifdef PSRAM_STRESS_TB_CONFIRM
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam integer TB_CONFIRM_ON_MISMATCH = 1;
+`elsif PSRAM_STRESS_TB_SAFE
+localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam integer TB_CONFIRM_ON_MISMATCH = 0;
+`elsif PSRAM_STRESS_TB_SLOW
+localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 `else
 localparam [5:0] TB_HALF_DIVIDER = 6'd2;
+localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 `endif
 
 psram_stress_core
@@ -42,7 +56,8 @@ psram_stress_core
 	.POWERUP_CYCLES(2),
 	.HALF_DIVIDER(TB_HALF_DIVIDER),
 	.GUARD_CYCLES(1),
-	.READ_LINE_BYTES(TB_READ_LINE_BYTES)
+	.READ_LINE_BYTES(TB_READ_LINE_BYTES),
+	.CONFIRM_ON_MISMATCH(TB_CONFIRM_ON_MISMATCH)
 )
 dut
 (
@@ -57,6 +72,8 @@ dut
 	.expected_data(expected_data),
 	.actual_data(actual_data),
 	.xor_data(xor_data),
+	.confirm_data1(confirm_data1),
+	.confirm_data2(confirm_data2),
 	.byte_mask(byte_mask),
 	.device_id(device_id),
 	.init_done(init_done),
@@ -88,10 +105,51 @@ task wait_for_failure;
 endtask
 
 initial begin
+	integer confirm_start_count;
 	repeat (6) @(posedge clk);
 	reset <= 1'b0;
 
-	if ($test$plusargs("FAULT_DATA")) begin
+	if ($test$plusargs("CONFIRM_RECOVER")) begin
+		wait ((phase_code == 8'h20) && (pattern_id == 0));
+		dut.adapter.engine.memory[32] =
+			dut.adapter.engine.memory[32] ^ 8'h01;
+		wait (dut.tester.hstate == 5'd16);
+		confirm_start_count = dut.adapter.engine.accepted_count;
+		dut.adapter.engine.memory[32] =
+			dut.adapter.engine.memory[32] ^ 8'h01;
+		wait (failed);
+		if ((actual_data == 0) || (confirm_data1 != 0) ||
+		    (confirm_data2 != 0) ||
+		    ((dut.adapter.engine.accepted_count - confirm_start_count) != 4)) begin
+			$display("FAIL: recover confirm R0=%08x R1=%08x R2=%08x requests=%0d",
+			         actual_data, confirm_data1, confirm_data2,
+			         dut.adapter.engine.accepted_count - confirm_start_count);
+			$fatal(1);
+		end
+		$display("PASS: physical rereads recovered R0=%08x R1=%08x R2=%08x",
+		         actual_data, confirm_data1, confirm_data2);
+		$finish;
+	end
+	else if ($test$plusargs("CONFIRM_PERSIST")) begin
+		wait ((phase_code == 8'h20) && (pattern_id == 0));
+		dut.adapter.engine.memory[32] =
+			dut.adapter.engine.memory[32] ^ 8'h01;
+		wait (dut.tester.hstate == 5'd16);
+		confirm_start_count = dut.adapter.engine.accepted_count;
+		wait (failed);
+		if ((actual_data == 0) || (confirm_data1 != actual_data) ||
+		    (confirm_data2 != actual_data) ||
+		    ((dut.adapter.engine.accepted_count - confirm_start_count) != 4)) begin
+			$display("FAIL: persistent confirm R0=%08x R1=%08x R2=%08x requests=%0d",
+			         actual_data, confirm_data1, confirm_data2,
+			         dut.adapter.engine.accepted_count - confirm_start_count);
+			$fatal(1);
+		end
+		$display("PASS: physical rereads persistent R0=%08x R1=%08x R2=%08x",
+		         actual_data, confirm_data1, confirm_data2);
+		$finish;
+	end
+	else if ($test$plusargs("FAULT_DATA")) begin
 		wait ((phase_code == 8'h20) && (pattern_id == 0));
 		dut.adapter.engine.memory[32] =
 			dut.adapter.engine.memory[32] ^ 8'h01;

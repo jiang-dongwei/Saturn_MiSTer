@@ -15,6 +15,8 @@ wire [23:0] current_address;
 wire [31:0] expected_data;
 wire [31:0] actual_data;
 wire [31:0] xor_data;
+wire [31:0] confirm_data1;
+wire [31:0] confirm_data2;
 wire [3:0] byte_mask;
 wire [15:0] device_id;
 wire init_done;
@@ -25,15 +27,27 @@ wire psram_clk;
 wire psram_ce_n;
 tri [3:0] psram_dq;
 
-`ifdef PSRAM_STRESS_TB_4B
+`ifdef PSRAM_STRESS_TB_CONFIRM
+localparam integer TB_READ_LINE_BYTES = 4;
+`elsif PSRAM_STRESS_TB_SAFE
+localparam integer TB_READ_LINE_BYTES = 4;
+`elsif PSRAM_STRESS_TB_4B
 localparam integer TB_READ_LINE_BYTES = 4;
 `else
 localparam integer TB_READ_LINE_BYTES = 16;
 `endif
-`ifdef PSRAM_STRESS_TB_SLOW
+`ifdef PSRAM_STRESS_TB_CONFIRM
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam integer TB_CONFIRM_ON_MISMATCH = 1;
+`elsif PSRAM_STRESS_TB_SAFE
+localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam integer TB_CONFIRM_ON_MISMATCH = 0;
+`elsif PSRAM_STRESS_TB_SLOW
+localparam [5:0] TB_HALF_DIVIDER = 6'd4;
+localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 `else
 localparam [5:0] TB_HALF_DIVIDER = 6'd2;
+localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 `endif
 
 psram_stress_core
@@ -42,7 +56,8 @@ psram_stress_core
 	.POWERUP_CYCLES(2),
 	.HALF_DIVIDER(TB_HALF_DIVIDER),
 	.GUARD_CYCLES(2),
-	.READ_LINE_BYTES(TB_READ_LINE_BYTES)
+	.READ_LINE_BYTES(TB_READ_LINE_BYTES),
+	.CONFIRM_ON_MISMATCH(TB_CONFIRM_ON_MISMATCH)
 )
 dut
 (
@@ -57,6 +72,8 @@ dut
 	.expected_data(expected_data),
 	.actual_data(actual_data),
 	.xor_data(xor_data),
+	.confirm_data1(confirm_data1),
+	.confirm_data2(confirm_data2),
 	.byte_mask(byte_mask),
 	.device_id(device_id),
 	.init_done(init_done),

@@ -9,7 +9,8 @@ module psram_stress_core
 	parameter integer POWERUP_CYCLES = 20000,
 	parameter [5:0]   HALF_DIVIDER   = 6'd2,
 	parameter [7:0]   GUARD_CYCLES   = 8'd8,
-	parameter integer READ_LINE_BYTES = 16
+	parameter integer READ_LINE_BYTES = 16,
+	parameter integer CONFIRM_ON_MISMATCH = 0
 )
 (
 	input              clk,
@@ -23,6 +24,8 @@ module psram_stress_core
 	output      [31:0] expected_data,
 	output      [31:0] actual_data,
 	output      [31:0] xor_data,
+	output      [31:0] confirm_data1,
+	output      [31:0] confirm_data2,
 	output      [3:0]  byte_mask,
 	output      [15:0] device_id,
 	output             init_done,
@@ -74,7 +77,8 @@ adapter
 
 ramh_psram_stress
 #(
-	.WORD_COUNT(WORD_COUNT)
+	.WORD_COUNT(WORD_COUNT),
+	.CONFIRM_ON_MISMATCH(CONFIRM_ON_MISMATCH)
 )
 tester
 (
@@ -100,6 +104,8 @@ tester
 	.expected_data(expected_data),
 	.actual_data(actual_data),
 	.xor_data(xor_data),
+	.confirm_data1(confirm_data1),
+	.confirm_data2(confirm_data2),
 	.byte_mask(byte_mask),
 	.failed(failed),
 	.activity(activity)
@@ -110,7 +116,8 @@ endmodule
 
 module ramh_psram_stress
 #(
-	parameter integer WORD_COUNT = 262144
+	parameter integer WORD_COUNT = 262144,
+	parameter integer CONFIRM_ON_MISMATCH = 0
 )
 (
 	input              clk,
@@ -135,6 +142,8 @@ module ramh_psram_stress
 	output reg [31:0]  expected_data,
 	output reg [31:0]  actual_data,
 	output reg [31:0]  xor_data,
+	output reg [31:0]  confirm_data1,
+	output reg [31:0]  confirm_data2,
 	output reg  [3:0]  byte_mask,
 	output reg         failed,
 	output             activity
@@ -160,6 +169,10 @@ localparam [4:0] H_BYTE_READ_W     = 5'd12;
 localparam [4:0] H_CACHE           = 5'd13;
 localparam [4:0] H_CACHE_W         = 5'd14;
 localparam [4:0] H_FAILED          = 5'd15;
+localparam [4:0] H_CONFIRM_EVICT   = 5'd16;
+localparam [4:0] H_CONFIRM_EVICT_W = 5'd17;
+localparam [4:0] H_CONFIRM_READ    = 5'd18;
+localparam [4:0] H_CONFIRM_READ_W  = 5'd19;
 
 localparam [1:0] T_IDLE  = 2'd0;
 localparam [1:0] T_PULSE = 2'd1;
@@ -177,6 +190,8 @@ reg [17:0] word_index;
 reg  [3:0] byte_mask_index;
 reg  [4:0] cache_step;
 reg  [7:0] failure_phase;
+reg [17:0] failure_word_address;
+reg        confirm_index;
 
 wire txn_ready = (txn_state == T_IDLE);
 assign ramh_burst = 1'b0;
@@ -374,12 +389,16 @@ always @(posedge clk) begin
 		byte_mask_index <= 4'd1;
 		cache_step      <= 5'd0;
 		failure_phase   <= 8'd0;
+		failure_word_address <= 18'd0;
+		confirm_index   <= 1'b0;
 		loop_count      <= 32'd0;
 		operation_count <= 32'd0;
 		current_address <= 24'd0;
 		expected_data   <= 32'd0;
 		actual_data     <= 32'd0;
 		xor_data        <= 32'd0;
+		confirm_data1   <= 32'd0;
+		confirm_data2   <= 32'd0;
 		byte_mask       <= 4'd0;
 		failed          <= 1'b0;
 	end
@@ -441,9 +460,18 @@ always @(posedge clk) begin
 				actual_data <= ramh_dout;
 				xor_data    <= expected_data ^ ramh_dout;
 				if (ramh_dout != expected_data) begin
-					failed        <= 1'b1;
 					failure_phase <= live_phase(hstate);
-					hstate        <= H_FAILED;
+					if (CONFIRM_ON_MISMATCH != 0) begin
+						failure_word_address <= cmd_address;
+						confirm_index <= 1'b0;
+						confirm_data1 <= 32'd0;
+						confirm_data2 <= 32'd0;
+						hstate <= H_CONFIRM_EVICT;
+					end
+					else begin
+						failed <= 1'b1;
+						hstate <= H_FAILED;
+					end
 				end
 				else if (word_index == LAST_WORD) begin
 					word_index <= LAST_WORD;
@@ -472,9 +500,18 @@ always @(posedge clk) begin
 				actual_data <= ramh_dout;
 				xor_data    <= expected_data ^ ramh_dout;
 				if (ramh_dout != expected_data) begin
-					failed        <= 1'b1;
 					failure_phase <= live_phase(hstate);
-					hstate        <= H_FAILED;
+					if (CONFIRM_ON_MISMATCH != 0) begin
+						failure_word_address <= cmd_address;
+						confirm_index <= 1'b0;
+						confirm_data1 <= 32'd0;
+						confirm_data2 <= 32'd0;
+						hstate <= H_CONFIRM_EVICT;
+					end
+					else begin
+						failed <= 1'b1;
+						hstate <= H_FAILED;
+					end
 				end
 				else if (word_index == 0) begin
 					if (pattern_id == 4'd8) begin
@@ -548,9 +585,18 @@ always @(posedge clk) begin
 				actual_data <= ramh_dout;
 				xor_data    <= expected_data ^ ramh_dout;
 				if (ramh_dout != expected_data) begin
-					failed        <= 1'b1;
 					failure_phase <= live_phase(hstate);
-					hstate        <= H_FAILED;
+					if (CONFIRM_ON_MISMATCH != 0) begin
+						failure_word_address <= cmd_address;
+						confirm_index <= 1'b0;
+						confirm_data1 <= 32'd0;
+						confirm_data2 <= 32'd0;
+						hstate <= H_CONFIRM_EVICT;
+					end
+					else begin
+						failed <= 1'b1;
+						hstate <= H_FAILED;
+					end
 				end
 				else if (byte_mask_index == 4'hF) begin
 					cache_step <= 5'd0;
@@ -581,9 +627,18 @@ always @(posedge clk) begin
 					xor_data    <= expected_data ^ ramh_dout;
 				end
 				if (cache_is_read(cache_step) && (ramh_dout != expected_data)) begin
-					failed        <= 1'b1;
 					failure_phase <= live_phase(hstate);
-					hstate        <= H_FAILED;
+					if (CONFIRM_ON_MISMATCH != 0) begin
+						failure_word_address <= cmd_address;
+						confirm_index <= 1'b0;
+						confirm_data1 <= 32'd0;
+						confirm_data2 <= 32'd0;
+						hstate <= H_CONFIRM_EVICT;
+					end
+					else begin
+						failed <= 1'b1;
+						hstate <= H_FAILED;
+					end
 				end
 				else if (cache_step == 5'd13) begin
 					loop_count <= loop_count + 1'b1;
@@ -594,6 +649,46 @@ always @(posedge clk) begin
 				else begin
 					cache_step <= cache_step + 1'b1;
 					hstate <= H_CACHE;
+				end
+			end
+
+			// A same-address reread would hit the adapter line cache. Read a word
+			// in another 16-byte line first, then return to the failed address so
+			// each confirmation sample is a new physical PSRAM transaction.
+			H_CONFIRM_EVICT: if (txn_ready) begin
+				cmd_read    <= 1'b1;
+				cmd_address <= failure_word_address ^ 18'h00004;
+				cmd_data    <= 32'd0;
+				cmd_mask    <= 4'd0;
+				txn_start   <= 1'b1;
+				hstate      <= H_CONFIRM_EVICT_W;
+			end
+
+			H_CONFIRM_EVICT_W: if (txn_done) begin
+				operation_count <= operation_count + 1'b1;
+				hstate <= H_CONFIRM_READ;
+			end
+
+			H_CONFIRM_READ: if (txn_ready) begin
+				cmd_read    <= 1'b1;
+				cmd_address <= failure_word_address;
+				cmd_data    <= 32'd0;
+				cmd_mask    <= 4'd0;
+				txn_start   <= 1'b1;
+				hstate      <= H_CONFIRM_READ_W;
+			end
+
+			H_CONFIRM_READ_W: if (txn_done) begin
+				operation_count <= operation_count + 1'b1;
+				if (!confirm_index) begin
+					confirm_data1 <= ramh_dout;
+					confirm_index <= 1'b1;
+					hstate <= H_CONFIRM_EVICT;
+				end
+				else begin
+					confirm_data2 <= ramh_dout;
+					failed <= 1'b1;
+					hstate <= H_FAILED;
 				end
 			end
 

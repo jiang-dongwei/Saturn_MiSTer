@@ -1,7 +1,8 @@
 // 320x240 status display for the standalone Saturn RAMH/PSRAM stress core.
 module psram_stress_video
 #(
-	parameter [1:0] MODE_CODE = 2'd0
+	parameter [1:0] MODE_CODE = 2'd0,
+	parameter integer CONFIRM_VIEW = 0
 )
 (
 	input             clk,
@@ -15,6 +16,8 @@ module psram_stress_video
 	input      [31:0] expected_data,
 	input      [31:0] actual_data,
 	input      [31:0] xor_data,
+	input      [31:0] confirm_data1,
+	input      [31:0] confirm_data2,
 	input       [3:0] byte_mask,
 
 	output            ce_pixel,
@@ -61,10 +64,14 @@ localparam [383:0] TXT_EXPECTED = {"EXPECTED:", {39{8'h20}}};
 localparam [383:0] TXT_ACTUAL = {"ACTUAL:", {41{8'h20}}};
 localparam [383:0] TXT_XOR = {"XOR:", {44{8'h20}}};
 localparam [383:0] TXT_MASK = {"BYTE MASK:", {38{8'h20}}};
+localparam [383:0] TXT_R0 = {"R0 FIRST:", {39{8'h20}}};
+localparam [383:0] TXT_R1 = {"R1 AGAIN:", {39{8'h20}}};
+localparam [383:0] TXT_R2 = {"R2 AGAIN:", {39{8'h20}}};
 localparam [383:0] TXT_HELP1 = {"QPI 16.93 MHZ 16B LINE", {26{8'h20}}};
 localparam [383:0] TXT_HELP1_4B = {"QPI 16.93 MHZ 4B READ", {27{8'h20}}};
 localparam [383:0] TXT_HELP1_SLOW = {"QPI 8.47 MHZ 16B LINE", {27{8'h20}}};
 localparam [383:0] TXT_HELP1_SAFE = {"QPI 8.47 MHZ 4B READ", {28{8'h20}}};
+localparam [383:0] TXT_HELP1_CONFIRM = {"QPI 8.47 MHZ 4B REREAD", {26{8'h20}}};
 localparam [383:0] TXT_HELP2 = {"CONTINUOUS TEST; FIRST ERROR FREEZES", {12{8'h20}}};
 localparam [383:0] TXT_HELP3 = {"LED7 FAIL LED6 LOOP PASS", {24{8'h20}}};
 
@@ -177,26 +184,51 @@ function [7:0] screen_char;
 					value = hex_char(expected_data[31-((column-11)*4) -: 4]);
 			end
 			20: begin
-				value = fixed_char(TXT_ACTUAL, column);
-				if ((column >= 9) && (column < 17))
-					value = hex_char(actual_data[31-((column-9)*4) -: 4]);
+				if (CONFIRM_VIEW != 0) begin
+					value = fixed_char(TXT_R0, column);
+					if ((column >= 11) && (column < 19))
+						value = hex_char(actual_data[31-((column-11)*4) -: 4]);
+				end
+				else begin
+					value = fixed_char(TXT_ACTUAL, column);
+					if ((column >= 9) && (column < 17))
+						value = hex_char(actual_data[31-((column-9)*4) -: 4]);
+				end
 			end
 			22: begin
-				value = fixed_char(TXT_XOR, column);
-				if ((column >= 6) && (column < 14))
-					value = hex_char(xor_data[31-((column-6)*4) -: 4]);
+				if (CONFIRM_VIEW != 0) begin
+					value = fixed_char(TXT_R1, column);
+					if ((column >= 11) && (column < 19))
+						value = hex_char(confirm_data1[31-((column-11)*4) -: 4]);
+				end
+				else begin
+					value = fixed_char(TXT_XOR, column);
+					if ((column >= 6) && (column < 14))
+						value = hex_char(xor_data[31-((column-6)*4) -: 4]);
+				end
 			end
 			24: begin
-				value = fixed_char(TXT_MASK, column);
-				if (column == 12) value = hex_char(byte_mask);
+				if (CONFIRM_VIEW != 0) begin
+					value = fixed_char(TXT_R2, column);
+					if ((column >= 11) && (column < 19))
+						value = hex_char(confirm_data2[31-((column-11)*4) -: 4]);
+				end
+				else begin
+					value = fixed_char(TXT_MASK, column);
+					if (column == 12) value = hex_char(byte_mask);
+				end
 			end
 			26: begin
-				case (MODE_CODE)
-					2'd1: value = fixed_char(TXT_HELP1_4B, column);
-					2'd2: value = fixed_char(TXT_HELP1_SLOW, column);
-					2'd3: value = fixed_char(TXT_HELP1_SAFE, column);
-					default: value = fixed_char(TXT_HELP1, column);
-				endcase
+				if (CONFIRM_VIEW != 0)
+					value = fixed_char(TXT_HELP1_CONFIRM, column);
+				else begin
+					case (MODE_CODE)
+						2'd1: value = fixed_char(TXT_HELP1_4B, column);
+						2'd2: value = fixed_char(TXT_HELP1_SLOW, column);
+						2'd3: value = fixed_char(TXT_HELP1_SAFE, column);
+						default: value = fixed_char(TXT_HELP1, column);
+					endcase
+				end
 			end
 			27: value = fixed_char(TXT_HELP2, column);
 			28: value = fixed_char(TXT_HELP3, column);
