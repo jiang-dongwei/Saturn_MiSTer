@@ -58,6 +58,7 @@ jobs:
         run: |
           test -s output_files_psram/Saturn_PSRAM.rbf
           grep -q 'PSRAM_RUNTIME_CLK_EXT' output_files_psram/Saturn_PSRAM.sta.rpt
+          grep -q 'PSRAM DQ SAMPLE REGISTERS: 4' .ci/Saturn_PSRAM-timing.log
           if grep -E 'PSRAM_(CE_N|DQ\[[0-3]\]).*No (input|output) delay' output_files_psram/Saturn_PSRAM.sta.rpt; then
             echo 'PSRAM data/control timing constraint is missing' >&2
             exit 1
