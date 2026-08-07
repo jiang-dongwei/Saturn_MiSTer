@@ -61,6 +61,7 @@ source sys/sys.tcl
 source sys/sys_analog.tcl
 source files.qip
 source files_psram.qip
+set_global_assignment -name SDC_FILE Saturn_PSRAM.sdc
 
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to PSRAM_CE_N
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to PSRAM_DQ[*]

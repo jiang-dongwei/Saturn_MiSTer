@@ -1,4 +1,4 @@
-name: Build Saturn PSRAM Full Throughput
+name: Build Saturn PSRAM Timing Candidate
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: saturn-psram-full-throughput-${{ github.ref }}
+  group: saturn-psram-timing-candidate-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: docker pull theypsilon/quartus-lite-c5:17.0.2
 
-      - name: Compile full Saturn PSRAM throughput revision
+      - name: Compile constrained Saturn PSRAM revision
         shell: bash
         run: |
           mkdir -p .ci
@@ -44,19 +44,36 @@ jobs:
             theypsilon/quartus-lite-c5:17.0.2 \
             bash -lc 'set -euo pipefail; quartus_sh --flow compile Saturn_PSRAM 2>&1 | tee .ci/Saturn_PSRAM-build.log'
 
+      - name: Generate dedicated PSRAM timing report
+        shell: bash
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/project" \
+            --workdir /project \
+            theypsilon/quartus-lite-c5:17.0.2 \
+            bash -lc 'set -euo pipefail; quartus_sta -t sim/psram/full_psram_timing_report.tcl 2>&1 | tee .ci/Saturn_PSRAM-timing.log'
+
       - name: Verify RBF and summarize reports
         shell: bash
         run: |
           test -s output_files_psram/Saturn_PSRAM.rbf
+          grep -q 'PSRAM_RUNTIME_CLK_EXT' output_files_psram/Saturn_PSRAM.sta.rpt
+          if grep -E 'PSRAM_(CE_N|DQ\[[0-3]\]).*No (input|output) delay' output_files_psram/Saturn_PSRAM.sta.rpt; then
+            echo 'PSRAM data/control timing constraint is missing' >&2
+            exit 1
+          fi
           sha256sum output_files_psram/Saturn_PSRAM.rbf | tee .ci/Saturn_PSRAM-rbf.sha256
           {
-            echo '## Saturn PSRAM full throughput Quartus result'
+            echo '## Saturn PSRAM timing candidate Quartus result'
             echo
             echo '```text'
             grep -hE 'Quartus Prime Full Compilation|Total logic elements|Total registers|Total block memory bits|Total pins|Slack|Timing requirements' \
               output_files_psram/Saturn_PSRAM.flow.rpt \
               output_files_psram/Saturn_PSRAM.fit.rpt \
               output_files_psram/Saturn_PSRAM.sta.rpt 2>/dev/null | tail -n 120 || true
+            echo
+            grep -E 'PSRAM_RUNTIME_CLK_EXT|Worst-case setup slack|Worst-case hold slack' \
+              output_files_psram/Saturn_PSRAM.sta.rpt .ci/Saturn_PSRAM-timing.log 2>/dev/null | tail -n 80 || true
             echo
             cat .ci/Saturn_PSRAM-rbf.sha256
             echo '```'
@@ -66,12 +83,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Saturn_PSRAM_Full_Throughput-${{ github.run_number }}
+          name: Saturn_PSRAM_Timing_Candidate-${{ github.run_number }}
           if-no-files-found: warn
           retention-days: 30
           path: |
             .ci/Saturn_PSRAM-build.log
+            .ci/Saturn_PSRAM-timing.log
             .ci/Saturn_PSRAM-rbf.sha256
+            Saturn_PSRAM.sdc
             output_files_psram/Saturn_PSRAM.rbf
             output_files_psram/Saturn_PSRAM.flow.rpt
             output_files_psram/Saturn_PSRAM.map.rpt
