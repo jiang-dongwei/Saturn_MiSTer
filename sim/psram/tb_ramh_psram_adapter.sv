@@ -148,6 +148,10 @@ initial begin
 	memory.memory[20'h00111] = 8'h23;
 	memory.memory[20'h00112] = 8'h45;
 	memory.memory[20'h00113] = 8'h67;
+	memory.memory[20'h00114] = 8'h89;
+	memory.memory[20'h00115] = 8'hAB;
+	memory.memory[20'h00116] = 8'hCD;
+	memory.memory[20'h00117] = 8'hEF;
 
 	// Hold a RAMH read active before PSRAM initialization completes. busy must
 	// remain asserted and the request must be serviced after init_done.
@@ -197,6 +201,36 @@ initial begin
 		         transaction_count - before_count);
 		$fatal;
 	end
+
+	// RAMH_SLOW=0 can hold rd high while changing the word address. Crossing
+	// a 16-byte boundary must therefore start a second line fill without an rd
+	// low pulse between the two words.
+	before_count = transaction_count;
+	@(negedge clk);
+	addr = 20'h0010C >> 2;
+	rd = 1'b1;
+	@(posedge clk);
+	#1;
+	if (busy || dout !== 32'h99AABBCC)
+		$fatal(1, "FAIL: continuous burst cached word %08h", dout);
+	@(negedge clk);
+	addr = 20'h00114 >> 2;
+	@(posedge clk);
+	#1;
+	init_timeout = 0;
+	while (busy && init_timeout < 100000) begin
+		@(posedge clk);
+		#1;
+		init_timeout = init_timeout + 1;
+	end
+	if (busy || dout !== 32'h89ABCDEF)
+		$fatal(1, "FAIL: continuous burst crossed line value=%08h busy=%0d",
+		       dout, busy);
+	if (transaction_count != before_count + 1)
+		$fatal(1, "FAIL: continuous burst line-fill count");
+	@(negedge clk);
+	rd = 1'b0;
+	@(posedge clk);
 
 	// A full-word write is one QPI transaction and invalidates the line.
 	before_count = transaction_count;

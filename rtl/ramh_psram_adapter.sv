@@ -13,6 +13,7 @@ module ramh_psram_adapter
 	parameter [5:0]   HALF_DIVIDER   = 6'd2,
 	parameter [7:0]   GUARD_CYCLES   = 8'd8,
 	parameter integer READ_LINE_BYTES = 16,
+	parameter integer DUPLICATE_WRITES = 0,
 	parameter integer DIRECT_READ_CAPTURE = 0
 )
 (
@@ -44,6 +45,7 @@ localparam [2:0] A_READ_WAIT = 3'd2;
 localparam [2:0] A_WRITE_REQ = 3'd3;
 localparam [2:0] A_WRITE_WAIT= 3'd4;
 localparam [2:0] A_FAILED    = 3'd5;
+localparam [2:0] A_WRITE_REPEAT_REQ = 3'd6;
 
 reg [2:0] state;
 
@@ -60,19 +62,22 @@ wire         engine_request_error;
 reg [19:2] pending_addr;
 reg [31:0] pending_write_data;
 reg  [3:0] pending_write_mask;
+reg        write_run_repeated;
 
 reg         line_valid;
 reg [17:0] line_tag;
 reg [127:0] line_data;
 
-reg read_armed;
 reg write_armed;
 
 wire diagnostic_word_read = (READ_LINE_BYTES == 4);
 wire [17:0] current_line_tag = diagnostic_word_read ?
 	                            addr : {addr[19:4], 2'b00};
 wire cache_match = line_valid && (line_tag == current_line_tag);
-wire pending_cpu_read  = rd && read_armed && !cache_match;
+// RAMH_SLOW=0 may keep rd asserted while a four-word burst advances into the
+// next 16-byte line. Treat every active cache miss as a request; requiring rd
+// to return low here would leave the next line unfetched and expose zero data.
+wire pending_cpu_read  = rd && !cache_match;
 wire pending_cpu_write = (|wr) && write_armed;
 
 assign busy = reset || !qpi_init_done || qpi_init_error || adapter_error ||
@@ -230,15 +235,14 @@ always @(posedge clk) begin
 		pending_addr              <= '0;
 		pending_write_data        <= 32'd0;
 		pending_write_mask        <= 4'd0;
+		write_run_repeated        <= 1'b0;
 		line_valid                <= 1'b0;
 		line_tag                  <= 18'd0;
 		line_data                 <= 128'd0;
-		read_armed                <= 1'b1;
 		write_armed               <= 1'b1;
 		adapter_error             <= 1'b0;
 	end
 	else begin
-		if (!rd)  read_armed  <= 1'b1;
 		if (!(|wr)) write_armed <= 1'b1;
 
 		if (qpi_init_error) begin
@@ -258,12 +262,9 @@ always @(posedge clk) begin
 								line_valid <= 1'b0;
 							state <= A_WRITE_REQ;
 						end
-						else if (rd && read_armed) begin
-							read_armed <= 1'b0;
-							if (!cache_match) begin
-								pending_addr <= addr;
-								state        <= A_READ_REQ;
-							end
+						else if (rd && !cache_match) begin
+							pending_addr <= addr;
+							state        <= A_READ_REQ;
 						end
 					end
 				end
@@ -300,6 +301,7 @@ always @(posedge clk) begin
 
 				A_WRITE_REQ: begin
 					if (engine_request_ready) begin
+						write_run_repeated     <= 1'b0;
 						engine_request_write   <= 1'b1;
 						engine_request_address <= {4'd0,
 						                           pending_addr,
@@ -322,9 +324,24 @@ always @(posedge clk) begin
 							adapter_error <= 1'b1;
 							state         <= A_FAILED;
 						end
+						else if ((DUPLICATE_WRITES != 0) &&
+						         !write_run_repeated) begin
+							write_run_repeated <= 1'b1;
+							state <= A_WRITE_REPEAT_REQ;
+						end
 						else if (pending_write_mask != 0)
 							state <= A_WRITE_REQ;
 						else state <= A_IDLE;
+					end
+				end
+
+				// Repeat the exact physical write run without consuming another
+				// byte-enable segment. The engine request fields deliberately retain
+				// the address, byte count, and data from the first transaction.
+				A_WRITE_REPEAT_REQ: begin
+					if (engine_request_ready) begin
+						engine_request_valid <= 1'b1;
+						state <= A_WRITE_WAIT;
 					end
 				end
 

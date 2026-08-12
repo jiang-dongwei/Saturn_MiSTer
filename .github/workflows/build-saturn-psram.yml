@@ -1,4 +1,4 @@
-name: Build Saturn PSRAM Timing Candidate
+name: Build Saturn PSRAM Fast RAMH0
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: saturn-psram-timing-candidate-${{ github.ref }}
+  group: saturn-psram-fast-ramh0-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -34,7 +34,14 @@ jobs:
         shell: bash
         run: docker pull theypsilon/quartus-lite-c5:17.0.2
 
-      - name: Compile constrained Saturn PSRAM revision
+      - name: Run RAMH PSRAM adapter regression
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+          bash sim/psram/run_ramh_adapter.sh
+
+      - name: Compile Saturn PSRAM Fast RAMH0 revision
         shell: bash
         run: |
           mkdir -p .ci
@@ -42,41 +49,31 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/project" \
             --workdir /project \
             theypsilon/quartus-lite-c5:17.0.2 \
-            bash -lc 'set -euo pipefail; quartus_sh --flow compile Saturn_PSRAM 2>&1 | tee .ci/Saturn_PSRAM-build.log'
-
-      - name: Generate dedicated PSRAM timing report
-        shell: bash
-        run: |
-          docker run --rm \
-            --volume "$GITHUB_WORKSPACE:/project" \
-            --workdir /project \
-            theypsilon/quartus-lite-c5:17.0.2 \
-            bash -lc 'set -euo pipefail; quartus_sta -t sim/psram/full_psram_timing_report.tcl 2>&1 | tee .ci/Saturn_PSRAM-timing.log'
+            bash -lc 'set -euo pipefail; quartus_sh --flow compile Saturn_PSRAM_Fast 2>&1 | tee .ci/Saturn_PSRAM_Fast-build.log'
 
       - name: Verify RBF and summarize reports
         shell: bash
         run: |
-          test -s output_files_psram/Saturn_PSRAM.rbf
-          grep -q 'PSRAM_RUNTIME_CLK_EXT' output_files_psram/Saturn_PSRAM.sta.rpt
-          grep -q 'PSRAM DQ SAMPLE REGISTERS: 4' .ci/Saturn_PSRAM-timing.log
-          if grep -E 'PSRAM_(CE_N|DQ\[[0-3]\]).*No (input|output) delay' output_files_psram/Saturn_PSRAM.sta.rpt; then
+          test -s output_files_psram_fast/Saturn_PSRAM_Fast.rbf
+          grep -q 'PSRAM_RUNTIME_CLK_EXT' output_files_psram_fast/Saturn_PSRAM_Fast.sta.rpt
+          if grep -E 'PSRAM_(CE_N|DQ\[[0-3]\]).*No (input|output) delay' output_files_psram_fast/Saturn_PSRAM_Fast.sta.rpt; then
             echo 'PSRAM data/control timing constraint is missing' >&2
             exit 1
           fi
-          sha256sum output_files_psram/Saturn_PSRAM.rbf | tee .ci/Saturn_PSRAM-rbf.sha256
+          sha256sum output_files_psram_fast/Saturn_PSRAM_Fast.rbf | tee .ci/Saturn_PSRAM_Fast-rbf.sha256
           {
             echo '## Saturn PSRAM timing candidate Quartus result'
             echo
             echo '```text'
             grep -hE 'Quartus Prime Full Compilation|Total logic elements|Total registers|Total block memory bits|Total pins|Slack|Timing requirements' \
-              output_files_psram/Saturn_PSRAM.flow.rpt \
-              output_files_psram/Saturn_PSRAM.fit.rpt \
-              output_files_psram/Saturn_PSRAM.sta.rpt 2>/dev/null | tail -n 120 || true
+              output_files_psram_fast/Saturn_PSRAM_Fast.flow.rpt \
+              output_files_psram_fast/Saturn_PSRAM_Fast.fit.rpt \
+              output_files_psram_fast/Saturn_PSRAM_Fast.sta.rpt 2>/dev/null | tail -n 120 || true
             echo
             grep -E 'PSRAM_RUNTIME_CLK_EXT|Worst-case setup slack|Worst-case hold slack' \
-              output_files_psram/Saturn_PSRAM.sta.rpt .ci/Saturn_PSRAM-timing.log 2>/dev/null | tail -n 80 || true
+              output_files_psram_fast/Saturn_PSRAM_Fast.sta.rpt 2>/dev/null | tail -n 80 || true
             echo
-            cat .ci/Saturn_PSRAM-rbf.sha256
+            cat .ci/Saturn_PSRAM_Fast-rbf.sha256
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -84,17 +81,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Saturn_PSRAM_Timing_Candidate-${{ github.run_number }}
+          name: Saturn_PSRAM_Fast_RAMH0-${{ github.run_number }}
           if-no-files-found: warn
           retention-days: 30
           path: |
-            .ci/Saturn_PSRAM-build.log
-            .ci/Saturn_PSRAM-timing.log
-            .ci/Saturn_PSRAM-rbf.sha256
+            .ci/Saturn_PSRAM_Fast-build.log
+            .ci/Saturn_PSRAM_Fast-rbf.sha256
             Saturn_PSRAM.sdc
-            output_files_psram/Saturn_PSRAM.rbf
-            output_files_psram/Saturn_PSRAM.flow.rpt
-            output_files_psram/Saturn_PSRAM.map.rpt
-            output_files_psram/Saturn_PSRAM.fit.rpt
-            output_files_psram/Saturn_PSRAM.sta.rpt
-            output_files_psram/Saturn_PSRAM.asm.rpt
+            output_files_psram_fast/Saturn_PSRAM_Fast.rbf
+            output_files_psram_fast/Saturn_PSRAM_Fast.flow.rpt
+            output_files_psram_fast/Saturn_PSRAM_Fast.map.rpt
+            output_files_psram_fast/Saturn_PSRAM_Fast.fit.rpt
+            output_files_psram_fast/Saturn_PSRAM_Fast.sta.rpt
+            output_files_psram_fast/Saturn_PSRAM_Fast.asm.rpt

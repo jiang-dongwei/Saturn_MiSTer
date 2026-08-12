@@ -893,8 +893,14 @@ module emu
 		.CE(CDD_2X_CE)
 	);
 	
-	Saturn 
+	// RAMH_SLOW=0 is the Saturn dual-SDRAM timing contract. Keep the proven
+	// PSRAM build on the conservative setting, while the dedicated Fast
+	// revision deliberately exercises the same contract for hardware
+	// qualification.
+	Saturn
 `ifdef MISTER_DUAL_SDRAM
+	#(.RAMH_SLOW(0))
+`elsif SATURN_PSRAM_FAST
 	#(.RAMH_SLOW(0))
 `else
 	#(.RAMH_SLOW(1))
@@ -1670,7 +1676,28 @@ module emu
 	wire [15:0] psram_qpi_device_id;
 	wire        psram_adapter_error;
 
-	ramh_psram_adapter ramh_psram
+`ifdef SATURN_PSRAM_LONGGAP
+	// Conservative hardware-qualified profile. This mirrors the standalone
+	// LongGap stress core which completed a full loop on the replacement board.
+	localparam [5:0]   PSRAM_RAMH_HALF_DIVIDER = 6'd4;
+	localparam [7:0]   PSRAM_RAMH_GUARD_CYCLES = 8'd32;
+	localparam integer PSRAM_RAMH_READ_BYTES = 4;
+	localparam integer PSRAM_RAMH_DUPLICATE_WRITES = 1;
+`else
+	localparam [5:0]   PSRAM_RAMH_HALF_DIVIDER = 6'd2;
+	localparam [7:0]   PSRAM_RAMH_GUARD_CYCLES = 8'd8;
+	localparam integer PSRAM_RAMH_READ_BYTES = 16;
+	localparam integer PSRAM_RAMH_DUPLICATE_WRITES = 0;
+`endif
+
+	ramh_psram_adapter
+	#(
+		.HALF_DIVIDER(PSRAM_RAMH_HALF_DIVIDER),
+		.GUARD_CYCLES(PSRAM_RAMH_GUARD_CYCLES),
+		.READ_LINE_BYTES(PSRAM_RAMH_READ_BYTES),
+		.DUPLICATE_WRITES(PSRAM_RAMH_DUPLICATE_WRITES)
+	)
+	ramh_psram
 	(
 		.clk(clk_ram),
 		.reset(reset || rst_ram),
