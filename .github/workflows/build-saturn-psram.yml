@@ -1,4 +1,4 @@
-name: Build Saturn PSRAM Fast RAMH0
+name: Build Saturn PSRAM
 
 on:
   workflow_dispatch:
@@ -49,31 +49,31 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/project" \
             --workdir /project \
             theypsilon/quartus-lite-c5:17.0.2 \
-            bash -lc 'set -euo pipefail; quartus_sh --flow compile Saturn_PSRAM_Fast 2>&1 | tee .ci/Saturn_PSRAM_Fast-build.log'
+            bash -lc 'set -euo pipefail; quartus_sh --flow compile Saturn_PSRAM_Stress_Fast50 2>&1 | tee .ci/Fast50-build.log'
 
       - name: Verify RBF and summarize reports
         shell: bash
         run: |
-          test -s output_files_psram_fast/Saturn_PSRAM_Fast.rbf
-          grep -q 'PSRAM_RUNTIME_CLK_EXT' output_files_psram_fast/Saturn_PSRAM_Fast.sta.rpt
-          if grep -E 'PSRAM_(CE_N|DQ\[[0-3]\]).*No (input|output) delay' output_files_psram_fast/Saturn_PSRAM_Fast.sta.rpt; then
+          test -s output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.rbf
+          grep -q 'PSRAM_FAST50_CLK_EXT' output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.sta.rpt
+          if grep -E 'PSRAM_(CE_N|DQ\[[0-3]\]).*No (input|output) delay' output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.sta.rpt; then
             echo 'PSRAM data/control timing constraint is missing' >&2
             exit 1
           fi
-          sha256sum output_files_psram_fast/Saturn_PSRAM_Fast.rbf | tee .ci/Saturn_PSRAM_Fast-rbf.sha256
+          sha256sum output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.rbf | tee .ci/Fast50-rbf.sha256
           {
-            echo '## Saturn PSRAM timing candidate Quartus result'
+            echo '## PSRAM 50.80 MHz diagnostic Quartus result'
             echo
             echo '```text'
             grep -hE 'Quartus Prime Full Compilation|Total logic elements|Total registers|Total block memory bits|Total pins|Slack|Timing requirements' \
-              output_files_psram_fast/Saturn_PSRAM_Fast.flow.rpt \
-              output_files_psram_fast/Saturn_PSRAM_Fast.fit.rpt \
-              output_files_psram_fast/Saturn_PSRAM_Fast.sta.rpt 2>/dev/null | tail -n 120 || true
+              output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.flow.rpt \
+              output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.fit.rpt \
+              output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.sta.rpt 2>/dev/null | tail -n 120 || true
             echo
             grep -E 'PSRAM_RUNTIME_CLK_EXT|Worst-case setup slack|Worst-case hold slack' \
-              output_files_psram_fast/Saturn_PSRAM_Fast.sta.rpt 2>/dev/null | tail -n 80 || true
+              output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.sta.rpt 2>/dev/null | tail -n 80 || true
             echo
-            cat .ci/Saturn_PSRAM_Fast-rbf.sha256
+            cat .ci/Fast50-rbf.sha256
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -81,16 +81,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Saturn_PSRAM_Fast_RAMH0-${{ github.run_number }}
+          name: Saturn_PSRAM_Fast50_Diagnostic-${{ github.run_number }}
           if-no-files-found: warn
           retention-days: 30
           path: |
-            .ci/Saturn_PSRAM_Fast-build.log
-            .ci/Saturn_PSRAM_Fast-rbf.sha256
-            Saturn_PSRAM.sdc
-            output_files_psram_fast/Saturn_PSRAM_Fast.rbf
-            output_files_psram_fast/Saturn_PSRAM_Fast.flow.rpt
-            output_files_psram_fast/Saturn_PSRAM_Fast.map.rpt
-            output_files_psram_fast/Saturn_PSRAM_Fast.fit.rpt
-            output_files_psram_fast/Saturn_PSRAM_Fast.sta.rpt
-            output_files_psram_fast/Saturn_PSRAM_Fast.asm.rpt
+            .ci/Fast50-build.log
+            .ci/Fast50-rbf.sha256
+            Saturn_PSRAM_Stress_Fast50.sdc
+            output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.rbf
+            output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.flow.rpt
+            output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.map.rpt
+            output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.fit.rpt
+            output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.sta.rpt
+            output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.asm.rpt
