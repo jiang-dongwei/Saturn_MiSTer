@@ -1,7 +1,7 @@
-# 101.6064 MHz controller toggles the registered external clock every cycle.
-create_generated_clock -name PSRAM_FAST50_CLK_EXT \
-	-source [get_pins {*|stress|adapter|engine|PSRAM_CLK|clk}] -divide_by 2 \
-	[get_pins {*|stress|adapter|engine|PSRAM_CLK|q}]
+# External 50.8032 MHz QPI clock. Use a virtual board-interface clock here:
+# Quartus may absorb/rename the internal PSRAM_CLK register during fitting,
+# while the top-level I/O timing requirement must remain stable.
+create_clock -name PSRAM_FAST50_CLK_EXT -period 19.683 [get_ports {PSRAM_CLK}]
 
 set_output_delay -clock PSRAM_FAST50_CLK_EXT -max 2.000 \
 	[get_ports {PSRAM_CE_N PSRAM_DQ[*]}]
