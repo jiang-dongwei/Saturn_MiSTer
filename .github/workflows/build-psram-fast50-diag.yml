@@ -1,0 +1,49 @@
+name: Build PSRAM Fast50 Diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psram-fast50-diag-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quartus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune --all --force
+      - name: Pull Quartus 17.0.2
+        run: docker pull theypsilon/quartus-lite-c5:17.0.2
+      - name: Compile isolated Fast50 diagnostic
+        run: |
+          mkdir -p .ci
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/project" \
+            --workdir /project \
+            theypsilon/quartus-lite-c5:17.0.2 \
+            bash -lc 'set -euo pipefail; quartus_sh --flow compile Saturn_PSRAM_Stress_Fast50 2>&1 | tee .ci/Fast50-build.log'
+      - name: Verify artifact
+        run: |
+          test -s output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.rbf
+          sha256sum output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.rbf | tee .ci/Fast50-rbf.sha256
+      - name: Upload diagnostic RBF and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Saturn_PSRAM_Fast50_Diagnostic-${{ github.run_number }}
+          retention-days: 30
+          path: |
+            .ci/Fast50-build.log
+            .ci/Fast50-rbf.sha256
+            output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.rbf
+            output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.flow.rpt
+            output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.fit.rpt
+            output_files_stress_fast50/Saturn_PSRAM_Stress_Fast50.sta.rpt

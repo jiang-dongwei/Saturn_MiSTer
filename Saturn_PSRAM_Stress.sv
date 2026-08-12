@@ -139,7 +139,13 @@ psram_diag_pll pll
 reg [6:0] status_meta = 7'd0;
 (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
 reg [6:0] status_sync = 7'd0;
-always @(posedge clk_67) begin
+`ifdef PSRAM_STRESS_FAST_50
+wire stress_clk = clk_101;
+`else
+wire stress_clk = clk_67;
+`endif
+
+always @(posedge stress_clk) begin
 	status_meta <= status[6:0];
 	status_sync <= status_meta;
 end
@@ -147,7 +153,7 @@ end
 wire stress_reset_request = RESET | buttons[1] | status_sync[0] |
 	                          status_sync[6] | !pll_locked;
 reg [2:0] stress_reset_pipe = 3'b111;
-always @(posedge clk_67) begin
+always @(posedge stress_clk) begin
 	if (stress_reset_request) stress_reset_pipe <= 3'b111;
 	else stress_reset_pipe <= {stress_reset_pipe[1:0], 1'b0};
 end
@@ -171,6 +177,12 @@ wire init_error;
 wire stress_failed;
 wire stress_activity;
 
+`ifdef PSRAM_STRESS_FAST_50
+localparam integer STRESS_FAST50_VIEW = 1;
+`else
+localparam integer STRESS_FAST50_VIEW = 0;
+`endif
+
 `ifdef PSRAM_STRESS_LATE_SAMPLE
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
 localparam [7:0] STRESS_GUARD_CYCLES = 8'd8;
@@ -180,6 +192,19 @@ localparam integer STRESS_CONFIRM_ON_MISMATCH = 1;
 localparam integer STRESS_DUPLICATE_WRITES = 1;
 localparam integer STRESS_DIRECT_READ_CAPTURE = 1;
 localparam integer STRESS_LATE_SAMPLE_VIEW = 1;
+localparam integer STRESS_LONG_GAP_VIEW = 0;
+`elsif PSRAM_STRESS_FAST_50
+// 101.6064 MHz controller clock / two edges = 50.8032 MHz QPI.
+// Keep the proven 16-byte line transaction so this measures sustained
+// high-speed QPI transfers rather than a single short read.
+localparam [5:0] STRESS_HALF_DIVIDER = 6'd1;
+localparam [7:0] STRESS_GUARD_CYCLES = 8'd12;
+localparam integer STRESS_READ_LINE_BYTES = 16;
+localparam [1:0] STRESS_MODE_CODE = 2'd0;
+localparam integer STRESS_CONFIRM_ON_MISMATCH = 1;
+localparam integer STRESS_DUPLICATE_WRITES = 0;
+localparam integer STRESS_DIRECT_READ_CAPTURE = 1;
+localparam integer STRESS_LATE_SAMPLE_VIEW = 0;
 localparam integer STRESS_LONG_GAP_VIEW = 0;
 `elsif PSRAM_STRESS_LONG_GAP
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
@@ -264,7 +289,7 @@ psram_stress_core
 )
 stress
 (
-	.clk(clk_67),
+	.clk(stress_clk),
 	.reset(stress_reset),
 	.result_code(result_code),
 	.phase_code(phase_code),
@@ -294,7 +319,8 @@ psram_stress_video
 	.CONFIRM_VIEW(STRESS_CONFIRM_ON_MISMATCH),
 	.DWRITE_VIEW(STRESS_DUPLICATE_WRITES),
 	.LATE_SAMPLE_VIEW(STRESS_LATE_SAMPLE_VIEW),
-	.LONG_GAP_VIEW(STRESS_LONG_GAP_VIEW)
+	.LONG_GAP_VIEW(STRESS_LONG_GAP_VIEW),
+	.FAST50_VIEW(STRESS_FAST50_VIEW)
 )
 video
 (
