@@ -2,8 +2,8 @@
 # HALF_DIVIDER=1 toggles the registered forwarded clock every engine cycle,
 # producing a 33.8688 MHz square wave on PSRAM_CLK.
 create_generated_clock -name PSRAM_33M87_CLK_EXT \
-	-source [get_pins {*|ramh_psram|g_async_engine|engine_cdc|engine_core|phy|PSRAM_CLK|clk}] -divide_by 2 \
-	[get_pins {*|ramh_psram|g_async_engine|engine_cdc|engine_core|phy|PSRAM_CLK|q}]
+	-source [get_pins {*|ramh_psram|g_async_engine.engine_cdc|engine_core|phy|PSRAM_CLK|clk}] -divide_by 2 \
+	[get_pins {*|ramh_psram|g_async_engine.engine_cdc|engine_core|phy|PSRAM_CLK|q}]
 
 set_output_delay -clock PSRAM_33M87_CLK_EXT -max 2.000 \
 	[get_ports {PSRAM_CE_N PSRAM_DQ[*]}]
@@ -18,10 +18,10 @@ set_input_delay -clock PSRAM_33M87_CLK_EXT -clock_fall -min 1.000 \
 # Toggle synchronizers are the timing boundary. Request payload and response
 # data are held stable by the one-outstanding-request handshake until the
 # corresponding toggle has crossed both synchronizer stages.
-set_false_path -to [get_registers {*|ramh_psram|g_async_engine|engine_cdc|req_sync1}]
-set_false_path -to [get_registers {*|ramh_psram|g_async_engine|engine_cdc|ack_sync1}]
-set_false_path -to [get_registers {*|ramh_psram|g_async_engine|engine_cdc|init_done_sync1}]
-set_false_path -to [get_registers {*|ramh_psram|g_async_engine|engine_cdc|init_error_sync1}]
-set_false_path -from [get_registers {*|ramh_psram|g_async_engine|engine_cdc|src_request_*}]
-set_false_path -from [get_registers {*|ramh_psram|g_async_engine|engine_cdc|response_error}]
+set_false_path -to [get_registers {*|ramh_psram|g_async_engine.engine_cdc|req_sync1}]
+set_false_path -to [get_registers {*|ramh_psram|g_async_engine.engine_cdc|ack_sync1}]
+set_false_path -to [get_registers {*|ramh_psram|g_async_engine.engine_cdc|init_done_sync1}]
+set_false_path -to [get_registers {*|ramh_psram|g_async_engine.engine_cdc|init_error_sync1}]
+set_false_path -from [get_registers {*|ramh_psram|g_async_engine.engine_cdc|src_request_*}]
+set_false_path -from [get_registers {*|ramh_psram|g_async_engine.engine_cdc|response_error}]
 set_false_path -to [get_registers {*|ramh_psram|line_data*}]

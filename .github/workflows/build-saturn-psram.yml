@@ -74,6 +74,11 @@ jobs:
             tee .ci/Saturn_PSRAM_33M87-rbf.sha256
 
           grep -q 'PSRAM_33M87_CLK_EXT' output_files_psram_33m87/Saturn_PSRAM_33M87.sta.rpt
+          if grep -E 'Ignored (filter|create_generated_clock).*Saturn_PSRAM_33M87\.sdc' \
+              output_files_psram_33m87/Saturn_PSRAM_33M87.sta.rpt; then
+            echo 'A Saturn_PSRAM_33M87.sdc constraint was ignored' >&2
+            exit 1
+          fi
           if grep -E 'PSRAM_(CLK|CE_N|DQ).*No input delay|PSRAM_(CLK|CE_N|DQ).*No output delay' \
               output_files_psram_33m87/Saturn_PSRAM_33M87.sta.rpt; then
             echo 'PSRAM port is missing an I/O timing constraint' >&2
