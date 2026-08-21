@@ -1,0 +1,5 @@
+# 33.8688 MHz Saturn RAMH PSRAM candidate. The stable files_psram.qip remains
+# unchanged and is included first by this revision.
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/psram_qpi_engine_cdc.sv
+set_global_assignment -name QIP_FILE rtl/psram_diag_pll/pll.qip
+set_global_assignment -name SDC_FILE Saturn_PSRAM_33M87.sdc

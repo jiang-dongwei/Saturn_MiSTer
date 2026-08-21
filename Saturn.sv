@@ -1670,10 +1670,53 @@ module emu
 	wire [15:0] psram_qpi_device_id;
 	wire        psram_adapter_error;
 
-	ramh_psram_adapter ramh_psram
+`ifdef SATURN_PSRAM_33M87
+	// Keep the Saturn-side cache and RAMH handshake in clk_ram.  Only the QPI
+	// transaction engine moves to the already hardware-tested 67.7376 MHz PLL
+	// output. HALF_DIVIDER=1 forwards a 33.8688 MHz PSRAM clock.
+	wire psram_pll_clk_33_unused;
+	wire psram_engine_clk;
+	wire psram_pll_clk_101_unused;
+	wire psram_pll_locked;
+	reg  [1:0] psram_engine_reset_pipe;
+
+	psram_diag_pll psram_speed_pll
+	(
+		.refclk(CLK_50M),
+		.rst(1'b0),
+		.outclk_0(psram_pll_clk_33_unused),
+		.outclk_1(psram_engine_clk),
+		.outclk_2(psram_pll_clk_101_unused),
+		.locked(psram_pll_locked)
+	);
+
+	wire psram_engine_async_reset = reset || rst_ram || !psram_pll_locked;
+	always @(posedge psram_engine_clk or posedge psram_engine_async_reset) begin
+		if (psram_engine_async_reset) psram_engine_reset_pipe <= 2'b11;
+		else psram_engine_reset_pipe <= {psram_engine_reset_pipe[0], 1'b0};
+	end
+	wire psram_engine_reset = psram_engine_reset_pipe[1];
+`else
+	wire psram_engine_clk = clk_ram;
+	wire psram_engine_reset = reset || rst_ram;
+`endif
+
+	ramh_psram_adapter
+`ifdef SATURN_PSRAM_33M87
+	#(
+		.HALF_DIVIDER(6'd1),
+		.GUARD_CYCLES(8'd8),
+		.READ_LINE_BYTES(16),
+		.DIRECT_READ_CAPTURE(0),
+		.ASYNC_ENGINE(1)
+	)
+`endif
+	ramh_psram
 	(
 		.clk(clk_ram),
 		.reset(reset || rst_ram),
+		.engine_clk(psram_engine_clk),
+		.engine_reset(psram_engine_reset),
 
 		.addr(MEM_A[19:2]),
 		.din(ramh_din),

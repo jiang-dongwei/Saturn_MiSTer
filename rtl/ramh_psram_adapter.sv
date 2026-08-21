@@ -13,11 +13,14 @@ module ramh_psram_adapter
 	parameter [5:0]   HALF_DIVIDER   = 6'd2,
 	parameter [7:0]   GUARD_CYCLES   = 8'd8,
 	parameter integer READ_LINE_BYTES = 16,
-	parameter integer DIRECT_READ_CAPTURE = 0
+	parameter integer DIRECT_READ_CAPTURE = 0,
+	parameter integer ASYNC_ENGINE = 0
 )
 (
 	input              clk,
 	input              reset,
+	input              engine_clk,
+	input              engine_reset,
 
 	input      [19:2]  addr,
 	input      [31:0]  din,
@@ -188,34 +191,69 @@ wire [2:0] next_write_count  = first_write_count(pending_write_mask);
 wire [3:0] next_write_mask   = write_run_mask(next_write_offset,
 	                                           next_write_count);
 
-psram_qpi_engine
-#(
-	.POWERUP_CYCLES(POWERUP_CYCLES),
-	.HALF_DIVIDER(HALF_DIVIDER),
-	.GUARD_CYCLES(GUARD_CYCLES),
-	.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE)
-)
-engine
-(
-	.clk(clk),
-	.reset(reset),
-	.request_valid(engine_request_valid),
-	.request_ready(engine_request_ready),
-	.request_write(engine_request_write),
-	.request_address(engine_request_address),
-	.request_bytes(engine_request_bytes),
-	.request_write_data(engine_request_write_data),
-	.request_read_data(engine_request_read_data),
-	.request_done(engine_request_done),
-	.request_error(engine_request_error),
-	.init_done(qpi_init_done),
-	.init_error(qpi_init_error),
-	.device_id(qpi_device_id),
-	.busy(),
-	.PSRAM_CLK(PSRAM_CLK),
-	.PSRAM_CE_N(PSRAM_CE_N),
-	.PSRAM_DQ(PSRAM_DQ)
-);
+generate
+	if (ASYNC_ENGINE != 0) begin : g_async_engine
+		psram_qpi_engine_cdc
+		#(
+			.POWERUP_CYCLES(POWERUP_CYCLES),
+			.HALF_DIVIDER(HALF_DIVIDER),
+			.GUARD_CYCLES(GUARD_CYCLES),
+			.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE)
+		)
+		engine_cdc
+		(
+			.src_clk(clk),
+			.src_reset(reset),
+			.engine_clk(engine_clk),
+			.engine_reset(engine_reset),
+			.request_valid(engine_request_valid),
+			.request_ready(engine_request_ready),
+			.request_write(engine_request_write),
+			.request_address(engine_request_address),
+			.request_bytes(engine_request_bytes),
+			.request_write_data(engine_request_write_data),
+			.request_read_data(engine_request_read_data),
+			.request_done(engine_request_done),
+			.request_error(engine_request_error),
+			.init_done(qpi_init_done),
+			.init_error(qpi_init_error),
+			.device_id(qpi_device_id),
+			.PSRAM_CLK(PSRAM_CLK),
+			.PSRAM_CE_N(PSRAM_CE_N),
+			.PSRAM_DQ(PSRAM_DQ)
+		);
+	end
+	else begin : g_direct_engine
+		psram_qpi_engine
+		#(
+			.POWERUP_CYCLES(POWERUP_CYCLES),
+			.HALF_DIVIDER(HALF_DIVIDER),
+			.GUARD_CYCLES(GUARD_CYCLES),
+			.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE)
+		)
+		engine
+		(
+			.clk(clk),
+			.reset(reset),
+			.request_valid(engine_request_valid),
+			.request_ready(engine_request_ready),
+			.request_write(engine_request_write),
+			.request_address(engine_request_address),
+			.request_bytes(engine_request_bytes),
+			.request_write_data(engine_request_write_data),
+			.request_read_data(engine_request_read_data),
+			.request_done(engine_request_done),
+			.request_error(engine_request_error),
+			.init_done(qpi_init_done),
+			.init_error(qpi_init_error),
+			.device_id(qpi_device_id),
+			.busy(),
+			.PSRAM_CLK(PSRAM_CLK),
+			.PSRAM_CE_N(PSRAM_CE_N),
+			.PSRAM_DQ(PSRAM_DQ)
+		);
+	end
+endgenerate
 
 always @(posedge clk) begin
 	engine_request_valid <= 1'b0;
