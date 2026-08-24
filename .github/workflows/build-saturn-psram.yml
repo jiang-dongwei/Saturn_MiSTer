@@ -68,11 +68,6 @@ jobs:
         run: |
           set -euo pipefail
           test -s output_files_psram_33m87/Saturn_PSRAM_33M87.rbf
-          cp output_files_psram_33m87/Saturn_PSRAM_33M87.rbf \
-            .ci/Saturn_PSRAM_33M87_RAMH_SLOW1_20260821.rbf
-          sha256sum .ci/Saturn_PSRAM_33M87_RAMH_SLOW1_20260821.rbf | \
-            tee .ci/Saturn_PSRAM_33M87-rbf.sha256
-
           grep -q 'PSRAM_33M87_CLK_EXT' output_files_psram_33m87/Saturn_PSRAM_33M87.sta.rpt
           if grep -E 'Ignored (filter|create_generated_clock).*Saturn_PSRAM_33M87\.sdc' \
               output_files_psram_33m87/Saturn_PSRAM_33M87.sta.rpt; then
@@ -84,6 +79,11 @@ jobs:
             echo 'PSRAM port is missing an I/O timing constraint' >&2
             exit 1
           fi
+
+          cp output_files_psram_33m87/Saturn_PSRAM_33M87.rbf \
+            .ci/Saturn_PSRAM_33M87_RAMH_SLOW1_20260824.rbf
+          sha256sum .ci/Saturn_PSRAM_33M87_RAMH_SLOW1_20260824.rbf | \
+            tee .ci/Saturn_PSRAM_33M87-rbf.sha256
 
           {
             echo '## Saturn PSRAM 33.8688 MHz RAMH_SLOW=1 result'
@@ -108,7 +108,7 @@ jobs:
           path: |
             .ci/Saturn_PSRAM_33M87-build.log
             .ci/Saturn_PSRAM_33M87-rbf.sha256
-            .ci/Saturn_PSRAM_33M87_RAMH_SLOW1_20260821.rbf
+            .ci/Saturn_PSRAM_33M87_RAMH_SLOW1_20260824.rbf
             output_files_psram_33m87/Saturn_PSRAM_33M87.rbf
             output_files_psram_33m87/Saturn_PSRAM_33M87.flow.rpt
             output_files_psram_33m87/Saturn_PSRAM_33M87.map.rpt
