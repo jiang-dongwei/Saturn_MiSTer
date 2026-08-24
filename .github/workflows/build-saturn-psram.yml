@@ -74,7 +74,10 @@ jobs:
             echo 'A Saturn_PSRAM_33M87.sdc constraint was ignored' >&2
             exit 1
           fi
-          if grep -E 'PSRAM_(CLK|CE_N|DQ).*No input delay|PSRAM_(CLK|CE_N|DQ).*No output delay' \
+          # PSRAM_CLK is a generated clock and is constrained by
+          # create_generated_clock. Only the bidirectional DQ pins require an
+          # input delay; CE_N and DQ require output delays.
+          if grep -E 'PSRAM_DQ.*No input delay|PSRAM_(CE_N|DQ).*No output delay' \
               output_files_psram_33m87/Saturn_PSRAM_33M87.sta.rpt; then
             echo 'PSRAM port is missing an I/O timing constraint' >&2
             exit 1
