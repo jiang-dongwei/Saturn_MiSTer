@@ -27,7 +27,8 @@ set_false_path -from [get_registers {*|ramh_psram_adapter:ramh_psram|psram_qpi_e
 set_false_path -to [get_registers {*|ramh_psram_adapter:ramh_psram|line_data*}]
 
 # psram_engine_reset_pipe is the conventional asynchronous-assert,
-# synchronous-release reset synchronizer for the new PLL domain.  Ignore only
-# recovery/removal checks on its asynchronous clear pins; the pipe's D-to-Q
-# synchronization path remains timed normally.
-set_false_path -to [get_pins {*|psram_engine_reset_pipe*|aclr}]
+# synchronous-release reset synchronizer for the new PLL domain.  Quartus
+# implements the packed pipe as a register with a synchronous-clear control
+# mux, so constrain the synchronizer register endpoint rather than a physical
+# aclr pin that does not exist in the fitted netlist.
+set_false_path -to [get_registers {*|psram_engine_reset_pipe*}]
