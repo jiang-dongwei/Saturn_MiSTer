@@ -10,6 +10,7 @@ module tb_aps6408_diag;
     wire [15:0] id_word;
     wire [15:0] expected_data, actual_data;
     wire [15:0] sample_early, sample_mid, sample_late;
+    wire [15:0] mr_pair0, mr_pair1, mr_pair2;
     wire [7:0] diagnostic_leds;
     wire activity, psram_clk, psram_ce_n;
     tri [7:0] dq;
@@ -27,6 +28,8 @@ module tb_aps6408_diag;
         .expected_data(expected_data), .actual_data(actual_data),
         .sample_early(sample_early), .sample_mid(sample_mid),
         .sample_late(sample_late),
+        .mr_pair0(mr_pair0), .mr_pair1(mr_pair1),
+        .mr_pair2(mr_pair2),
         .diagnostic_leds(diagnostic_leds), .activity(activity),
         .PSRAM_CLK(psram_clk), .PSRAM_CE_N(psram_ce_n),
         .PSRAM_DQ(dq), .PSRAM_DQS(dqs)
@@ -94,7 +97,7 @@ module tb_aps6408_diag;
                         if (dq !== 8'hzz)
                             $fatal(1,"global reset must release address bus");
                     end else if (instruction==8'h40) begin
-                        if (address !== 32'h00000001) $fatal(1,"bad MR address %h",address);
+                        if (address > 32'h00000002) $fatal(1,"bad MR address %h",address);
                     end else if (cell_slot<0) $fatal(1,"bad address %h",address);
                     if (instruction!=8'hA0 && !no_dqs) begin
                         #10 mem_oe=1;
@@ -109,7 +112,8 @@ module tb_aps6408_diag;
                     end else begin
                         if (!no_dqs) begin
                             #10 mem_dq=(instruction==8'h40) ?
-                                (bad_id ? 8'h16 : 8'h0D) :
+                                ((address==0) ? 8'hA0 :
+                                 (address==1) ? (bad_id ? 8'h16 : 8'h0D) : 8'h93) :
                                 (memory[cell_slot][15:8] ^ (corrupt ? 8'h01 : 8'h00));
                             mem_dqs=1;
                         end
@@ -121,7 +125,9 @@ module tb_aps6408_diag;
                     if (instruction==8'hA0) memory[cell_slot][7:0]=dq;
                     else begin
                         if (!no_dqs) begin
-                            #10 mem_dq=(instruction==8'h40) ? 8'h93 : memory[cell_slot][7:0];
+                            #10 mem_dq=(instruction==8'h40) ?
+                                ((address==0) ? (bad_id ? 8'h16 : 8'h0D) :
+                                 (address==1) ? 8'h93 : 8'h00) : memory[cell_slot][7:0];
                             mem_dqs=0;
                         end
                     end
@@ -140,14 +146,16 @@ module tb_aps6408_diag;
         wait(result_code != 0);
         if (reset_commands != 1 ||
             (no_dqs && (result_code !== 2'd2 || stage_code !== 8'hE1)) ||
-            (bad_id && (result_code !== 2'd2 || stage_code !== 8'hE4 ||
-                        sample_early !== 16'h1693 ||
-                        sample_mid !== 16'h1693 ||
-                        sample_late !== 16'h1693 || writes != 0)) ||
+            (bad_id && (result_code !== 2'd2 || stage_code !== 8'hE5 ||
+                        mr_pair0 !== 16'hA016 ||
+                        mr_pair1 !== 16'h1693 ||
+                        mr_pair2 !== 16'h9300 || writes != 0)) ||
             ((corrupt || alias_bit12) && (result_code !== 2'd2 || stage_code !== 8'hE2)) ||
             (!no_dqs && !bad_id && !corrupt && !alias_bit12 &&
              (result_code !== 2'd1 || id_word !== 16'h0D93 ||
-              id_reads != 1 || writes != 25 || reads != 25)))
+              mr_pair0 !== 16'hA00D || mr_pair1 !== 16'h0D93 ||
+              mr_pair2 !== 16'h9300 ||
+              id_reads != 3 || writes != 25 || reads != 25)))
             $fatal(1,"diagnostic failed: result=%d stage=%h addr=%h exp=%h got=%h writes=%d reads=%d",
                    result_code,stage_code,failure_address,expected_data,actual_data,writes,reads);
         $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d",

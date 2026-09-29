@@ -17,6 +17,9 @@ module aps6408_diag_core #(
     output reg [15:0] sample_early,
     output reg [15:0] sample_mid,
     output reg [15:0] sample_late,
+    output reg [15:0] mr_pair0,
+    output reg [15:0] mr_pair1,
+    output reg [15:0] mr_pair2,
     output reg [7:0] diagnostic_leds,
     output activity,
     output reg PSRAM_CLK,
@@ -39,6 +42,7 @@ module aps6408_diag_core #(
     reg [3:0] data_index;
     reg [4:0] cell_index;
     reg id_phase;
+    reg [1:0] id_slot;
     reg read_phase;
     reg [7:0] dq_out;
     reg dq_oe;
@@ -78,7 +82,7 @@ module aps6408_diag_core #(
         end
     endfunction
 
-    wire [23:0] address = id_phase ? 24'h000001 : address_for(cell_index);
+    wire [23:0] address = id_phase ? {22'd0,id_slot} : address_for(cell_index);
     wire [15:0] pattern = pattern_for(cell_index);
     wire tick = (div_count == HALF_PERIOD-1);
 
@@ -99,6 +103,7 @@ module aps6408_diag_core #(
             data_index <= 0;
             cell_index <= 0;
             id_phase <= 1;
+            id_slot <= 0;
             read_phase <= 0;
             dq_out <= 0;
             dq_oe <= 0;
@@ -117,6 +122,9 @@ module aps6408_diag_core #(
             sample_early <= 0;
             sample_mid <= 0;
             sample_late <= 0;
+            mr_pair0 <= 0;
+            mr_pair1 <= 0;
+            mr_pair2 <= 0;
             diagnostic_leds <= 0;
         end else begin
             if (tick) div_count <= 0;
@@ -295,20 +303,30 @@ module aps6408_diag_core #(
 
                 S_ADVANCE: begin
                     if (id_phase) begin
-                        id_word <= read_word;
-                        // MR1[4:0] is APM vendor 0Dh. MR2[4:0] encodes
-                        // generation 3 and 64 Mbit density as 13h.
-                        // Ignore reserved MR1 bits and the MR2 good-die bit.
-                        if (((read_word[15:8] & 8'h1F) != 8'h0D) ||
-                            ((read_word[7:0] & 8'h1F) != 8'h13)) begin
-                            stage_code <= 8'hE4;
-                            failure_address <= 24'h000001;
-                            expected_data <= 16'h0D13;
-                            actual_data <= read_word;
-                            state <= S_FAIL;
-                        end else begin
-                            id_phase <= 0;
+                        if (id_slot == 0) begin
+                            mr_pair0 <= read_word;
+                            id_slot <= 1;
                             state <= S_START;
+                        end else if (id_slot == 1) begin
+                            mr_pair1 <= read_word;
+                            id_word <= read_word;
+                            id_slot <= 2;
+                            state <= S_START;
+                        end else begin
+                            mr_pair2 <= read_word;
+                            // MR1[4:0] is APM vendor 0Dh; MR2[4:0]
+                            // identifies generation 3 and 64 Mbit density.
+                            if (((mr_pair1[15:8] & 8'h1F) != 8'h0D) ||
+                                ((mr_pair1[7:0] & 8'h1F) != 8'h13)) begin
+                                stage_code <= 8'hE5;
+                                failure_address <= 24'h000001;
+                                expected_data <= 16'h0D13;
+                                actual_data <= mr_pair1;
+                                state <= S_FAIL;
+                            end else begin
+                                id_phase <= 0;
+                                state <= S_START;
+                            end
                         end
                     end else if (read_phase && read_word != pattern) begin
                         stage_code <= 8'hE2;
