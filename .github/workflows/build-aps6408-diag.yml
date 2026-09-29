@@ -2,6 +2,19 @@ name: Build APS6408 diagnostic
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/saturn-psram-33m87-slow1
+    paths:
+      - .github/workflows/build-aps6408-diag.yml
+      - APS6408_DIAGNOSTIC_CN.md
+      - Saturn_APS6408_Diag.*
+      - files_aps6408_diag.qip
+      - rtl/aps6408_diag_*.sv
+      - sim/psram/tb_aps6408_diag.sv
+      - sys/sys_psram_opi.tcl
+      - sys/sys.tcl
+      - sys/sys_top.v
 
 permissions:
   contents: read
