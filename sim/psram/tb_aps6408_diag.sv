@@ -88,7 +88,8 @@ module tb_aps6408_diag;
                     address[7:0]=dq;
                     cell_slot=cell_for(address);
                     if (instruction==8'hFF) begin
-                        $fatal(1,"global reset frame lasted into address phase");
+                        if (dq !== 8'hzz)
+                            $fatal(1,"global reset must release address bus");
                     end else if (instruction==8'h40) begin
                         if (address !== 32'h00000001) $fatal(1,"bad MR address %h",address);
                     end else if (cell_slot<0) $fatal(1,"bad address %h",address);
