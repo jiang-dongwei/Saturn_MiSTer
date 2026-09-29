@@ -3,7 +3,8 @@
 // bring-up implementation at 4.23 MHz, not a high-speed Saturn RAMH backend.
 module aps6408_diag_core #(
     parameter integer POWERUP_CYCLES = 135476, // 2 ms at 67.738 MHz
-    parameter integer HALF_PERIOD = 8           // 4.234 MHz PSRAM clock
+    parameter integer HALF_PERIOD = 8,          // 4.234 MHz PSRAM clock
+    parameter integer RESET_RECOVERY_CYCLES = 136 // at least 2 us at 67.738 MHz
 ) (
     input clk,
     input reset,
@@ -22,8 +23,11 @@ module aps6408_diag_core #(
 );
     localparam [3:0] S_POWER=0, S_START=1, S_CMD=2, S_LATENCY=3,
                      S_WRITE=4, S_READ=5, S_END=6, S_GAP=7,
-                     S_ADVANCE=8, S_PASS=9, S_FAIL=10, S_TURN=11;
+                     S_ADVANCE=8, S_PASS=9, S_FAIL=10, S_TURN=11,
+                     S_RESET_START=12, S_RESET_CMD=13,
+                     S_RESET_END=14, S_RESET_WAIT=15;
     reg [3:0] state;
+    reg did_global_reset = 1'b0;
     reg [17:0] power_count;
     reg [7:0] div_count;
     reg [7:0] gap_count;
@@ -130,7 +134,41 @@ module aps6408_diag_core #(
                 S_POWER: begin
                     PSRAM_CE_N <= 1;
                     PSRAM_CLK <= 0;
-                    if (power_count == POWERUP_CYCLES-1) state <= S_START;
+                    if (power_count == POWERUP_CYCLES-1)
+                        state <= did_global_reset ? S_START : S_RESET_START;
+                    else power_count <= power_count + 1'b1;
+                end
+
+                S_RESET_START: begin
+                    PSRAM_CE_N <= 0;
+                    PSRAM_CLK <= 0;
+                    dq_oe <= 1;
+                    dq_out <= 8'hFF;
+                    dm_oe <= 0;
+                    div_count <= 0;
+                    edge_index <= 0;
+                    stage_code <= 8'h02;
+                    state <= S_RESET_CMD;
+                end
+
+                S_RESET_CMD: if (tick) begin
+                    PSRAM_CLK <= ~PSRAM_CLK;
+                    edge_index <= edge_index + 1'b1;
+                    if (edge_index == 1) dq_oe <= 0;
+                    if (edge_index == 7) state <= S_RESET_END;
+                end
+
+                S_RESET_END: if (tick) begin
+                    PSRAM_CE_N <= 1;
+                    PSRAM_CLK <= 0;
+                    did_global_reset <= 1;
+                    power_count <= 0;
+                    state <= S_RESET_WAIT;
+                end
+
+                S_RESET_WAIT: begin
+                    if (power_count == RESET_RECOVERY_CYCLES-1)
+                        state <= S_START;
                     else power_count <= power_count + 1'b1;
                 end
 
@@ -140,6 +178,7 @@ module aps6408_diag_core #(
                     dq_oe <= 1;
                     dq_out <= id_phase ? 8'h40 : (read_phase ? 8'h20 : 8'hA0);
                     dm_oe <= 0;
+                    div_count <= 0;
                     edge_index <= 0;
                     data_index <= 0;
                     timeout_edges <= 0;

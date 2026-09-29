@@ -35,6 +35,8 @@ module tb_aps6408_diag;
     integer edge_number=-1;
     integer cell_slot;
     integer writes=0, reads=0, id_reads=0;
+    integer reset_commands=0;
+    reg device_ready=0;
     integer corrupt=0, no_dqs=0, alias_bit12=0, bad_id=0;
 
     function integer cell_for;
@@ -59,7 +61,14 @@ module tb_aps6408_diag;
         address=0;
         mem_oe=0;
     end
-    always @(posedge psram_ce_n) mem_oe=0;
+    always @(posedge psram_ce_n) begin
+        mem_oe=0;
+        if (instruction == 8'hFF) begin
+            if (edge_number != 7) $fatal(1,"global reset requires four clock cycles");
+            device_ready=1;
+            reset_commands=reset_commands+1;
+        end
+    end
 
     always @(posedge psram_clk or negedge psram_clk) begin
         if (!psram_ce_n) begin
@@ -67,8 +76,10 @@ module tb_aps6408_diag;
             case (edge_number)
                 0: begin
                     instruction=dq;
-                    if (dq !== 8'hA0 && dq !== 8'h20 && dq !== 8'h40)
+                    if (dq !== 8'hA0 && dq !== 8'h20 && dq !== 8'h40 && dq !== 8'hFF)
                         $fatal(1,"bad instruction %h",dq);
+                    if (!device_ready && dq !== 8'hFF)
+                        $fatal(1,"command before power-up global reset");
                 end
                 2: address[31:24]=dq;
                 3: address[23:16]=dq;
@@ -76,7 +87,9 @@ module tb_aps6408_diag;
                 5: begin
                     address[7:0]=dq;
                     cell_slot=cell_for(address);
-                    if (instruction==8'h40) begin
+                    if (instruction==8'hFF) begin
+                        $fatal(1,"global reset frame lasted into address phase");
+                    end else if (instruction==8'h40) begin
                         if (address !== 32'h00000001) $fatal(1,"bad MR address %h",address);
                     end else if (cell_slot<0) $fatal(1,"bad address %h",address);
                     if (instruction!=8'hA0 && !no_dqs) begin
@@ -121,7 +134,8 @@ module tb_aps6408_diag;
         repeat (4) @(posedge clk);
         reset=0;
         wait(result_code != 0);
-        if ((no_dqs && (result_code !== 2'd2 || stage_code !== 8'hE1)) ||
+        if (reset_commands != 1 ||
+            (no_dqs && (result_code !== 2'd2 || stage_code !== 8'hE1)) ||
             (bad_id && (result_code !== 2'd2 || stage_code !== 8'hE3 || writes != 0)) ||
             ((corrupt || alias_bit12) && (result_code !== 2'd2 || stage_code !== 8'hE2)) ||
             (!no_dqs && !bad_id && !corrupt && !alias_bit12 &&
@@ -131,6 +145,14 @@ module tb_aps6408_diag;
                    result_code,stage_code,failure_address,expected_data,actual_data,writes,reads);
         $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d",
                  result_code,stage_code,writes,reads);
+        if (!no_dqs && !bad_id && !corrupt && !alias_bit12) begin
+            reset=1;
+            repeat (4) @(posedge clk);
+            reset=0;
+            wait(result_code != 0);
+            if (result_code !== 2'd1 || reset_commands != 1)
+                $fatal(1,"soft restart must not issue another power-up global reset");
+        end
         $finish;
     end
     initial begin
