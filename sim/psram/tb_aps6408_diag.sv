@@ -11,6 +11,7 @@ module tb_aps6408_diag;
     wire [15:0] expected_data, actual_data;
     wire [15:0] sample_early, sample_mid, sample_late;
     wire [15:0] mr_pair0, mr_pair1, mr_pair2;
+    wire [15:0] dqs_edge_pair1, clk_pair1;
     wire [7:0] diagnostic_leds;
     wire activity, psram_clk, psram_ce_n;
     tri [7:0] dq;
@@ -30,6 +31,8 @@ module tb_aps6408_diag;
         .sample_late(sample_late),
         .mr_pair0(mr_pair0), .mr_pair1(mr_pair1),
         .mr_pair2(mr_pair2),
+        .dqs_edge_pair1(dqs_edge_pair1),
+        .clk_pair1(clk_pair1),
         .diagnostic_leds(diagnostic_leds), .activity(activity),
         .PSRAM_CLK(psram_clk), .PSRAM_CE_N(psram_ce_n),
         .PSRAM_DQ(dq), .PSRAM_DQS(dqs)
@@ -43,7 +46,7 @@ module tb_aps6408_diag;
     integer writes=0, reads=0, id_reads=0;
     integer reset_commands=0;
     reg device_ready=0;
-    integer corrupt=0, no_dqs=0, alias_bit12=0, bad_id=0;
+    integer corrupt=0, no_dqs=0, alias_bit12=0, bad_id=0, early_dqs=0;
 
     function integer cell_for;
         input [31:0] a;
@@ -104,6 +107,12 @@ module tb_aps6408_diag;
                         mem_dqs=0; // read preamble
                     end
                 end
+                10: if (early_dqs && instruction==8'h40 && address==1) begin
+                    mem_dq=8'hAA;
+                    mem_dqs=1;
+                end
+                11: if (early_dqs && instruction==8'h40 && address==1)
+                    mem_dqs=0;
                 14: begin
                     if (instruction==8'hA0) begin
                         if (dqs !== 1'b0) $fatal(1,"DM not enabled");
@@ -141,26 +150,34 @@ module tb_aps6408_diag;
         no_dqs=$test$plusargs("no_dqs");
         alias_bit12=$test$plusargs("alias_bit12");
         bad_id=$test$plusargs("bad_id");
+        early_dqs=$test$plusargs("early_dqs");
         repeat (4) @(posedge clk);
         reset=0;
         wait(result_code != 0);
         if (reset_commands != 1 ||
             (no_dqs && (result_code !== 2'd2 || stage_code !== 8'hE1)) ||
-            (bad_id && (result_code !== 2'd2 || stage_code !== 8'hE5 ||
+            (bad_id && (result_code !== 2'd2 || stage_code !== 8'hE6 ||
                         mr_pair0 !== 16'hA016 ||
                         mr_pair1 !== 16'h1693 ||
-                        mr_pair2 !== 16'h9300 || writes != 0)) ||
+                        mr_pair2 !== 16'h9300 ||
+                        clk_pair1 !== 16'h1693 ||
+                        dqs_edge_pair1 !== 16'h090A || writes != 0)) ||
+            (early_dqs && (result_code !== 2'd2 || stage_code !== 8'hE6 ||
+                           mr_pair1 === clk_pair1 ||
+                           clk_pair1 !== 16'h0D93 ||
+                           dqs_edge_pair1[15:8] >= 8'd9 || writes != 0)) ||
             ((corrupt || alias_bit12) && (result_code !== 2'd2 || stage_code !== 8'hE2)) ||
-            (!no_dqs && !bad_id && !corrupt && !alias_bit12 &&
+            (!no_dqs && !bad_id && !early_dqs && !corrupt && !alias_bit12 &&
              (result_code !== 2'd1 || id_word !== 16'h0D93 ||
               mr_pair0 !== 16'hA00D || mr_pair1 !== 16'h0D93 ||
               mr_pair2 !== 16'h9300 ||
+              clk_pair1 !== 16'h0D93 || dqs_edge_pair1 !== 16'h090A ||
               id_reads != 3 || writes != 25 || reads != 25)))
             $fatal(1,"diagnostic failed: result=%d stage=%h addr=%h exp=%h got=%h writes=%d reads=%d",
                    result_code,stage_code,failure_address,expected_data,actual_data,writes,reads);
         $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d",
                  result_code,stage_code,writes,reads);
-        if (!no_dqs && !bad_id && !corrupt && !alias_bit12) begin
+        if (!no_dqs && !bad_id && !early_dqs && !corrupt && !alias_bit12) begin
             reset=1;
             repeat (4) @(posedge clk);
             reset=0;

@@ -20,6 +20,8 @@ module aps6408_diag_core #(
     output reg [15:0] mr_pair0,
     output reg [15:0] mr_pair1,
     output reg [15:0] mr_pair2,
+    output reg [15:0] dqs_edge_pair1,
+    output reg [15:0] clk_pair1,
     output reg [7:0] diagnostic_leds,
     output activity,
     output reg PSRAM_CLK,
@@ -52,6 +54,11 @@ module aps6408_diag_core #(
     reg dqs_prev;
     reg [2:0] sample_delay;
     reg sample_pending;
+    reg [15:0] dqs_edge_word;
+    reg [15:0] clk_read_word;
+    reg [1:0] clk_sample_delay;
+    reg clk_sample_pending;
+    reg clk_sample_byte;
 
     assign PSRAM_DQ = dq_oe ? dq_out : 8'hzz;
     assign PSRAM_DQS = dm_oe ? 1'b0 : 1'bz; // DM=0 enables both write bytes
@@ -113,6 +120,11 @@ module aps6408_diag_core #(
             read_word <= 0;
             sample_delay <= 0;
             sample_pending <= 0;
+            dqs_edge_word <= 0;
+            clk_read_word <= 0;
+            clk_sample_delay <= 0;
+            clk_sample_pending <= 0;
+            clk_sample_byte <= 0;
             result_code <= 0;
             stage_code <= 8'h01;
             failure_address <= 0;
@@ -125,6 +137,8 @@ module aps6408_diag_core #(
             mr_pair0 <= 0;
             mr_pair1 <= 0;
             mr_pair2 <= 0;
+            dqs_edge_pair1 <= 0;
+            clk_pair1 <= 0;
             diagnostic_leds <= 0;
         end else begin
             if (tick) div_count <= 0;
@@ -154,6 +168,16 @@ module aps6408_diag_core #(
                         sample_late[7:0] <= PSRAM_DQ;
                         data_index <= 2;
                     end
+                end
+            end
+
+            if (clk_sample_pending) begin
+                if (clk_sample_delay != 0)
+                    clk_sample_delay <= clk_sample_delay - 1'b1;
+                else begin
+                    if (clk_sample_byte) clk_read_word[7:0] <= PSRAM_DQ;
+                    else clk_read_word[15:8] <= PSRAM_DQ;
+                    clk_sample_pending <= 0;
                 end
             end
 
@@ -210,6 +234,9 @@ module aps6408_diag_core #(
                     data_index <= 0;
                     timeout_edges <= 0;
                     sample_pending <= 0;
+                    dqs_edge_word <= 0;
+                    clk_read_word <= 0;
+                    clk_sample_pending <= 0;
                     read_word <= 0;
                     sample_early <= 0;
                     sample_mid <= 0;
@@ -270,6 +297,11 @@ module aps6408_diag_core #(
                     if (tick) begin
                         PSRAM_CLK <= ~PSRAM_CLK;
                         timeout_edges <= timeout_edges + 1'b1;
+                        if (id_phase && (timeout_edges == 8 || timeout_edges == 9)) begin
+                            clk_sample_pending <= 1;
+                            clk_sample_delay <= 2;
+                            clk_sample_byte <= (timeout_edges == 9);
+                        end
                         if (timeout_edges == 7'd100) begin
                             stage_code <= 8'hE1; // no two DQS data edges
                             failure_address <= address;
@@ -283,8 +315,12 @@ module aps6408_diag_core #(
                         !sample_pending) begin
                         sample_pending <= 1;
                         sample_delay <= 4;
+                        if (data_index == 0) dqs_edge_word[15:8] <= {1'b0, timeout_edges};
+                        else dqs_edge_word[7:0] <= {1'b0, timeout_edges};
                     end
-                    if (data_index == 2 && !sample_pending) state <= S_END;
+                    if (data_index == 2 && !sample_pending &&
+                        (!id_phase || (timeout_edges >= 10 && !clk_sample_pending)))
+                        state <= S_END;
                 end
 
                 S_END: if (tick) begin
@@ -310,6 +346,8 @@ module aps6408_diag_core #(
                         end else if (id_slot == 1) begin
                             mr_pair1 <= read_word;
                             id_word <= read_word;
+                            dqs_edge_pair1 <= dqs_edge_word;
+                            clk_pair1 <= clk_read_word;
                             id_slot <= 2;
                             state <= S_START;
                         end else begin
@@ -318,7 +356,7 @@ module aps6408_diag_core #(
                             // identifies generation 3 and 64 Mbit density.
                             if (((mr_pair1[15:8] & 8'h1F) != 8'h0D) ||
                                 ((mr_pair1[7:0] & 8'h1F) != 8'h13)) begin
-                                stage_code <= 8'hE5;
+                                stage_code <= 8'hE6;
                                 failure_address <= 24'h000001;
                                 expected_data <= 16'h0D13;
                                 actual_data <= mr_pair1;

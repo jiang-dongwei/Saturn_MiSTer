@@ -181,12 +181,17 @@ wire [15:0] sample_late;
 wire [15:0] mr_pair0;
 wire [15:0] mr_pair1;
 wire [15:0] mr_pair2;
+wire [15:0] dqs_edge_pair1;
+wire [15:0] clk_pair1;
 wire [2:0] speed_index = 3'd0;
 wire [7:0] diagnostic_leds;
 wire diagnostic_activity;
-wire [23:0] matrix_a = {8'd0, stage_code == 8'hE5 ? mr_pair0 : sample_early};
-wire [23:0] matrix_b = {8'd0, stage_code == 8'hE5 ? mr_pair1 : sample_mid};
-wire [23:0] matrix_c = {8'd0, stage_code == 8'hE5 ? mr_pair2 : sample_late};
+wire [23:0] matrix_a = {8'd0, stage_code == 8'hE6 ? dqs_edge_pair1 :
+                              stage_code == 8'hE5 ? mr_pair0 : sample_early};
+wire [23:0] matrix_b = {8'd0, (stage_code == 8'hE5 || stage_code == 8'hE6) ?
+                              mr_pair1 : sample_mid};
+wire [23:0] matrix_c = {8'd0, stage_code == 8'hE6 ? clk_pair1 :
+                              stage_code == 8'hE5 ? mr_pair2 : sample_late};
 
 aps6408_diag_core diagnostic
 (
@@ -204,6 +209,8 @@ aps6408_diag_core diagnostic
     .mr_pair0(mr_pair0),
     .mr_pair1(mr_pair1),
     .mr_pair2(mr_pair2),
+    .dqs_edge_pair1(dqs_edge_pair1),
+    .clk_pair1(clk_pair1),
     .diagnostic_leds(diagnostic_leds),
     .activity(diagnostic_activity),
     .PSRAM_CLK(PSRAM_CLK),
