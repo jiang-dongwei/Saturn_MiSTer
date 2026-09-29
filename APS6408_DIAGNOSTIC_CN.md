@@ -4,23 +4,23 @@ Quartus revision：`Saturn_APS6408_Diag.qpf`。顶层仍是 MiSTer `sys_top`，�
 
 ## 接线
 
-以下映射由用户提供的两张 FPGA 接线图与 `Datesheet.pdf` 小板原理图合并得到。J1 与小板 HDMI 形状插座的同号管脚相连；这个接口承载 GPIO 信号，不是 HDMI 视频信号。
+J1 属于 MiSTER Pi 拓展坞。PSRAM 小板 CN5 的物理管脚经拓展坞 J1 对应到下表 FPGA 管脚。拓展坞资料中的「PCB 标准网络名」源于旧版六线接口，只能供参考，不能当作这块八线 DDR PSRAM 的实际信号名；例如 J1 9 的旧名 `psram_clk` 实际接本板 DQ5。
 
-| 小板连接器脚 | PSRAM 信号 | FPGA 管脚 | 被占用的原功能 |
+| CN5/J1 脚号 | PSRAM 信号 | FPGA 管脚 | 拓展坞表中的信号名 |
 | ---: | --- | --- | --- |
 | 1 | CLK | AH17 | KEY0 |
 | 2 | CE# | AH16 | KEY1 |
-| 3 | DQ2 | AG13 | SDRAM_DQML |
-| 4 | DQ3 | AF13 | SDRAM_DQMH |
-| 5 | DQ4 | AG10 | SDRAM_CKE |
-| 6 | DQ7 | AG9 | IO_SDA |
-| 7 | DQS/DM | U14 | IO_SCL |
-| 8 | DQ0 | U13 | SD_SPI_MOSI |
-| 9 | DQ5 | AG8 | SD_SPI_CLK |
-| 10 | DQ1 | AH8 | SD_SPI_MISO |
-| 11 | DQ6 | AE15 | SD_SPI_CS |
+| 3 | DQ2 | AG13 | Arduino_IO0 |
+| 4 | DQ3 | AF13 | Arduino_IO1 |
+| 5 | DQ4 | AG10 | Arduino_IO2 |
+| 6 | DQ7 | AG9 | Arduino_IO3 |
+| 7 | DQS/DM | U14 | Arduino_IO4 |
+| 8 | DQ0 | U13 | Arduino_IO5 |
+| 9 | DQ5 | AG8 | Arduino_IO6 |
+| 10 | DQ1 | AH8 | Arduino_IO7 |
+| 11 | DQ6 | AE15 | Arduino_IO9 |
 
-**硬件接线阻塞：当前 CLK/CE# 映射不能用于标准 DE10-Nano。** AH17/AH16 并非可自由驱动的按键 GPIO；板载 U29（SN74AUC17）的两个输出直接驱动这两个 FPGA 管脚。诊断 core 也把它们配置为输出，会与 U29 发生总线争用。即使不按按键，U29 仍主动输出高电平。停止使用按此映射生成的旧 RBF；须将 CLK、CE# 改接到两个真正可用的 FPGA 输出 GPIO，并同步修改 `sys/sys_psram_opi.tcl`，或在确认板载 U29 与 AH17/AH16 已物理隔离后再使用。只更改 RTL、采样延迟或不按实体按键均不能解决此问题。另若装有会主动使用 IO_SCL/IO_SDA 的 I/O 扩展板，仍须隔离，因为 DQS/DQ7 与之共线。
+实物照片确认主板为 Retro Remake **MiSTER Pi**。标准 DE10-Nano 的 U29 按键电路不能直接套用到此主板；先前据此认定 AH17/AH16 发生争用的结论已撤回。用户提供的 `123.pdf` 原理图证实 PSRAM 小板 CN5 1/2 分别是 CLK/CE#，9/11 分别是 DQ5/DQ6；结合拓展坞 J1 的封装管脚表，当前八线诊断引脚文件的这四根线映射正确。尚需用 MiSTER Pi 自身原理图核实 AH17/AH16 在主板上是否另有驱动。若另外装有会主动使用 IO_SCL/IO_SDA 的 I/O 扩展板，仍须确认不会与 DQS/DQ7 冲突。
 
 ## 测试内容
 
@@ -52,7 +52,7 @@ Global Reset 版冷启动后由 `E1` 变为 `E3`，屏幕原始 MR 值约为 `CA
 
 下一候选在地址 1 读取完成后立即比较身份值和两种采样值；若不符便显示 E6，不再为了显示旧 MR 映射而增加地址 2 事务。如果地址 0 或 1 的读取仍报 E1，E1 页面也显示当次事务的 DQS 边沿计数、DQS 采样和固定 CLK 采样。若 DQS 数据和 CLK 数据不一致，先看 DQS 边沿是否早于 `090A`；若两者一致但仍不符合身份值，则排查命令/地址、DQ 位映射、总线驱动和实际芯片时序。功能仿真覆盖正常、数据损坏、DQS 全缺失、地址 1 缺失 DQS、地址线别名、错误 ID 和提前 DQS 边沿七种情形。
 
-最新 E6 实物照片：MR1/MR2=`CAAE`，DQS EDGE=`090A`，DQS DATA=`CAAE`，CLK DATA=`CAAE`。两种采样相同且边沿位置符合仿真，读采样偏移不是首要嫌疑；这些值仍不是有效器件 ID。随后对照 Intel 发布的 DE10-Nano 原理图与本工程引脚表，发现 CLK/CE# 所用 AH17/AH16 正是板载 U29 的两个输出。之前「只需不按按键」的判断错误。当前先处理这项硬件争用，不能靠继续微调 RXDELAY/DQS 解决。原理图：https://www.intel.com/content/dam/develop/external/us/en/documents/de10-nano-schematic-849456.pdf （第 20 页，FPGA: LED, KEY, SW）。
+最新 E6 实物照片：MR1/MR2=`CAAE`，DQS EDGE=`090A`，DQS DATA=`CAAE`，CLK DATA=`CAAE`。两种采样相同且边沿位置符合仿真，读采样偏移不是首要嫌疑；这些值仍不是有效器件 ID。后续照片确认实物是 MiSTER Pi，而非标准 DE10-Nano；因此 DE10-Nano U29 争用推断无效。`123.pdf` 与拓展坞表共同证实原八线引脚映射，无需换脚重编译。
 
 这版诊断验证低速信号连通、基本 DDR 命令与 DQS 读回、以及地址范围。它不验证 133 MHz 上限、连续吞吐量、RAMH 适配或 Saturn 游戏运行。`PASS` 只表示上述稀疏地址的读写检查通过。
 
