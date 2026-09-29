@@ -20,7 +20,7 @@ Quartus revision：`Saturn_APS6408_Diag.qpf`。顶层仍是 MiSTer `sys_top`，�
 | 10 | DQ1 | AH8 | SD_SPI_MISO |
 | 11 | DQ6 | AE15 | SD_SPI_CS |
 
-本 revision 在 RTL 顶层和 Quartus 引脚文件中隔离这些旧功能。由于 CLK、CE# 还连在板载 KEY0/KEY1 管脚上，诊断运行时不要按这两个实体按键；使用 OSD 的 `Restart test` 重跑。若另外装有会主动使用 IO_SCL/IO_SDA 的 I/O 扩展板，须先隔离它，因为 DQS/DQ7 与之共线。
+**硬件接线阻塞：当前 CLK/CE# 映射不能用于标准 DE10-Nano。** AH17/AH16 并非可自由驱动的按键 GPIO；板载 U29（SN74AUC17）的两个输出直接驱动这两个 FPGA 管脚。诊断 core 也把它们配置为输出，会与 U29 发生总线争用。即使不按按键，U29 仍主动输出高电平。停止使用按此映射生成的旧 RBF；须将 CLK、CE# 改接到两个真正可用的 FPGA 输出 GPIO，并同步修改 `sys/sys_psram_opi.tcl`，或在确认板载 U29 与 AH17/AH16 已物理隔离后再使用。只更改 RTL、采样延迟或不按实体按键均不能解决此问题。另若装有会主动使用 IO_SCL/IO_SDA 的 I/O 扩展板，仍须隔离，因为 DQS/DQ7 与之共线。
 
 ## 测试内容
 
@@ -51,6 +51,8 @@ Global Reset 版冷启动后由 `E1` 变为 `E3`，屏幕原始 MR 值约为 `CA
 首个 E6 候选继续读取地址 0、1、2，仅将地址 1 的 DQS 边沿计数和固定 CLK 采样结果锁存到屏幕。固定 CLK 采样在地址最后一个边沿后第 9、10 个半时钟所对应的两个数据时隙，各延迟三个 67.7 MHz 周期取 DQ。实物照片显示该候选在第三次读取（地址 `000002`）报 `E1`，屏幕显示前一次 MR1/MR2=`CAAA`；它未进入 E6 页面，因而没有展示已锁存的交叉采样值。此结果只证明第三次事务未捕获两个 DQS 边沿，不能据此判断 MR1/MR2 的两种采样是否一致。
 
 下一候选在地址 1 读取完成后立即比较身份值和两种采样值；若不符便显示 E6，不再为了显示旧 MR 映射而增加地址 2 事务。如果地址 0 或 1 的读取仍报 E1，E1 页面也显示当次事务的 DQS 边沿计数、DQS 采样和固定 CLK 采样。若 DQS 数据和 CLK 数据不一致，先看 DQS 边沿是否早于 `090A`；若两者一致但仍不符合身份值，则排查命令/地址、DQ 位映射、总线驱动和实际芯片时序。功能仿真覆盖正常、数据损坏、DQS 全缺失、地址 1 缺失 DQS、地址线别名、错误 ID 和提前 DQS 边沿七种情形。
+
+最新 E6 实物照片：MR1/MR2=`CAAE`，DQS EDGE=`090A`，DQS DATA=`CAAE`，CLK DATA=`CAAE`。两种采样相同且边沿位置符合仿真，读采样偏移不是首要嫌疑；这些值仍不是有效器件 ID。随后对照 Intel 发布的 DE10-Nano 原理图与本工程引脚表，发现 CLK/CE# 所用 AH17/AH16 正是板载 U29 的两个输出。之前「只需不按按键」的判断错误。当前先处理这项硬件争用，不能靠继续微调 RXDELAY/DQS 解决。原理图：https://www.intel.com/content/dam/develop/external/us/en/documents/de10-nano-schematic-849456.pdf （第 20 页，FPGA: LED, KEY, SW）。
 
 这版诊断验证低速信号连通、基本 DDR 命令与 DQS 读回、以及地址范围。它不验证 133 MHz 上限、连续吞吐量、RAMH 适配或 Saturn 游戏运行。`PASS` 只表示上述稀疏地址的读写检查通过。
 

@@ -1,5 +1,7 @@
 # APS6408L-3OBM-BA diagnostic board, CN5 HDMI-shaped connector to DE10-Nano J1.
-# Connector pin numbers are from the supplied schematic and FPGA pin table.
+# AH17/AH16 are driven by the DE10-Nano's U29 button buffer.  Do not build a
+# bitstream that drives them until CLK/CE# are rerouted or U29 is isolated.
+error "Unsafe APS6408 wiring: PSRAM_CLK/CE_N target KEY0/KEY1 (AH17/AH16), which U29 actively drives. Reroute CLK/CE_N and update this file before building."
 set MISTER_PSRAM_ADAPTER 1
 set MISTER_OPI_DIAG 1
 
