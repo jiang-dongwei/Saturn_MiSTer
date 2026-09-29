@@ -1,0 +1,75 @@
+name: Build APS6408 diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run APS6408 diagnostic simulations
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+          mkdir -p .ci
+          iverilog -g2012 -s tb_aps6408_diag -o .ci/aps6408_diag.vvp \
+            rtl/aps6408_diag_core.sv sim/psram/tb_aps6408_diag.sv
+          for scenario in normal corrupt no_dqs alias_bit12 bad_id; do
+            if [ "$scenario" = normal ]; then
+              vvp .ci/aps6408_diag.vvp
+            else
+              vvp .ci/aps6408_diag.vvp "+$scenario"
+            fi
+          done
+
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune --all --force
+          df -h
+
+      - name: Pull fixed Quartus image
+        run: docker pull theypsilon/quartus-lite-c5:17.0.2
+
+      - name: Compile diagnostic revision
+        shell: bash
+        run: |
+          mkdir -p .ci
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/project" \
+            --workdir /project \
+            theypsilon/quartus-lite-c5:17.0.2 \
+            bash -lc 'set -euo pipefail; quartus_sh --flow compile Saturn_APS6408_Diag 2>&1 | tee .ci/aps6408-build.log'
+
+      - name: Verify and hash bitstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s output_files_aps6408_diag/Saturn_APS6408_Diag.rbf
+          sha256sum output_files_aps6408_diag/Saturn_APS6408_Diag.rbf | tee .ci/aps6408-rbf.sha256
+          cat .ci/aps6408-rbf.sha256 >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bitstream and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: APS6408_Diag-${{ github.run_number }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            .ci/aps6408-build.log
+            .ci/aps6408-rbf.sha256
+            output_files_aps6408_diag/Saturn_APS6408_Diag.rbf
+            output_files_aps6408_diag/Saturn_APS6408_Diag.flow.rpt
+            output_files_aps6408_diag/Saturn_APS6408_Diag.fit.rpt
+            output_files_aps6408_diag/Saturn_APS6408_Diag.sta.rpt
+            output_files_aps6408_diag/Saturn_APS6408_Diag.asm.rpt

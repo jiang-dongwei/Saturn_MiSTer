@@ -56,13 +56,19 @@ module sys_top
 	output        SDRAM_nCS,
 	output  [1:0] SDRAM_BA,
 	output        SDRAM_CLK,
+`ifndef MISTER_OPI_DIAG
 	output        SDRAM_CKE,
+`endif
 
 `ifdef MISTER_PSRAM
-	//////// 3SQR QPI PSRAM ////
 	output        PSRAM_CLK,
 	output        PSRAM_CE_N,
+`ifdef MISTER_OPI_DIAG
+	inout   [7:0] PSRAM_DQ,
+	inout         PSRAM_DQS,
+`else
 	inout   [3:0] PSRAM_DQ,
+`endif
 `endif
 
 `ifdef MISTER_DUAL_SDRAM
@@ -113,8 +119,10 @@ module sys_top
 `endif
 
 	inout         SDCD_SPDIF,
+`ifndef MISTER_OPI_DIAG
 	output        IO_SCL,
 	inout         IO_SDA,
+`endif
 
 	////////// ADC //////////////
 	output        ADC_SCK,
@@ -123,7 +131,9 @@ module sys_top
 	output        ADC_CONVST,
 
 	////////// MB KEY ///////////
+`ifndef MISTER_OPI_DIAG
 	input   [1:0] KEY,
+`endif
 
 	////////// MB SWITCH ////////
 	input   [3:0] SW,
@@ -134,6 +144,13 @@ module sys_top
 	///////// USER IO ///////////
 	inout   [6:0] USER_IO
 );
+
+`ifdef MISTER_OPI_DIAG
+wire SDRAM_CKE;
+wire IO_SCL;
+wire IO_SDA;
+wire [1:0] KEY = 2'b11;
+`endif
 
 `ifdef MISTER_PSRAM
 // These legacy top-level ports are deliberately internal in the adapter
@@ -1862,6 +1879,9 @@ emu emu
 	.PSRAM_CLK(PSRAM_CLK),
 	.PSRAM_CE_N(PSRAM_CE_N),
 	.PSRAM_DQ(PSRAM_DQ),
+`ifdef MISTER_OPI_DIAG
+	.PSRAM_DQS(PSRAM_DQS),
+`endif
 `endif
 
 `ifdef MISTER_DUAL_SDRAM

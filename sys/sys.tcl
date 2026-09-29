@@ -19,8 +19,10 @@ set_location_assignment PIN_AD4 -to ADC_SDO
 #============================================================
 # I2C LEDS/BUTTONS
 #============================================================
-set_location_assignment PIN_U14 -to IO_SCL
-set_location_assignment PIN_AG9 -to IO_SDA
+if {![info exists MISTER_OPI_DIAG]} {
+	set_location_assignment PIN_U14 -to IO_SCL
+	set_location_assignment PIN_AG9 -to IO_SDA
+}
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to IO_S*
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to IO_S*
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IO_S*
@@ -89,7 +91,9 @@ if {![info exists MISTER_PSRAM_ADAPTER]} {
 	set_location_assignment PIN_AF13 -to SDRAM_DQMH
 }
 set_location_assignment PIN_AD20 -to SDRAM_CLK
-set_location_assignment PIN_AG10 -to SDRAM_CKE
+if {![info exists MISTER_OPI_DIAG]} {
+	set_location_assignment PIN_AG10 -to SDRAM_CKE
+}
 set_location_assignment PIN_AA19 -to SDRAM_nWE
 set_location_assignment PIN_AA18 -to SDRAM_nCAS
 set_location_assignment PIN_Y18 -to SDRAM_nCS
@@ -181,8 +185,10 @@ set_location_assignment PIN_V13 -to HDMI_TX_VS
 #============================================================
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to KEY[0]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to KEY[1]
-set_location_assignment PIN_AH17 -to KEY[0]
-set_location_assignment PIN_AH16 -to KEY[1]
+if {![info exists MISTER_OPI_DIAG]} {
+	set_location_assignment PIN_AH17 -to KEY[0]
+	set_location_assignment PIN_AH16 -to KEY[1]
+}
 
 #============================================================
 # LED
