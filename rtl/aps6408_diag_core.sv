@@ -181,6 +181,27 @@ module aps6408_diag_core #(
                 end
             end
 
+            // Keep command/address and write data stable across each PSRAM
+            // clock edge. Prepare the next byte one fabric cycle afterward.
+            if (div_count == 0) begin
+                if (state == S_CMD) begin
+                    case (edge_index)
+                        2: dq_out <= 8'h00;             // A3
+                        3: dq_out <= address[23:16];   // A2
+                        4: dq_out <= address[15:8];    // A1
+                        5: dq_out <= address[7:0];     // A0
+                    endcase
+                end else if (state == S_WRITE) begin
+                    if (data_index == 0) begin
+                        dq_oe <= 1;
+                        dm_oe <= 1;
+                        dq_out <= pattern[15:8];
+                    end else if (data_index == 1) begin
+                        dq_out <= pattern[7:0];
+                    end
+                end
+            end
+
             case (state)
                 S_POWER: begin
                     PSRAM_CE_N <= 1;
@@ -248,19 +269,10 @@ module aps6408_diag_core #(
                 S_CMD: if (tick) begin
                     PSRAM_CLK <= ~PSRAM_CLK;
                     edge_index <= edge_index + 1'b1;
-                    // INST on first rising edge; A3..A0 on edges 3..6.
-                    case (edge_index)
-                        0: dq_out <= 8'h00;
-                        1: dq_out <= 8'h00; // A3, high address byte reserved
-                        2: dq_out <= address[23:16]; // A2
-                        3: dq_out <= address[15:8]; // A1
-                        4: dq_out <= address[7:0]; // A0
-                        5: begin
-                            // A0 was latched at this edge.
-                            state <= S_TURN;
-                            edge_index <= 0;
-                        end
-                    endcase
+                    if (edge_index == 5) begin
+                        state <= S_TURN;
+                        edge_index <= 0;
+                    end
                 end
 
                 // Preserve address hold time after the final falling edge.
@@ -276,9 +288,6 @@ module aps6408_diag_core #(
                     // full clocks (eight DDR edges) precede the first data.
                     if (edge_index == 7) begin
                         state <= S_WRITE;
-                        dq_oe <= 1;
-                        dm_oe <= 1;
-                        dq_out <= pattern[15:8];
                         data_index <= 0;
                     end
                 end
@@ -286,7 +295,6 @@ module aps6408_diag_core #(
                 S_WRITE: if (tick) begin
                     PSRAM_CLK <= ~PSRAM_CLK;
                     if (data_index == 0) begin
-                        dq_out <= pattern[7:0];
                         data_index <= 1;
                     end else begin
                         state <= S_END;
@@ -302,7 +310,9 @@ module aps6408_diag_core #(
                             clk_sample_delay <= 2;
                             clk_sample_byte <= (timeout_edges == 9);
                         end
-                        if (timeout_edges == 7'd100) begin
+                        // Bound a missing-DQS transaction. Register reads use
+                        // fixed LC=5; memory reads may incur refresh pushout.
+                        if (timeout_edges == (id_phase ? 7'd17 : 7'd50)) begin
                             stage_code <= 8'hE1; // no two DQS data edges
                             failure_address <= address;
                             dqs_edge_pair1 <= dqs_edge_word;

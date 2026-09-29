@@ -63,14 +63,6 @@ jobs:
             theypsilon/quartus-lite-c5:17.0.2 \
             bash -lc 'set -euo pipefail; quartus_sh --flow compile Saturn_APS6408_Diag 2>&1 | tee .ci/aps6408-build.log'
 
-      - name: Verify and hash bitstream
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s output_files_aps6408_diag/Saturn_APS6408_Diag.rbf
-          sha256sum output_files_aps6408_diag/Saturn_APS6408_Diag.rbf | tee .ci/aps6408-rbf.sha256
-          cat .ci/aps6408-rbf.sha256 >> "$GITHUB_STEP_SUMMARY"
-
       - name: Upload bitstream and reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,7 +72,6 @@ jobs:
           retention-days: 30
           path: |
             .ci/aps6408-build.log
-            .ci/aps6408-rbf.sha256
             output_files_aps6408_diag/Saturn_APS6408_Diag.rbf
             output_files_aps6408_diag/Saturn_APS6408_Diag.flow.rpt
             output_files_aps6408_diag/Saturn_APS6408_Diag.fit.rpt

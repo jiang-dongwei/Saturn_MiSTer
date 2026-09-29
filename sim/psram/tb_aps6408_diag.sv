@@ -47,6 +47,13 @@ module tb_aps6408_diag;
     integer reset_commands=0;
     reg device_ready=0;
     integer corrupt=0, no_dqs=0, missing_slot1=0, alias_bit12=0, bad_id=0, early_dqs=0;
+    realtime last_psram_edge=-1.0e9;
+
+    always @(posedge psram_clk or negedge psram_clk)
+        if (!psram_ce_n) last_psram_edge=$realtime;
+    always @(dq)
+        if (!psram_ce_n && dut.dq_oe && $realtime-last_psram_edge < 5.0)
+            $fatal(1,"FPGA DQ changed within 5 ns of PSRAM clock edge");
 
     function integer cell_for;
         input [31:0] a;
