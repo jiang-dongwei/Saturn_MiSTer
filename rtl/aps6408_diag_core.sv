@@ -305,6 +305,9 @@ module aps6408_diag_core #(
                         if (timeout_edges == 7'd100) begin
                             stage_code <= 8'hE1; // no two DQS data edges
                             failure_address <= address;
+                            dqs_edge_pair1 <= dqs_edge_word;
+                            mr_pair1 <= read_word;
+                            clk_pair1 <= clk_read_word;
                             state <= S_FAIL;
                         end
                     end
@@ -348,23 +351,22 @@ module aps6408_diag_core #(
                             id_word <= read_word;
                             dqs_edge_pair1 <= dqs_edge_word;
                             clk_pair1 <= clk_read_word;
-                            id_slot <= 2;
-                            state <= S_START;
-                        end else begin
-                            mr_pair2 <= read_word;
                             // MR1[4:0] is APM vendor 0Dh; MR2[4:0]
                             // identifies generation 3 and 64 Mbit density.
-                            if (((mr_pair1[15:8] & 8'h1F) != 8'h0D) ||
-                                ((mr_pair1[7:0] & 8'h1F) != 8'h13)) begin
+                            if (((read_word[15:8] & 8'h1F) != 8'h0D) ||
+                                ((read_word[7:0] & 8'h1F) != 8'h13) ||
+                                (read_word != clk_read_word)) begin
                                 stage_code <= 8'hE6;
                                 failure_address <= 24'h000001;
                                 expected_data <= 16'h0D13;
-                                actual_data <= mr_pair1;
+                                actual_data <= read_word;
                                 state <= S_FAIL;
                             end else begin
                                 id_phase <= 0;
                                 state <= S_START;
                             end
+                        end else begin
+                            state <= S_FAIL;
                         end
                     end else if (read_phase && read_word != pattern) begin
                         stage_code <= 8'hE2;

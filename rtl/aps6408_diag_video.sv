@@ -215,9 +215,16 @@ function [7:0] screen_char;
 				if (column == 9) value = hex_char(stage_code[3:0]);
 			end
 			8: begin
-				value = fixed_char(TXT_ID, column);
-				if ((column >= 10) && (column < 14))
-					value = hex_char(id_value[15-((column-10)*4) -: 4]);
+				if (stage_code == 8'hE1) begin
+					value = fixed_char(TXT_ADDRESS, column);
+					if ((column >= 10) && (column < 16))
+						value = hex_char(failure_address[23-((column-10)*4) -: 4]);
+				end
+				else begin
+					value = fixed_char(TXT_ID, column);
+					if ((column >= 10) && (column < 14))
+						value = hex_char(id_value[15-((column-10)*4) -: 4]);
+				end
 			end
 			10: value = fixed_char(TXT_KGD, column);
 			12: value = fixed_char(TXT_SPEED, column);
@@ -242,7 +249,7 @@ function [7:0] screen_char;
 					if ((column >= 10) && (column < 14))
 						value = hex_char(matrix_a[15-((column-10)*4) -: 4]);
 				end
-				else if (stage_code == 8'hE6) begin
+				else if (stage_code == 8'hE1 || stage_code == 8'hE6) begin
 					value = fixed_char({"DQS EDGE:", {39{8'h20}}}, column);
 					if ((column >= 10) && (column < 14))
 						value = hex_char(matrix_a[15-((column-10)*4) -: 4]);
@@ -274,7 +281,7 @@ function [7:0] screen_char;
 					if ((column >= 10) && (column < 14))
 						value = hex_char(matrix_b[15-((column-10)*4) -: 4]);
 				end
-				else if (stage_code == 8'hE6) begin
+				else if (stage_code == 8'hE1 || stage_code == 8'hE6) begin
 					value = fixed_char({"DQS DATA:", {39{8'h20}}}, column);
 					if ((column >= 10) && (column < 14))
 						value = hex_char(matrix_b[15-((column-10)*4) -: 4]);
@@ -306,7 +313,7 @@ function [7:0] screen_char;
 					if ((column >= 10) && (column < 14))
 						value = hex_char(matrix_c[15-((column-10)*4) -: 4]);
 				end
-				else if (stage_code == 8'hE6) begin
+				else if (stage_code == 8'hE1 || stage_code == 8'hE6) begin
 					value = fixed_char({"CLK DATA:", {39{8'h20}}}, column);
 					if ((column >= 10) && (column < 14))
 						value = hex_char(matrix_c[15-((column-10)*4) -: 4]);

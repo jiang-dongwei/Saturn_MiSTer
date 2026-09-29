@@ -35,7 +35,7 @@ jobs:
           mkdir -p .ci
           iverilog -g2012 -s tb_aps6408_diag -o .ci/aps6408_diag.vvp \
             rtl/aps6408_diag_core.sv sim/psram/tb_aps6408_diag.sv
-          for scenario in normal corrupt no_dqs alias_bit12 bad_id early_dqs; do
+          for scenario in normal corrupt no_dqs missing_slot1 alias_bit12 bad_id early_dqs; do
             if [ "$scenario" = normal ]; then
               vvp .ci/aps6408_diag.vvp
             else

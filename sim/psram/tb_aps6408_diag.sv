@@ -46,7 +46,7 @@ module tb_aps6408_diag;
     integer writes=0, reads=0, id_reads=0;
     integer reset_commands=0;
     reg device_ready=0;
-    integer corrupt=0, no_dqs=0, alias_bit12=0, bad_id=0, early_dqs=0;
+    integer corrupt=0, no_dqs=0, missing_slot1=0, alias_bit12=0, bad_id=0, early_dqs=0;
 
     function integer cell_for;
         input [31:0] a;
@@ -102,7 +102,7 @@ module tb_aps6408_diag;
                     end else if (instruction==8'h40) begin
                         if (address > 32'h00000002) $fatal(1,"bad MR address %h",address);
                     end else if (cell_slot<0) $fatal(1,"bad address %h",address);
-                    if (instruction!=8'hA0 && !no_dqs) begin
+                    if (instruction!=8'hA0 && !no_dqs && !(missing_slot1 && address==1)) begin
                         #10 mem_oe=1;
                         mem_dqs=0; // read preamble
                     end
@@ -119,7 +119,7 @@ module tb_aps6408_diag;
                         memory[cell_slot][15:8]=dq;
                         writes=writes+1;
                     end else begin
-                        if (!no_dqs) begin
+                        if (!no_dqs && !(missing_slot1 && address==1)) begin
                             #10 mem_dq=(instruction==8'h40) ?
                                 ((address==0) ? 8'hA0 :
                                  (address==1) ? (bad_id ? 8'h16 : 8'h0D) : 8'h93) :
@@ -133,7 +133,7 @@ module tb_aps6408_diag;
                 15: begin
                     if (instruction==8'hA0) memory[cell_slot][7:0]=dq;
                     else begin
-                        if (!no_dqs) begin
+                        if (!no_dqs && !(missing_slot1 && address==1)) begin
                             #10 mem_dq=(instruction==8'h40) ?
                                 ((address==0) ? (bad_id ? 8'h16 : 8'h0D) :
                                  (address==1) ? 8'h93 : 8'h00) : memory[cell_slot][7:0];
@@ -148,6 +148,7 @@ module tb_aps6408_diag;
     initial begin
         corrupt=$test$plusargs("corrupt");
         no_dqs=$test$plusargs("no_dqs");
+        missing_slot1=$test$plusargs("missing_slot1");
         alias_bit12=$test$plusargs("alias_bit12");
         bad_id=$test$plusargs("bad_id");
         early_dqs=$test$plusargs("early_dqs");
@@ -155,11 +156,15 @@ module tb_aps6408_diag;
         reset=0;
         wait(result_code != 0);
         if (reset_commands != 1 ||
-            (no_dqs && (result_code !== 2'd2 || stage_code !== 8'hE1)) ||
+            (no_dqs && (result_code !== 2'd2 || stage_code !== 8'hE1 ||
+                        failure_address !== 24'h000000 || dqs_edge_pair1 !== 0)) ||
+            (missing_slot1 && (result_code !== 2'd2 || stage_code !== 8'hE1 ||
+                              failure_address !== 24'h000001 ||
+                              mr_pair0 !== 16'hA00D || dqs_edge_pair1 !== 0)) ||
             (bad_id && (result_code !== 2'd2 || stage_code !== 8'hE6 ||
                         mr_pair0 !== 16'hA016 ||
                         mr_pair1 !== 16'h1693 ||
-                        mr_pair2 !== 16'h9300 ||
+                        mr_pair2 !== 16'h0000 ||
                         clk_pair1 !== 16'h1693 ||
                         dqs_edge_pair1 !== 16'h090A || writes != 0)) ||
             (early_dqs && (result_code !== 2'd2 || stage_code !== 8'hE6 ||
@@ -167,17 +172,17 @@ module tb_aps6408_diag;
                            clk_pair1 !== 16'h0D93 ||
                            dqs_edge_pair1[15:8] >= 8'd9 || writes != 0)) ||
             ((corrupt || alias_bit12) && (result_code !== 2'd2 || stage_code !== 8'hE2)) ||
-            (!no_dqs && !bad_id && !early_dqs && !corrupt && !alias_bit12 &&
+            (!no_dqs && !missing_slot1 && !bad_id && !early_dqs && !corrupt && !alias_bit12 &&
              (result_code !== 2'd1 || id_word !== 16'h0D93 ||
               mr_pair0 !== 16'hA00D || mr_pair1 !== 16'h0D93 ||
-              mr_pair2 !== 16'h9300 ||
+              mr_pair2 !== 16'h0000 ||
               clk_pair1 !== 16'h0D93 || dqs_edge_pair1 !== 16'h090A ||
-              id_reads != 3 || writes != 25 || reads != 25)))
+              id_reads != 2 || writes != 25 || reads != 25)))
             $fatal(1,"diagnostic failed: result=%d stage=%h addr=%h exp=%h got=%h writes=%d reads=%d",
                    result_code,stage_code,failure_address,expected_data,actual_data,writes,reads);
         $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d",
                  result_code,stage_code,writes,reads);
-        if (!no_dqs && !bad_id && !early_dqs && !corrupt && !alias_bit12) begin
+        if (!no_dqs && !missing_slot1 && !bad_id && !early_dqs && !corrupt && !alias_bit12) begin
             reset=1;
             repeat (4) @(posedge clk);
             reset=0;
