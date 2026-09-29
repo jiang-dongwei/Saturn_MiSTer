@@ -62,7 +62,7 @@ localparam [383:0] TXT_MODE = {"MODE:", {43{8'h20}}};
 localparam [383:0] TXT_HELP1 = {"WRITE THEN READ 25 LOCATIONS", {20{8'h20}}};
 localparam [383:0] TXT_HELP_DDIO = {"DQS CAPTURE AT LOW SPEED", {24{8'h20}}};
 localparam [383:0] TXT_HELP2 = {"ADDRESS RANGE 000000 TO 7FFFFE", {18{8'h20}}};
-localparam [383:0] TXT_HELP3 = {"E1 DQS TIMEOUT E2 DATA E3 ID", {20{8'h20}}};
+localparam [383:0] TXT_HELP3 = {"E1 DQS E2 DATA E3 ID E4 MR TIMING", {15{8'h20}}};
 localparam [383:0] TXT_HELP4 = {"LED7 FAIL LED6 PASS", {29{8'h20}}};
 
 function [7:0] fixed_char;
@@ -232,6 +232,11 @@ function [7:0] screen_char;
 					if ((column >= 10) && (column < 16))
 						value = hex_char(matrix_a[23-((column-10)*4) -: 4]);
 				end
+				else if (stage_code == 8'hE4) begin
+					value = fixed_char({"EARLY MR:", {39{8'h20}}}, column);
+					if ((column >= 10) && (column < 14))
+						value = hex_char(matrix_a[15-((column-10)*4) -: 4]);
+				end
 				else begin
 					value = fixed_char(TXT_ADDRESS, column);
 					if ((column >= 10) && (column < 16))
@@ -249,6 +254,11 @@ function [7:0] screen_char;
 					if ((column >= 10) && (column < 16))
 						value = hex_char(matrix_b[23-((column-10)*4) -: 4]);
 				end
+				else if (stage_code == 8'hE4) begin
+					value = fixed_char({"MID MR:", {41{8'h20}}}, column);
+					if ((column >= 10) && (column < 14))
+						value = hex_char(matrix_b[15-((column-10)*4) -: 4]);
+				end
 				else begin
 					value = fixed_char(TXT_EXPECTED, column);
 					if ((column >= 11) && (column < 15))
@@ -265,6 +275,11 @@ function [7:0] screen_char;
 					value = fixed_char({"C 0B4S :", {40{8'h20}}}, column);
 					if ((column >= 10) && (column < 16))
 						value = hex_char(matrix_c[23-((column-10)*4) -: 4]);
+				end
+				else if (stage_code == 8'hE4) begin
+					value = fixed_char({"LATE MR:", {40{8'h20}}}, column);
+					if ((column >= 10) && (column < 14))
+						value = hex_char(matrix_c[15-((column-10)*4) -: 4]);
 				end
 				else begin
 					value = fixed_char(TXT_ACTUAL, column);

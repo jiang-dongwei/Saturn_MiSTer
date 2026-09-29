@@ -175,12 +175,15 @@ wire id_kgd_ok = 1'b0;
 wire [23:0] failure_address;
 wire [15:0] expected_data;
 wire [15:0] actual_data;
+wire [15:0] sample_early;
+wire [15:0] sample_mid;
+wire [15:0] sample_late;
 wire [2:0] speed_index = 3'd0;
 wire [7:0] diagnostic_leds;
 wire diagnostic_activity;
-wire [23:0] matrix_a = 24'd0;
-wire [23:0] matrix_b = 24'd0;
-wire [23:0] matrix_c = 24'd0;
+wire [23:0] matrix_a = {8'd0, sample_early};
+wire [23:0] matrix_b = {8'd0, sample_mid};
+wire [23:0] matrix_c = {8'd0, sample_late};
 
 aps6408_diag_core diagnostic
 (
@@ -192,6 +195,9 @@ aps6408_diag_core diagnostic
     .id_word(id_word),
     .expected_data(expected_data),
     .actual_data(actual_data),
+    .sample_early(sample_early),
+    .sample_mid(sample_mid),
+    .sample_late(sample_late),
     .diagnostic_leds(diagnostic_leds),
     .activity(diagnostic_activity),
     .PSRAM_CLK(PSRAM_CLK),

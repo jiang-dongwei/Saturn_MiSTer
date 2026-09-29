@@ -14,6 +14,9 @@ module aps6408_diag_core #(
     output reg [15:0] id_word,
     output reg [15:0] expected_data,
     output reg [15:0] actual_data,
+    output reg [15:0] sample_early,
+    output reg [15:0] sample_mid,
+    output reg [15:0] sample_late,
     output reg [7:0] diagnostic_leds,
     output activity,
     output reg PSRAM_CLK,
@@ -111,20 +114,36 @@ module aps6408_diag_core #(
             id_word <= 0;
             expected_data <= 0;
             actual_data <= 0;
+            sample_early <= 0;
+            sample_mid <= 0;
+            sample_late <= 0;
             diagnostic_leds <= 0;
         end else begin
             if (tick) div_count <= 0;
             else div_count <= div_count + 1'b1;
 
             if (sample_pending) begin
+                if (sample_delay == 4) begin
+                    if (data_index == 0) sample_early[15:8] <= PSRAM_DQ;
+                    else sample_early[7:0] <= PSRAM_DQ;
+                end
+                if (sample_delay == 2) begin
+                    if (data_index == 0) begin
+                        sample_mid[15:8] <= PSRAM_DQ;
+                        read_word[15:8] <= PSRAM_DQ;
+                    end else begin
+                        sample_mid[7:0] <= PSRAM_DQ;
+                        read_word[7:0] <= PSRAM_DQ;
+                    end
+                end
                 if (sample_delay != 0) sample_delay <= sample_delay - 1'b1;
                 else begin
                     sample_pending <= 0;
                     if (data_index == 0) begin
-                        read_word[15:8] <= PSRAM_DQ;
+                        sample_late[15:8] <= PSRAM_DQ;
                         data_index <= 1;
                     end else begin
-                        read_word[7:0] <= PSRAM_DQ;
+                        sample_late[7:0] <= PSRAM_DQ;
                         data_index <= 2;
                     end
                 end
@@ -184,6 +203,9 @@ module aps6408_diag_core #(
                     timeout_edges <= 0;
                     sample_pending <= 0;
                     read_word <= 0;
+                    sample_early <= 0;
+                    sample_mid <= 0;
+                    sample_late <= 0;
                     stage_code <= id_phase ? 8'h08 : (read_phase ? 8'h20 : 8'h10);
                     state <= S_CMD;
                 end
@@ -252,7 +274,7 @@ module aps6408_diag_core #(
                          ((data_index == 1) && !dqs_pipe[1] && dqs_prev)) &&
                         !sample_pending) begin
                         sample_pending <= 1;
-                        sample_delay <= 2;
+                        sample_delay <= 4;
                     end
                     if (data_index == 2 && !sample_pending) state <= S_END;
                 end
@@ -279,7 +301,7 @@ module aps6408_diag_core #(
                         // Ignore reserved MR1 bits and the MR2 good-die bit.
                         if (((read_word[15:8] & 8'h1F) != 8'h0D) ||
                             ((read_word[7:0] & 8'h1F) != 8'h13)) begin
-                            stage_code <= 8'hE3;
+                            stage_code <= 8'hE4;
                             failure_address <= 24'h000001;
                             expected_data <= 16'h0D13;
                             actual_data <= read_word;

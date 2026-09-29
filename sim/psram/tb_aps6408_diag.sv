@@ -9,6 +9,7 @@ module tb_aps6408_diag;
     wire [23:0] failure_address;
     wire [15:0] id_word;
     wire [15:0] expected_data, actual_data;
+    wire [15:0] sample_early, sample_mid, sample_late;
     wire [7:0] diagnostic_leds;
     wire activity, psram_clk, psram_ce_n;
     tri [7:0] dq;
@@ -24,6 +25,8 @@ module tb_aps6408_diag;
         .stage_code(stage_code), .failure_address(failure_address),
         .id_word(id_word),
         .expected_data(expected_data), .actual_data(actual_data),
+        .sample_early(sample_early), .sample_mid(sample_mid),
+        .sample_late(sample_late),
         .diagnostic_leds(diagnostic_leds), .activity(activity),
         .PSRAM_CLK(psram_clk), .PSRAM_CE_N(psram_ce_n),
         .PSRAM_DQ(dq), .PSRAM_DQS(dqs)
@@ -137,7 +140,10 @@ module tb_aps6408_diag;
         wait(result_code != 0);
         if (reset_commands != 1 ||
             (no_dqs && (result_code !== 2'd2 || stage_code !== 8'hE1)) ||
-            (bad_id && (result_code !== 2'd2 || stage_code !== 8'hE3 || writes != 0)) ||
+            (bad_id && (result_code !== 2'd2 || stage_code !== 8'hE4 ||
+                        sample_early !== 16'h1693 ||
+                        sample_mid !== 16'h1693 ||
+                        sample_late !== 16'h1693 || writes != 0)) ||
             ((corrupt || alias_bit12) && (result_code !== 2'd2 || stage_code !== 8'hE2)) ||
             (!no_dqs && !bad_id && !corrupt && !alias_bit12 &&
              (result_code !== 2'd1 || id_word !== 16'h0D93 ||
