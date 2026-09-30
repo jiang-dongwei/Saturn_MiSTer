@@ -38,7 +38,7 @@ module tb_aps6408_diag;
         .PSRAM_DQ(dq), .PSRAM_DQS(dqs)
     );
 
-    reg [15:0] memory [0:24];
+    reg [15:0] memory [0:255];
     reg [7:0] instruction;
     reg [31:0] address;
     integer edge_number=-1;
@@ -58,6 +58,8 @@ module tb_aps6408_diag;
     function integer cell_for;
         input [31:0] a;
         reg [31:0] mapped;
+        reg [31:0] candidate;
+        reg [7:0] spread;
         integer bit_index;
         begin
             mapped = alias_bit12 ? (a & ~32'h00001000) : a;
@@ -69,6 +71,12 @@ module tb_aps6408_diag;
                 cell_for = 23;
             if (mapped == (32'h007FFFFE & (alias_bit12 ? ~32'h00001000 : 32'hFFFFFFFF)))
                 cell_for = 24;
+            for (bit_index=25; bit_index<256; bit_index=bit_index+1) begin
+                spread = bit_index - 25;
+                candidate = {8'h00, 1'b0, spread, spread ^ 8'h5A,
+                             spread[5:0] ^ 6'h15, 1'b0};
+                if (mapped == candidate) cell_for = bit_index;
+            end
         end
     endfunction
 
@@ -184,7 +192,7 @@ module tb_aps6408_diag;
               mr_pair0 !== 16'hA00D || mr_pair1 !== 16'h0D93 ||
               mr_pair2 !== 16'h0000 ||
               clk_pair1 !== 16'h0D93 || dqs_edge_pair1 !== 16'h090A ||
-              id_reads != 2 || writes != 25 || reads != 25)))
+              id_reads != 2 || writes != 1024 || reads != 1024)))
             $fatal(1,"diagnostic failed: result=%d stage=%h addr=%h exp=%h got=%h writes=%d reads=%d",
                    result_code,stage_code,failure_address,expected_data,actual_data,writes,reads);
         $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d",
@@ -200,7 +208,7 @@ module tb_aps6408_diag;
         $finish;
     end
     initial begin
-        #6000000;
+        #100000000;
         $fatal(1,"diagnostic timeout");
     end
 endmodule

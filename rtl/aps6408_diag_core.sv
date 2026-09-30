@@ -42,7 +42,8 @@ module aps6408_diag_core #(
     reg [6:0] timeout_edges;
     reg [4:0] edge_index;
     reg [3:0] data_index;
-    reg [4:0] cell_index;
+    reg [7:0] cell_index;
+    reg [1:0] pattern_pass;
     reg id_phase;
     reg [1:0] id_slot;
     reg read_phase;
@@ -65,32 +66,36 @@ module aps6408_diag_core #(
     assign activity = (state != S_PASS) && (state != S_FAIL);
 
     function [23:0] address_for;
-        input [4:0] index;
+        input [7:0] index;
+        reg [7:0] spread;
         begin
             if (index == 0) address_for = 24'h000000;
             else if (index <= 22) address_for = 24'h000001 << index;
             else if (index == 23) address_for = 24'h3FFFFE;
-            else address_for = 24'h7FFFFE;
+            else if (index == 24) address_for = 24'h7FFFFE;
+            else begin
+                spread = index - 8'd25;
+                address_for = {1'b0, spread, spread ^ 8'h5A,
+                               spread[5:0] ^ 6'h15, 1'b0};
+            end
         end
     endfunction
 
     function [15:0] pattern_for;
-        input [4:0] index;
+        input [7:0] index;
+        input [1:0] pass;
         begin
-            case (index)
-                0: pattern_for=16'h0000;
-                1: pattern_for=16'hFFFF;
-                2: pattern_for=16'h00FF;
-                3: pattern_for=16'hFF00;
-                4: pattern_for=16'hA55A;
-                5: pattern_for=16'h5AA5;
-                default: pattern_for=16'h1200 | {11'd0,index};
+            case (pass)
+                0: pattern_for = {8'h00, index};
+                1: pattern_for = {8'hFF, ~index};
+                2: pattern_for = 16'hA55A ^ {index, index};
+                default: pattern_for = 16'h5AA5 ^ {index, ~index};
             endcase
         end
     endfunction
 
     wire [23:0] address = id_phase ? {22'd0,id_slot} : address_for(cell_index);
-    wire [15:0] pattern = pattern_for(cell_index);
+    wire [15:0] pattern = pattern_for(cell_index, pattern_pass);
     wire tick = (div_count == HALF_PERIOD-1);
 
     // At this slow diagnostic clock, detect DQS in the 67 MHz fabric clock
@@ -109,6 +114,7 @@ module aps6408_diag_core #(
             edge_index <= 0;
             data_index <= 0;
             cell_index <= 0;
+            pattern_pass <= 0;
             id_phase <= 1;
             id_slot <= 0;
             read_phase <= 0;
@@ -384,9 +390,16 @@ module aps6408_diag_core #(
                         expected_data <= pattern;
                         actual_data <= read_word;
                         state <= S_FAIL;
-                    end else if (cell_index == 24) begin
-                        if (read_phase) state <= S_PASS;
-                        else begin
+                    end else if (cell_index == 8'hFF) begin
+                        if (read_phase) begin
+                            if (pattern_pass == 2'd3) state <= S_PASS;
+                            else begin
+                                pattern_pass <= pattern_pass + 1'b1;
+                                read_phase <= 0;
+                                cell_index <= 0;
+                                state <= S_START;
+                            end
+                        end else begin
                             read_phase <= 1;
                             cell_index <= 0;
                             state <= S_START;
