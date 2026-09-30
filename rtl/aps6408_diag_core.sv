@@ -53,6 +53,8 @@ module aps6408_diag_core #(
     reg [15:0] read_word;
     reg [1:0] dqs_pipe;
     reg dqs_prev;
+    reg [7:0] dq_prev;
+    reg [7:0] dq_prev2;
     reg [2:0] sample_delay;
     reg sample_pending;
     reg [15:0] dqs_edge_word;
@@ -112,6 +114,8 @@ module aps6408_diag_core #(
     always @(posedge clk) begin
         dqs_pipe <= {dqs_pipe[0], PSRAM_DQS};
         dqs_prev <= dqs_pipe[1];
+        dq_prev <= PSRAM_DQ;
+        dq_prev2 <= dq_prev;
 
         if (reset) begin
             state <= S_POWER;
@@ -346,24 +350,26 @@ module aps6408_diag_core #(
                             sample_pending <= 1;
                             sample_delay <= fast_sample ? 3'd1 : 3'd4;
                         end
-                        if (fast_sample) begin
+                        if (fast_sample && !fastest_sample) begin
                             if (data_index == 0) begin
                                 sample_early[15:8] <= PSRAM_DQ;
-                                if (!fastest_sample) read_word[15:8] <= PSRAM_DQ;
+                                read_word[15:8] <= PSRAM_DQ;
                             end else begin
                                 sample_early[7:0] <= PSRAM_DQ;
-                                if (!fastest_sample) read_word[7:0] <= PSRAM_DQ;
+                                read_word[7:0] <= PSRAM_DQ;
                             end
                         end
                         if (fastest_sample) begin
                             if (data_index == 0) begin
-                                sample_mid[15:8] <= PSRAM_DQ;
+                                sample_early[15:8] <= dq_prev2;
+                                sample_mid[15:8] <= dq_prev;
                                 sample_late[15:8] <= PSRAM_DQ;
-                                read_word[15:8] <= PSRAM_DQ;
+                                read_word[15:8] <= dq_prev;
                             end else begin
-                                sample_mid[7:0] <= PSRAM_DQ;
+                                sample_early[7:0] <= dq_prev2;
+                                sample_mid[7:0] <= dq_prev;
                                 sample_late[7:0] <= PSRAM_DQ;
-                                read_word[7:0] <= PSRAM_DQ;
+                                read_word[7:0] <= dq_prev;
                             end
                         end
                         if (data_index == 0) dqs_edge_word[15:8] <= {1'b0, timeout_edges};

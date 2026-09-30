@@ -17,6 +17,9 @@ module aps6408_diag_video
 	input      [23:0] matrix_b,
 	input      [23:0] matrix_c,
 	input      [15:0] read_edge_pair,
+	input      [15:0] read_sample_early,
+	input      [15:0] read_sample_mid,
+	input      [15:0] read_sample_late,
 
 	output            ce_pixel,
 	output reg  [7:0] red,
@@ -336,15 +339,15 @@ function [7:0] screen_char;
 					value = mode_char(column - 7);
 			end
 			23: begin
-				value = fixed_char(stage_code == 8'hE2 ? TXT_E2_SAMPLES :
+				value = fixed_char((stage_code == 8'hE2 || stage_code == 8'hE6) ? TXT_E2_SAMPLES :
 				                   stage_code == 8'h58 ? TXT_HELP_DDIO : TXT_HELP1, column);
-				if (stage_code == 8'hE2) begin
+				if (stage_code == 8'hE2 || stage_code == 8'hE6) begin
 					if (column >= 7 && column < 11)
-						value = hex_char(matrix_a[15-((column-7)*4) -: 4]);
+						value = hex_char(read_sample_early[15-((column-7)*4) -: 4]);
 					if (column >= 17 && column < 21)
-						value = hex_char(matrix_b[15-((column-17)*4) -: 4]);
+						value = hex_char(read_sample_mid[15-((column-17)*4) -: 4]);
 					if (column >= 28 && column < 32)
-						value = hex_char(matrix_c[15-((column-28)*4) -: 4]);
+						value = hex_char(read_sample_late[15-((column-28)*4) -: 4]);
 				end
 			end
 			25: begin
