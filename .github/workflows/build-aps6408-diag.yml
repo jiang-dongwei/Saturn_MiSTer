@@ -37,6 +37,7 @@ jobs:
             rtl/aps6408_diag_core.sv sim/psram/tb_aps6408_diag.sv
           vvp .ci/aps6408_diag.vvp +speed16
           vvp .ci/aps6408_diag.vvp +speed33
+          vvp .ci/aps6408_diag.vvp +speed33 +corrupt
           for scenario in normal corrupt no_dqs missing_slot1 alias_bit12 bad_id early_dqs; do
             if [ "$scenario" = normal ]; then
               vvp .ci/aps6408_diag.vvp

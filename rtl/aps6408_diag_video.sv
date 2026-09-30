@@ -20,6 +20,8 @@ module aps6408_diag_video
 	input      [15:0] read_sample_early,
 	input      [15:0] read_sample_mid,
 	input      [15:0] read_sample_late,
+	input      [15:0] retry_read_data,
+	input             retry_read_valid,
 
 	output            ce_pixel,
 	output reg  [7:0] red,
@@ -354,6 +356,12 @@ function [7:0] screen_char;
 				value = fixed_char(stage_code == 8'hE2 ? TXT_E2_EDGES : TXT_HELP2, column);
 				if (stage_code == 8'hE2 && column >= 11 && column < 15)
 					value = hex_char(read_edge_pair[15-((column-11)*4) -: 4]);
+				if (stage_code == 8'hE2 && retry_read_valid) begin
+					if (column >= 18 && column < 23)
+						value = fixed_char({"SLOW:", {43{8'h20}}}, column-18);
+					if (column >= 24 && column < 28)
+						value = hex_char(retry_read_data[15-((column-24)*4) -: 4]);
+				end
 			end
 			26: value = fixed_char(TXT_HELP3, column);
 			27: value = fixed_char(TXT_HELP4, column);

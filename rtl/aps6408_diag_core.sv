@@ -17,6 +17,8 @@ module aps6408_diag_core #(
     output reg [15:0] sample_early,
     output reg [15:0] sample_mid,
     output reg [15:0] sample_late,
+    output reg [15:0] retry_read_data,
+    output reg retry_read_valid,
     output reg [15:0] mr_pair0,
     output reg [15:0] mr_pair1,
     output reg [15:0] mr_pair2,
@@ -47,6 +49,7 @@ module aps6408_diag_core #(
     reg id_phase;
     reg [1:0] id_slot;
     reg read_phase;
+    reg retry_slow;
     reg [7:0] dq_out;
     reg dq_oe;
     reg dm_oe;
@@ -99,11 +102,12 @@ module aps6408_diag_core #(
     wire [23:0] address = id_phase ? {22'd0,id_slot} : address_for(cell_index);
     wire [15:0] pattern = pattern_for(cell_index, pattern_pass);
     // 135.4752 MHz / (2 * half_period): 8.4672, 16.9344, 33.8688 MHz.
-    wire [3:0] half_period = speed_select == 2'd0 ? 4'd8 :
-                             speed_select == 2'd1 ? 4'd4 : 4'd2;
+    wire [1:0] active_speed = retry_slow ? 2'd1 : speed_select;
+    wire [3:0] half_period = active_speed == 2'd0 ? 4'd8 :
+                             active_speed == 2'd1 ? 4'd4 : 4'd2;
     wire tick = (div_count == half_period-1'b1);
-    wire fast_sample = (speed_select != 2'd0);
-    wire fastest_sample = (speed_select >= 2'd2);
+    wire fast_sample = (active_speed != 2'd0);
+    wire fastest_sample = (active_speed >= 2'd2);
     wire dqs_rise = fast_sample ? (dqs_pipe[0] && !dqs_pipe[1]) :
                                   (dqs_pipe[1] && !dqs_prev);
     wire dqs_fall = fast_sample ? (!dqs_pipe[0] && dqs_pipe[1]) :
@@ -130,6 +134,7 @@ module aps6408_diag_core #(
             id_phase <= 1;
             id_slot <= 0;
             read_phase <= 0;
+            retry_slow <= 0;
             dq_out <= 0;
             dq_oe <= 0;
             dm_oe <= 0;
@@ -152,6 +157,8 @@ module aps6408_diag_core #(
             sample_early <= 0;
             sample_mid <= 0;
             sample_late <= 0;
+            retry_read_data <= 0;
+            retry_read_valid <= 0;
             mr_pair0 <= 0;
             mr_pair1 <= 0;
             mr_pair2 <= 0;
@@ -164,15 +171,17 @@ module aps6408_diag_core #(
 
             if (sample_pending) begin
                 if (sample_delay == 4) begin
-                    if (data_index == 0) sample_early[15:8] <= PSRAM_DQ;
-                    else sample_early[7:0] <= PSRAM_DQ;
+                    if (!retry_slow) begin
+                        if (data_index == 0) sample_early[15:8] <= PSRAM_DQ;
+                        else sample_early[7:0] <= PSRAM_DQ;
+                    end
                 end
                 if (!fastest_sample && sample_delay == (fast_sample ? 1 : 2)) begin
                     if (data_index == 0) begin
-                        sample_mid[15:8] <= PSRAM_DQ;
+                        if (!retry_slow) sample_mid[15:8] <= PSRAM_DQ;
                         if (!fast_sample) read_word[15:8] <= PSRAM_DQ;
                     end else begin
-                        sample_mid[7:0] <= PSRAM_DQ;
+                        if (!retry_slow) sample_mid[7:0] <= PSRAM_DQ;
                         if (!fast_sample) read_word[7:0] <= PSRAM_DQ;
                     end
                 end
@@ -180,10 +189,10 @@ module aps6408_diag_core #(
                 else begin
                     sample_pending <= 0;
                     if (data_index == 0) begin
-                        sample_late[15:8] <= PSRAM_DQ;
+                        if (!retry_slow) sample_late[15:8] <= PSRAM_DQ;
                         data_index <= 1;
                     end else begin
-                        sample_late[7:0] <= PSRAM_DQ;
+                        if (!retry_slow) sample_late[7:0] <= PSRAM_DQ;
                         data_index <= 2;
                     end
                 end
@@ -277,9 +286,12 @@ module aps6408_diag_core #(
                     clk_read_word <= 0;
                     clk_sample_pending <= 0;
                     read_word <= 0;
-                    sample_early <= 0;
-                    sample_mid <= 0;
-                    sample_late <= 0;
+                    if (!retry_slow) begin
+                        sample_early <= 0;
+                        sample_mid <= 0;
+                        sample_late <= 0;
+                        retry_read_valid <= 0;
+                    end
                     stage_code <= id_phase ? 8'h08 : (read_phase ? 8'h20 : 8'h10);
                     state <= S_CMD;
                 end
@@ -352,23 +364,27 @@ module aps6408_diag_core #(
                         end
                         if (fast_sample && !fastest_sample) begin
                             if (data_index == 0) begin
-                                sample_early[15:8] <= PSRAM_DQ;
+                                if (!retry_slow) sample_early[15:8] <= PSRAM_DQ;
                                 read_word[15:8] <= PSRAM_DQ;
                             end else begin
-                                sample_early[7:0] <= PSRAM_DQ;
+                                if (!retry_slow) sample_early[7:0] <= PSRAM_DQ;
                                 read_word[7:0] <= PSRAM_DQ;
                             end
                         end
                         if (fastest_sample) begin
                             if (data_index == 0) begin
-                                sample_early[15:8] <= dq_prev2;
-                                sample_mid[15:8] <= dq_prev;
-                                sample_late[15:8] <= PSRAM_DQ;
+                                if (!retry_slow) begin
+                                    sample_early[15:8] <= dq_prev2;
+                                    sample_mid[15:8] <= dq_prev;
+                                    sample_late[15:8] <= PSRAM_DQ;
+                                end
                                 read_word[15:8] <= dq_prev;
                             end else begin
-                                sample_early[7:0] <= dq_prev2;
-                                sample_mid[7:0] <= dq_prev;
-                                sample_late[7:0] <= PSRAM_DQ;
+                                if (!retry_slow) begin
+                                    sample_early[7:0] <= dq_prev2;
+                                    sample_mid[7:0] <= dq_prev;
+                                    sample_late[7:0] <= PSRAM_DQ;
+                                end
                                 read_word[7:0] <= dq_prev;
                             end
                         end
@@ -395,7 +411,13 @@ module aps6408_diag_core #(
                 end
 
                 S_ADVANCE: begin
-                    if (id_phase) begin
+                    if (retry_slow) begin
+                        retry_read_data <= read_word;
+                        retry_read_valid <= 1;
+                        retry_slow <= 0;
+                        stage_code <= 8'hE2;
+                        state <= S_FAIL;
+                    end else if (id_phase) begin
                         if (id_slot == 0) begin
                             mr_pair0 <= read_word;
                             id_slot <= 1;
@@ -432,7 +454,10 @@ module aps6408_diag_core #(
                         expected_data <= pattern;
                         actual_data <= read_word;
                         dqs_edge_pair1 <= dqs_edge_word;
-                        state <= S_FAIL;
+                        if (speed_select == 2'd2) begin
+                            retry_slow <= 1;
+                            state <= S_START;
+                        end else state <= S_FAIL;
                     end else if (cell_index == 8'hFF) begin
                         if (read_phase) begin
                             if (pattern_pass == 2'd3) state <= S_PASS;

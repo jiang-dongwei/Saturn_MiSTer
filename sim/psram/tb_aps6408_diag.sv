@@ -11,6 +11,8 @@ module tb_aps6408_diag;
     wire [15:0] id_word;
     wire [15:0] expected_data, actual_data;
     wire [15:0] sample_early, sample_mid, sample_late;
+    wire [15:0] retry_read_data;
+    wire retry_read_valid;
     wire [15:0] mr_pair0, mr_pair1, mr_pair2;
     wire [15:0] dqs_edge_pair1, clk_pair1;
     wire [7:0] diagnostic_leds;
@@ -30,6 +32,8 @@ module tb_aps6408_diag;
         .expected_data(expected_data), .actual_data(actual_data),
         .sample_early(sample_early), .sample_mid(sample_mid),
         .sample_late(sample_late),
+        .retry_read_data(retry_read_data),
+        .retry_read_valid(retry_read_valid),
         .mr_pair0(mr_pair0), .mr_pair1(mr_pair1),
         .mr_pair2(mr_pair2),
         .dqs_edge_pair1(dqs_edge_pair1),
@@ -191,6 +195,8 @@ module tb_aps6408_diag;
                            clk_pair1 !== 16'h0D93 ||
                            dqs_edge_pair1[15:8] >= 8'd9 || writes != 0)) ||
             ((corrupt || alias_bit12) && (result_code !== 2'd2 || stage_code !== 8'hE2)) ||
+            (corrupt && speed_select == 2'd2 &&
+             (!retry_read_valid || retry_read_data === expected_data)) ||
             (!no_dqs && !missing_slot1 && !bad_id && !early_dqs && !corrupt && !alias_bit12 &&
              (result_code !== 2'd1 || id_word !== 16'h0D93 ||
               mr_pair0 !== 16'hA00D || mr_pair1 !== 16'h0D93 ||
