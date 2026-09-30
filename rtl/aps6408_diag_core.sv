@@ -340,8 +340,12 @@ module aps6408_diag_core #(
                     if ((((data_index == 0) && dqs_rise) ||
                          ((data_index == 1) && dqs_fall)) &&
                         !sample_pending) begin
-                        sample_pending <= 1;
-                        sample_delay <= fastest_sample ? 3'd0 : (fast_sample ? 3'd1 : 3'd4);
+                        if (fastest_sample)
+                            data_index <= data_index + 1'b1;
+                        else begin
+                            sample_pending <= 1;
+                            sample_delay <= fast_sample ? 3'd1 : 3'd4;
+                        end
                         if (fast_sample) begin
                             if (data_index == 0) begin
                                 sample_early[15:8] <= PSRAM_DQ;
@@ -354,9 +358,11 @@ module aps6408_diag_core #(
                         if (fastest_sample) begin
                             if (data_index == 0) begin
                                 sample_mid[15:8] <= PSRAM_DQ;
+                                sample_late[15:8] <= PSRAM_DQ;
                                 read_word[15:8] <= PSRAM_DQ;
                             end else begin
                                 sample_mid[7:0] <= PSRAM_DQ;
+                                sample_late[7:0] <= PSRAM_DQ;
                                 read_word[7:0] <= PSRAM_DQ;
                             end
                         end
