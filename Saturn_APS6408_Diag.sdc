@@ -1,7 +1,6 @@
-# The 67.7376 MHz fabric clock toggles the diagnostic PSRAM clock every
-# eight cycles. This revision only targets 4.2336 MHz board bring-up.
+# Constrain the fastest selectable PSRAM clock (33.8688 MHz).
 create_generated_clock -name APS6408_CLK_EXT \
-    -source [get_pins -no_duplicates {*|diagnostic|PSRAM_CLK|clk}] -divide_by 16 \
+    -source [get_pins -no_duplicates {*|diagnostic|PSRAM_CLK|clk}] -divide_by 4 \
     [get_pins -no_duplicates {*|diagnostic|PSRAM_CLK|q}]
 
 set_output_delay -clock APS6408_CLK_EXT -max 10.000 \

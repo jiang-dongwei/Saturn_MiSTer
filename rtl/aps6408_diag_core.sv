@@ -1,13 +1,13 @@
 // Low-speed, standalone APS6408L-3OBM-BA DDR OPI board diagnostic.
 // The FPGA clock oversamples the source-synchronous DQS input. This is a
-// bring-up implementation at 8.47 MHz, not a high-speed Saturn RAMH backend.
+// switchable bring-up diagnostic, not a Saturn RAMH backend.
 module aps6408_diag_core #(
-    parameter integer POWERUP_CYCLES = 135476, // 2 ms at 67.738 MHz
-    parameter integer HALF_PERIOD = 4,          // 8.467 MHz PSRAM clock
-    parameter integer RESET_RECOVERY_CYCLES = 136 // at least 2 us at 67.738 MHz
+    parameter integer POWERUP_CYCLES = 270952, // 2 ms at 135.475 MHz
+    parameter integer RESET_RECOVERY_CYCLES = 271 // at least 2 us
 ) (
     input clk,
     input reset,
+    input [1:0] speed_select,
     output reg [1:0] result_code,
     output reg [7:0] stage_code,
     output reg [23:0] failure_address,
@@ -36,7 +36,7 @@ module aps6408_diag_core #(
                      S_RESET_END=14, S_RESET_WAIT=15;
     reg [3:0] state;
     reg did_global_reset = 1'b0;
-    reg [17:0] power_count;
+    reg [18:0] power_count;
     reg [7:0] div_count;
     reg [7:0] gap_count;
     reg [6:0] timeout_edges;
@@ -96,16 +96,19 @@ module aps6408_diag_core #(
 
     wire [23:0] address = id_phase ? {22'd0,id_slot} : address_for(cell_index);
     wire [15:0] pattern = pattern_for(cell_index, pattern_pass);
-    wire tick = (div_count == HALF_PERIOD-1);
-    localparam FAST_SAMPLE = (HALF_PERIOD <= 4);
-    wire dqs_rise = FAST_SAMPLE ? (dqs_pipe[0] && !dqs_pipe[1]) :
+    // 135.4752 MHz / (2 * half_period): 8.4672, 16.9344, 33.8688 MHz.
+    wire [3:0] half_period = speed_select == 2'd0 ? 4'd8 :
+                             speed_select == 2'd1 ? 4'd4 : 4'd2;
+    wire tick = (div_count == half_period-1'b1);
+    wire fast_sample = (speed_select != 2'd0);
+    wire fastest_sample = (speed_select >= 2'd2);
+    wire dqs_rise = fast_sample ? (dqs_pipe[0] && !dqs_pipe[1]) :
                                   (dqs_pipe[1] && !dqs_prev);
-    wire dqs_fall = FAST_SAMPLE ? (!dqs_pipe[0] && dqs_pipe[1]) :
+    wire dqs_fall = fast_sample ? (!dqs_pipe[0] && dqs_pipe[1]) :
                                   (!dqs_pipe[1] && dqs_prev);
 
-    // At this slow diagnostic clock, detect DQS in the 67 MHz fabric clock
-    // domain, then sample DQ two fabric cycles later. There is no CDC into a
-    // second domain. Higher-speed use needs a dedicated DDIO capture path.
+    // The 33.87 MHz setting samples in the middle of the two-cycle data eye.
+    // This fabric-clock sampler remains experimental until hardware tested.
     always @(posedge clk) begin
         dqs_pipe <= {dqs_pipe[0], PSRAM_DQS};
         dqs_prev <= dqs_pipe[1];
@@ -160,7 +163,7 @@ module aps6408_diag_core #(
                     if (data_index == 0) sample_early[15:8] <= PSRAM_DQ;
                     else sample_early[7:0] <= PSRAM_DQ;
                 end
-                if (sample_delay == (FAST_SAMPLE ? 1 : 2)) begin
+                if (!fastest_sample && sample_delay == (fast_sample ? 1 : 2)) begin
                     if (data_index == 0) begin
                         sample_mid[15:8] <= PSRAM_DQ;
                         read_word[15:8] <= PSRAM_DQ;
@@ -318,7 +321,7 @@ module aps6408_diag_core #(
                         timeout_edges <= timeout_edges + 1'b1;
                         if (id_phase && (timeout_edges == 8 || timeout_edges == 9)) begin
                             clk_sample_pending <= 1;
-                            clk_sample_delay <= 2;
+                            clk_sample_delay <= speed_select == 2'd0 ? 2'd3 : 2'd1;
                             clk_sample_byte <= (timeout_edges == 9);
                         end
                         // Bound a missing-DQS transaction. Register reads use
@@ -338,10 +341,19 @@ module aps6408_diag_core #(
                          ((data_index == 1) && dqs_fall)) &&
                         !sample_pending) begin
                         sample_pending <= 1;
-                        sample_delay <= FAST_SAMPLE ? 3'd1 : 3'd4;
-                        if (FAST_SAMPLE) begin
+                        sample_delay <= fastest_sample ? 3'd0 : (fast_sample ? 3'd1 : 3'd4);
+                        if (fast_sample) begin
                             if (data_index == 0) sample_early[15:8] <= PSRAM_DQ;
                             else sample_early[7:0] <= PSRAM_DQ;
+                        end
+                        if (fastest_sample) begin
+                            if (data_index == 0) begin
+                                sample_mid[15:8] <= PSRAM_DQ;
+                                read_word[15:8] <= PSRAM_DQ;
+                            end else begin
+                                sample_mid[7:0] <= PSRAM_DQ;
+                                read_word[7:0] <= PSRAM_DQ;
+                            end
                         end
                         if (data_index == 0) dqs_edge_word[15:8] <= {1'b0, timeout_edges};
                         else dqs_edge_word[7:0] <= {1'b0, timeout_edges};

@@ -91,6 +91,7 @@ module emu
 `include "build_id.v"
 parameter CONF_STR = {
     "APS6408L DDR DIAG;;",
+    "O34,PSRAM clock,8.47 MHz,16.93 MHz,33.87 MHz;",
     "T6,Restart test;",
     "R0,Reset;",
     "-;",
@@ -122,7 +123,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 wire clk_33;
 wire clk_67;
-wire clk_101;
+wire clk_135;
 wire pll_locked;
 
 psram_diag_pll pll
@@ -131,7 +132,7 @@ psram_diag_pll pll
 	.rst(1'b0),
 	.outclk_0(clk_33),
 	.outclk_1(clk_67),
-	.outclk_2(clk_101),
+	.outclk_2(clk_135),
 	.locked(pll_locked)
 );
 
@@ -139,28 +140,26 @@ psram_diag_pll pll
 reg [6:0] status_meta = 7'd0;
 (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
 reg [6:0] status_sync = 7'd0;
-reg [1:0] previous_mode = 2'd0;
+reg [1:0] selected_speed = 2'd0;
 reg       mode_restart = 1'b0;
-// Stage 56 returns the diagnostic core and all of its control synchronizers to
-// clk_67. The square-clock bus engine divides this clock symmetrically, while
-// keeping mode_restart and reset release in the same domain.
-always @(posedge clk_67) begin
+always @(posedge clk_135) begin
 	status_meta <= status[6:0];
 	status_sync <= status_meta;
 	mode_restart <= 1'b0;
-	if (previous_mode != status_sync[2:1]) begin
-		previous_mode <= status_sync[2:1];
+	if (selected_speed != status_sync[4:3]) begin
+		selected_speed <= status_sync[4:3];
 		mode_restart <= 1'b1;
 	end
 end
 
 wire diagnostic_reset_request = RESET | buttons[1] | status_sync[0] |
-	                              status_sync[6] | mode_restart | !pll_locked;
+	                              status_sync[6] | mode_restart |
+	                              (selected_speed != status_sync[4:3]) | !pll_locked;
 
 // Synchronous assertion stretching and release keep the diagnostic free of
 // the asynchronous recovery violation seen in Stage 53.
 reg [2:0] diagnostic_reset_pipe = 3'b111;
-always @(posedge clk_67) begin
+always @(posedge clk_135) begin
 	if (diagnostic_reset_request)
 		diagnostic_reset_pipe <= 3'b111;
 	else
@@ -183,7 +182,7 @@ wire [15:0] mr_pair1;
 wire [15:0] mr_pair2;
 wire [15:0] dqs_edge_pair1;
 wire [15:0] clk_pair1;
-wire [2:0] speed_index = 3'd0;
+wire [2:0] speed_index = {1'b0, selected_speed};
 wire [7:0] diagnostic_leds;
 wire diagnostic_activity;
 wire [23:0] matrix_a = {8'd0, (stage_code == 8'hE1 || stage_code == 8'hE6) ? dqs_edge_pair1 :
@@ -195,8 +194,9 @@ wire [23:0] matrix_c = {8'd0, (stage_code == 8'hE1 || stage_code == 8'hE6) ? clk
 
 aps6408_diag_core diagnostic
 (
-    .clk(clk_67),
+    .clk(clk_135),
     .reset(diagnostic_reset),
+    .speed_select(selected_speed),
     .result_code(result_code),
     .stage_code(stage_code),
     .failure_address(failure_address),
@@ -230,7 +230,7 @@ aps6408_diag_video video
 	.expected_data(expected_data),
 	.actual_data(actual_data),
 	.speed_index(speed_index),
-	.mode(previous_mode),
+	.mode(2'd0),
 	.matrix_a(matrix_a),
 	.matrix_b(matrix_b),
 	.matrix_c(matrix_c),

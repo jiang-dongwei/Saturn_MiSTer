@@ -31,7 +31,7 @@ module  psram_diag_pll_0002(
 		.output_clock_frequency1("67.737600 MHz"),
 		.phase_shift1("0 ps"),
 		.duty_cycle1(50),
-		.output_clock_frequency2("101.606400 MHz"),
+		.output_clock_frequency2("135.475200 MHz"),
 		.phase_shift2("0 ps"),
 		.duty_cycle2(50),
 		.output_clock_frequency3("0 MHz"),

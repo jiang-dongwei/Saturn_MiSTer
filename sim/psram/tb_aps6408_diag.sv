@@ -2,8 +2,9 @@
 
 module tb_aps6408_diag;
     reg clk=0;
-    always #7.381 clk=~clk; // approximately 67.7376 MHz
+    always #3.6905 clk=~clk; // approximately 135.4752 MHz
     reg reset=1;
+    reg [1:0] speed_select=0;
     wire [1:0] result_code;
     wire [7:0] stage_code;
     wire [23:0] failure_address;
@@ -22,8 +23,8 @@ module tb_aps6408_diag;
     assign dq = mem_oe ? mem_dq : 8'hzz;
     assign dqs = mem_oe ? mem_dqs : 1'bz;
 
-    aps6408_diag_core #(.POWERUP_CYCLES(8), .HALF_PERIOD(4)) dut (
-        .clk(clk), .reset(reset), .result_code(result_code),
+    aps6408_diag_core #(.POWERUP_CYCLES(8)) dut (
+        .clk(clk), .reset(reset), .speed_select(speed_select), .result_code(result_code),
         .stage_code(stage_code), .failure_address(failure_address),
         .id_word(id_word),
         .expected_data(expected_data), .actual_data(actual_data),
@@ -168,6 +169,8 @@ module tb_aps6408_diag;
         alias_bit12=$test$plusargs("alias_bit12");
         bad_id=$test$plusargs("bad_id");
         early_dqs=$test$plusargs("early_dqs");
+        if ($test$plusargs("speed16")) speed_select=1;
+        if ($test$plusargs("speed33")) speed_select=2;
         repeat (4) @(posedge clk);
         reset=0;
         wait(result_code != 0);
@@ -192,10 +195,11 @@ module tb_aps6408_diag;
              (result_code !== 2'd1 || id_word !== 16'h0D93 ||
               mr_pair0 !== 16'hA00D || mr_pair1 !== 16'h0D93 ||
               mr_pair2 !== 16'h0000 ||
-              clk_pair1 !== 16'h0D93 || dqs_edge_pair1 !== 16'h090A ||
+              clk_pair1 !== 16'h0D93 ||
+              dqs_edge_pair1 !== (speed_select == 2'd2 ? 16'h0A0B : 16'h090A) ||
               id_reads != 2 || writes != 1024 || reads != 1024)))
-            $fatal(1,"diagnostic failed: result=%d stage=%h addr=%h exp=%h got=%h writes=%d reads=%d",
-                   result_code,stage_code,failure_address,expected_data,actual_data,writes,reads);
+            $fatal(1,"diagnostic failed: result=%d stage=%h addr=%h exp=%h got=%h clk=%h dqs=%h writes=%d reads=%d",
+                   result_code,stage_code,failure_address,expected_data,actual_data,clk_pair1,dqs_edge_pair1,writes,reads);
         $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d",
                  result_code,stage_code,writes,reads);
         if (!no_dqs && !missing_slot1 && !bad_id && !early_dqs && !corrupt && !alias_bit12) begin

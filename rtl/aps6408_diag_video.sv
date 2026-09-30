@@ -54,7 +54,9 @@ localparam [383:0] TXT_RESULT = {"RESULT:", {41{8'h20}}};
 localparam [383:0] TXT_STAGE = {"STAGE:", {42{8'h20}}};
 localparam [383:0] TXT_ID = {"MR1/MR2:", {40{8'h20}}};
 localparam [383:0] TXT_KGD = {"INTERFACE: X8 DDR", {31{8'h20}}};
-localparam [383:0] TXT_SPEED = {"CLOCK: 8.47 MHZ", {33{8'h20}}};
+localparam [383:0] TXT_SPEED8 = {"CLOCK: 8.47 MHZ", {33{8'h20}}};
+localparam [383:0] TXT_SPEED16 = {"CLOCK: 16.93 MHZ", {32{8'h20}}};
+localparam [383:0] TXT_SPEED33 = {"CLOCK: 33.87 MHZ", {32{8'h20}}};
 localparam [383:0] TXT_ADDRESS = {"ADDRESS:", {40{8'h20}}};
 localparam [383:0] TXT_EXPECTED = {"EXPECTED:", {39{8'h20}}};
 localparam [383:0] TXT_ACTUAL = {"ACTUAL:", {41{8'h20}}};
@@ -63,7 +65,7 @@ localparam [383:0] TXT_HELP1 = {"4 PASSES X 256 LOCATIONS", {24{8'h20}}};
 localparam [383:0] TXT_HELP_DDIO = {"DQS CAPTURE AT LOW SPEED", {24{8'h20}}};
 localparam [383:0] TXT_HELP2 = {"ADDRESS RANGE 000000 TO 7FFFFE", {18{8'h20}}};
 localparam [383:0] TXT_HELP3 = {"E1 DQS E2 DATA E4 SAMPLE E5 MR MAP E6 EDGE", {6{8'h20}}};
-localparam [383:0] TXT_HELP4 = {"LED7 FAIL LED6 PASS", {29{8'h20}}};
+localparam [383:0] TXT_HELP4 = {"OSD SELECT CLOCK  LED7 FAIL LED6 PASS", {11{8'h20}}};
 
 function [7:0] fixed_char;
 	input [383:0] text;
@@ -227,7 +229,8 @@ function [7:0] screen_char;
 				end
 			end
 			10: value = fixed_char(TXT_KGD, column);
-			12: value = fixed_char(TXT_SPEED, column);
+			12: value = fixed_char(speed_index == 3'd0 ? TXT_SPEED8 :
+			                       speed_index == 3'd1 ? TXT_SPEED16 : TXT_SPEED33, column);
 			14: begin
 				if (stage_code == 8'h58) begin
 					value = fixed_char({"A QPI8   :", {38{8'h20}}}, column);
