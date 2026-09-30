@@ -75,7 +75,8 @@ module tb_aps6408_diag;
                 spread = bit_index - 25;
                 candidate = {8'h00, 1'b0, spread, spread ^ 8'h5A,
                              spread[5:0] ^ 6'h15, 1'b0};
-                if (mapped == candidate) cell_for = bit_index;
+                if (mapped == (alias_bit12 ? (candidate & ~32'h00001000) : candidate))
+                    cell_for = bit_index;
             end
         end
     endfunction
