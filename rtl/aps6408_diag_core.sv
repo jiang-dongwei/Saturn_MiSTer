@@ -390,9 +390,13 @@ module aps6408_diag_core #(
                             clk_pair1 <= clk_read_word;
                             // MR1[4:0] is APM vendor 0Dh; MR2[4:0]
                             // identifies generation 3 and 64 Mbit density.
+                            // The CLK-domain reference capture was calibrated
+                            // only for 8.47 MHz. At faster settings, DQS is
+                            // the read timing reference; the memory tests
+                            // still check every returned data word.
                             if (((read_word[15:8] & 8'h1F) != 8'h0D) ||
                                 ((read_word[7:0] & 8'h1F) != 8'h13) ||
-                                (read_word != clk_read_word)) begin
+                                ((speed_select == 2'd0) && (read_word != clk_read_word))) begin
                                 stage_code <= 8'hE6;
                                 failure_address <= 24'h000001;
                                 expected_data <= 16'h0D13;
