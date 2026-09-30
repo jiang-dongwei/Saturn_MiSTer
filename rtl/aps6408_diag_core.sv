@@ -1,9 +1,9 @@
 // Low-speed, standalone APS6408L-3OBM-BA DDR OPI board diagnostic.
 // The FPGA clock oversamples the source-synchronous DQS input. This is a
-// bring-up implementation at 4.23 MHz, not a high-speed Saturn RAMH backend.
+// bring-up implementation at 8.47 MHz, not a high-speed Saturn RAMH backend.
 module aps6408_diag_core #(
     parameter integer POWERUP_CYCLES = 135476, // 2 ms at 67.738 MHz
-    parameter integer HALF_PERIOD = 8,          // 4.234 MHz PSRAM clock
+    parameter integer HALF_PERIOD = 4,          // 8.467 MHz PSRAM clock
     parameter integer RESET_RECOVERY_CYCLES = 136 // at least 2 us at 67.738 MHz
 ) (
     input clk,
@@ -97,6 +97,11 @@ module aps6408_diag_core #(
     wire [23:0] address = id_phase ? {22'd0,id_slot} : address_for(cell_index);
     wire [15:0] pattern = pattern_for(cell_index, pattern_pass);
     wire tick = (div_count == HALF_PERIOD-1);
+    localparam FAST_SAMPLE = (HALF_PERIOD <= 4);
+    wire dqs_rise = FAST_SAMPLE ? (dqs_pipe[0] && !dqs_pipe[1]) :
+                                  (dqs_pipe[1] && !dqs_prev);
+    wire dqs_fall = FAST_SAMPLE ? (!dqs_pipe[0] && dqs_pipe[1]) :
+                                  (!dqs_pipe[1] && dqs_prev);
 
     // At this slow diagnostic clock, detect DQS in the 67 MHz fabric clock
     // domain, then sample DQ two fabric cycles later. There is no CDC into a
@@ -155,7 +160,7 @@ module aps6408_diag_core #(
                     if (data_index == 0) sample_early[15:8] <= PSRAM_DQ;
                     else sample_early[7:0] <= PSRAM_DQ;
                 end
-                if (sample_delay == 2) begin
+                if (sample_delay == (FAST_SAMPLE ? 1 : 2)) begin
                     if (data_index == 0) begin
                         sample_mid[15:8] <= PSRAM_DQ;
                         read_word[15:8] <= PSRAM_DQ;
@@ -329,11 +334,15 @@ module aps6408_diag_core #(
                     end
                     // The initial DQS transition into the low preamble is
                     // not data. D0 starts at the first rising strobe edge.
-                    if ((((data_index == 0) && dqs_pipe[1] && !dqs_prev) ||
-                         ((data_index == 1) && !dqs_pipe[1] && dqs_prev)) &&
+                    if ((((data_index == 0) && dqs_rise) ||
+                         ((data_index == 1) && dqs_fall)) &&
                         !sample_pending) begin
                         sample_pending <= 1;
-                        sample_delay <= 4;
+                        sample_delay <= FAST_SAMPLE ? 3'd1 : 3'd4;
+                        if (FAST_SAMPLE) begin
+                            if (data_index == 0) sample_early[15:8] <= PSRAM_DQ;
+                            else sample_early[7:0] <= PSRAM_DQ;
+                        end
                         if (data_index == 0) dqs_edge_word[15:8] <= {1'b0, timeout_edges};
                         else dqs_edge_word[7:0] <= {1'b0, timeout_edges};
                     end

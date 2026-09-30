@@ -22,7 +22,7 @@ module tb_aps6408_diag;
     assign dq = mem_oe ? mem_dq : 8'hzz;
     assign dqs = mem_oe ? mem_dqs : 1'bz;
 
-    aps6408_diag_core #(.POWERUP_CYCLES(8), .HALF_PERIOD(8)) dut (
+    aps6408_diag_core #(.POWERUP_CYCLES(8), .HALF_PERIOD(4)) dut (
         .clk(clk), .reset(reset), .result_code(result_code),
         .stage_code(stage_code), .failure_address(failure_address),
         .id_word(id_word),
