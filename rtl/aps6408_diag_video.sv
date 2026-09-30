@@ -16,6 +16,7 @@ module aps6408_diag_video
 	input      [23:0] matrix_a,
 	input      [23:0] matrix_b,
 	input      [23:0] matrix_c,
+	input      [15:0] read_edge_pair,
 
 	output            ce_pixel,
 	output reg  [7:0] red,
@@ -66,6 +67,8 @@ localparam [383:0] TXT_HELP_DDIO = {"DQS CAPTURE AT LOW SPEED", {24{8'h20}}};
 localparam [383:0] TXT_HELP2 = {"ADDRESS RANGE 000000 TO 7FFFFE", {18{8'h20}}};
 localparam [383:0] TXT_HELP3 = {"E1 DQS E2 DATA E4 SAMPLE E5 MR MAP E6 EDGE", {6{8'h20}}};
 localparam [383:0] TXT_HELP4 = {"OSD SELECT CLOCK  LED7 FAIL LED6 PASS", {11{8'h20}}};
+localparam [383:0] TXT_E2_SAMPLES = {"EARLY:      MID:      LATE:    ", {17{8'h20}}};
+localparam [383:0] TXT_E2_EDGES = {"DQS EDGES:", {38{8'h20}}};
 
 function [7:0] fixed_char;
 	input [383:0] text;
@@ -332,8 +335,23 @@ function [7:0] screen_char;
 				if ((column >= 7) && (column < 18))
 					value = mode_char(column - 7);
 			end
-			23: value = fixed_char((stage_code == 8'h58) ? TXT_HELP_DDIO : TXT_HELP1, column);
-			25: value = fixed_char(TXT_HELP2, column);
+			23: begin
+				value = fixed_char(stage_code == 8'hE2 ? TXT_E2_SAMPLES :
+				                   stage_code == 8'h58 ? TXT_HELP_DDIO : TXT_HELP1, column);
+				if (stage_code == 8'hE2) begin
+					if (column >= 7 && column < 11)
+						value = hex_char(matrix_a[15-((column-7)*4) -: 4]);
+					if (column >= 17 && column < 21)
+						value = hex_char(matrix_b[15-((column-17)*4) -: 4]);
+					if (column >= 28 && column < 32)
+						value = hex_char(matrix_c[15-((column-28)*4) -: 4]);
+				end
+			end
+			25: begin
+				value = fixed_char(stage_code == 8'hE2 ? TXT_E2_EDGES : TXT_HELP2, column);
+				if (stage_code == 8'hE2 && column >= 11 && column < 15)
+					value = hex_char(read_edge_pair[15-((column-11)*4) -: 4]);
+			end
 			26: value = fixed_char(TXT_HELP3, column);
 			27: value = fixed_char(TXT_HELP4, column);
 			default: begin end

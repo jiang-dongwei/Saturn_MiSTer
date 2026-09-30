@@ -234,6 +234,7 @@ aps6408_diag_video video
 	.matrix_a(matrix_a),
 	.matrix_b(matrix_b),
 	.matrix_c(matrix_c),
+	.read_edge_pair(dqs_edge_pair1),
 	.ce_pixel(CE_PIXEL),
 	.red(VGA_R),
 	.green(VGA_G),

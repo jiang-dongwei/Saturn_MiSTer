@@ -414,6 +414,7 @@ module aps6408_diag_core #(
                         failure_address <= address;
                         expected_data <= pattern;
                         actual_data <= read_word;
+                        dqs_edge_pair1 <= dqs_edge_word;
                         state <= S_FAIL;
                     end else if (cell_index == 8'hFF) begin
                         if (read_phase) begin
