@@ -14,7 +14,8 @@ module psram_qpi_engine
 	parameter integer POWERUP_CYCLES = 20000,
 	parameter [5:0]   HALF_DIVIDER   = 6'd2,
 	parameter [7:0]   GUARD_CYCLES   = 8'd8,
-	parameter integer DIRECT_READ_CAPTURE = 0
+	parameter integer DIRECT_READ_CAPTURE = 0,
+	parameter integer FAST_READ_PIPELINE = 0
 )
 (
 	input              clk,
@@ -80,7 +81,8 @@ assign busy = (control_state != C_READY) || phy_busy;
 psram_qpi_phy
 #(
 	.GUARD_CYCLES(GUARD_CYCLES),
-	.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE)
+	.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE),
+	.FAST_READ_PIPELINE(FAST_READ_PIPELINE)
 )
 phy
 (
@@ -256,7 +258,8 @@ endmodule
 module psram_qpi_phy
 #(
 	parameter [7:0] GUARD_CYCLES = 8'd8,
-	parameter integer DIRECT_READ_CAPTURE = 0
+	parameter integer DIRECT_READ_CAPTURE = 0,
+	parameter integer FAST_READ_PIPELINE = 0
 )
 (
 	input              clk,
@@ -293,6 +296,7 @@ reg [3:0] dq_out;
 reg       dq_oe;
 wire [3:0] dq_in = PSRAM_DQ;
 reg [3:0] dq_sample;
+reg fast_read_pending;
 
 reg [7:0]  command_shift;
 reg [23:0] address_shift;
@@ -362,9 +366,13 @@ always @(posedge clk) begin
 		transaction_write   <= 1'b0;
 		transaction_read    <= 1'b0;
 		transaction_bytes   <= 5'd0;
+		fast_read_pending   <= 1'b0;
 	end
 	else begin
 		done <= 1'b0;
+		fast_read_pending <= 1'b0;
+		// Drain the final nibble even after entering P_HOLD.
+		if (fast_read_pending) read_data <= {read_data[123:0], dq_sample};
 
 		case (state)
 			P_IDLE: begin
@@ -531,10 +539,13 @@ always @(posedge clk) begin
 							end
 
 							P_READ: begin
-								if (transaction_qpi)
-									read_data <= {read_data[123:0],
-									              ((DIRECT_READ_CAPTURE != 0) ||
-									               (half_divider == 6'd1)) ? dq_in : dq_sample};
+								if (transaction_qpi) begin
+									if ((FAST_READ_PIPELINE != 0) && (half_divider == 6'd1))
+										fast_read_pending <= 1'b1;
+									else read_data <= {read_data[123:0],
+									                   ((DIRECT_READ_CAPTURE != 0) ||
+									                    (half_divider == 6'd1)) ? dq_in : dq_sample};
+								end
 								else
 									read_data <= {read_data[126:0], dq_sample[1]};
 

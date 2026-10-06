@@ -2,6 +2,7 @@
 
 module tb_ramh_psram_adapter #(
 	parameter integer ASYNC_ENGINE = 0,
+	parameter integer FAST_READ_PIPELINE = 0,
 	parameter integer READ_OUTPUT_DELAY_NS = 16
 );
 
@@ -43,6 +44,7 @@ ramh_psram_adapter
 	.POWERUP_CYCLES(4),
 	.HALF_DIVIDER(ASYNC_ENGINE ? 6'd1 : 6'd2),
 	.GUARD_CYCLES(8'd8),
+	.FAST_READ_PIPELINE(FAST_READ_PIPELINE),
 	.ASYNC_ENGINE(ASYNC_ENGINE)
 )
 dut
@@ -322,7 +324,7 @@ initial begin
 			$fatal(1, "FAIL: late CDC completion after reset");
 	end
 
-	$display("PASS: RAMH adapter ASYNC_ENGINE=%0d phase=%0dns line fill/hit, endian mapping, all write masks, invalidation, RFS and reset", ASYNC_ENGINE, engine_phase_ns);
+	$display("PASS: RAMH adapter ASYNC_ENGINE=%0d FAST_READ_PIPELINE=%0d phase=%0dns line fill/hit, endian mapping, all write masks, invalidation, RFS and reset", ASYNC_ENGINE, FAST_READ_PIPELINE, engine_phase_ns);
 	$finish;
 end
 

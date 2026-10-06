@@ -14,7 +14,7 @@
 ## 2026-10-06 恢复检查
 
 本地原停在 `9cc1a92`。远端同名分支已到 `334a27e`，已通过 fast-forward 同步，既有未跟踪文件和生产 RBF 保留。
-本轮在 `codex/qpi-33m87-validation` 分支补充 QPI 验证流程，不修改生产 RTL、引脚、QPI 参数或 APS6408 诊断 RTL。
+本轮在 `codex/qpi-33m87-validation` 分支补充 QPI 验证流程，并修复 33M87 专用输入采样路径。生产实例的功能默认值、引脚、QPI 参数与 APS6408 诊断 RTL 保持原样。
 
 QPI 工作流最近一次运行仍是 `32695005835`（源码 `6261a49`），结论为 failure。
 已有 TimeQuest 报告显示：
@@ -28,18 +28,28 @@ QPI 工作流最近一次运行仍是 `32695005835`（源码 `6261a49`），结�
 外部时钟两项为正不能代表完整 PSRAM 控制路径已收敛。
 该历史报告通过新检查器解析后应失败，不能发布为已通过时序验收的真机候选。
 
+本轮完整构建 `37400891893`（源码 `9324c57`）成功，详细报告识别 542 个引擎寄存器。
+新验收检查拒绝该结果：控制域 setup -0.257 ns、全局 setup/hold -0.299/-0.498 ns。
+具体 PSRAM 违例是 `PSRAM_DQ[2] -> phy.read_data[2]`；SPI 的 `dq_sample[1]` setup 为 +5.059 ns。
+
+修复新增默认关闭的 `FAST_READ_PIPELINE`，只在 33M87 实例启用。
+在原来的外部下降沿前采样时刻，由无数据选择器的输入寄存器捕获 nibble；下一控制拍再移入 128-bit 缓冲。
+末尾 nibble 在 `P_HOLD` 阶段排空，命令、时钟边沿、guard 及事务完成条件保持原有协议。
+33M87 QSF 为四根 DQ 启用 FAST_INPUT_REGISTER，没有新增 false-path 或多周期例外。
+修复后的路径仍需 GitHub 完整构建验收。
+
 ## 验证流程
 
 所有 HDL 仿真、Quartus、Fitter、Assembler 和 TimeQuest 均在 GitHub Runner 执行。
 Quartus 固定为 `theypsilon/quartus-lite-c5:17.0.2`，本地只做文本与报告检查。
 
-工作流 `build-saturn-psram.yml` 先运行 QPI 引擎、稳定适配器、五种子随机回归，再运行异步适配器的六组位级回归。
+工作流 `build-saturn-psram.yml` 先运行 QPI 引擎、稳定适配器、五种子随机回归，再运行异步适配器的新旧两种采样路径，共十二组位级回归。
 异步测试使用 114.547 MHz Saturn 侧与 67.7376 MHz 引擎侧时钟，覆盖 0/3/7 ns 初相差及 7/12 ns DQ 模型延迟。
 覆盖初始化期间保持读取、16B 行填充和四字命中、全部 15 种非零 byte-enable、写后失效、跨行替换、RFS，以及事务中断后的协调复位恢复。
 这些是功能仿真，不能代替亚稳态分析、静态时序与板级电气验证。
 
 `build_quartus=false` 只运行回归；默认 `true` 在回归通过后执行完整构建。
-完整构建额外保存 DQ 输入、CE/DQ 输出及 PSRAM 引擎端点的 setup/hold 详细路径报告。
+完整构建额外保存 DQ 输入、CE/DQ 输出、PSRAM 引擎端点与全局最差 setup/hold 详细路径报告。
 验收脚本检查五类时序余量、两个活动时钟频率、忽略的 QPI 约束以及 DQ/CE 延迟缺失。
 只有检查通过才产生带提交编号的候选副本和 SHA-256；失败时原始 RBF 与报告只作构建证据保留。
 

@@ -10,6 +10,7 @@ if {[get_collection_size $engine_regs] == 0 || [get_collection_size $dq_inputs] 
     error "Missing fitted PSRAM engine registers or external ports"
 }
 puts "PSRAM ENGINE REGISTERS: [get_collection_size $engine_regs]"
+puts "PSRAM INPUT SAMPLE REGISTERS: [get_collection_size [get_registers {*|ramh_psram|g_async_engine.engine_cdc|engine_core|phy|dq_sample*}]]"
 foreach check {setup hold} {
     puts "=== PSRAM DQ INPUT $check ==="
     report_timing -$check -from $dq_inputs -to $engine_regs -npaths 16 -detail full_path
@@ -17,6 +18,10 @@ foreach check {setup hold} {
     report_timing -$check -from $engine_regs -to $dq_outputs -npaths 16 -detail full_path
     puts "=== PSRAM ENGINE ENDPOINTS $check ==="
     report_timing -$check -to $engine_regs -npaths 16 -detail full_path
+}
+foreach check {setup hold} {
+    puts "=== GLOBAL WORST $check ==="
+    report_timing -$check -npaths 12 -detail full_path
 }
 delete_timing_netlist
 project_close
