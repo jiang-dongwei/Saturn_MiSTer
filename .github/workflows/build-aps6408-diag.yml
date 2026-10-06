@@ -76,6 +76,15 @@ jobs:
             theypsilon/quartus-lite-c5:17.0.2 \
             bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_APS6408_Diag.qsf; printf "Available compile processors: %s\n" "$cores"; quartus_sh --flow compile Saturn_APS6408_Diag 2>&1 | tee .ci/aps6408-build.log'
 
+      - name: Report APS6408 critical timing paths
+        shell: bash
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/project" \
+            --workdir /project \
+            theypsilon/quartus-lite-c5:17.0.2 \
+            bash -lc 'set -euo pipefail; quartus_sta -t sim/psram/report_aps6408_timing.tcl 2>&1 | tee .ci/aps6408-critical-paths.log'
+
       - name: Upload bitstream and reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -86,6 +95,7 @@ jobs:
           include-hidden-files: true
           path: |
             .ci/aps6408-build.log
+            .ci/aps6408-critical-paths.log
             output_files_aps6408_diag/Saturn_APS6408_Diag.rbf
             output_files_aps6408_diag/Saturn_APS6408_Diag.flow.rpt
             output_files_aps6408_diag/Saturn_APS6408_Diag.fit.rpt
