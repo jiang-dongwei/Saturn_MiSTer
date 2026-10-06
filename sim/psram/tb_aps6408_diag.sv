@@ -7,8 +7,8 @@ module tb_aps6408_diag;
     always #1.84525 clk_phy=~clk_phy;
     always @(posedge clk_phy) begin
         clock_phase <= clock_phase + 1'b1;
-        if (clock_phase == 0) clk <= 1;
-        if (clock_phase == 2) clk <= 0;
+        if (clock_phase == 0) clk = 1;
+        if (clock_phase == 2) clk = 0;
     end
     reg reset=1;
     reg [1:0] speed_select=0;
@@ -62,6 +62,9 @@ module tb_aps6408_diag;
     reg device_ready=0;
     integer corrupt=0, no_dqs=0, missing_slot1=0, alias_bit12=0, bad_id=0, early_dqs=0;
     realtime last_psram_edge=-1.0e9;
+    realtime last_fpga_data=-1.0e9;
+    reg rx_was_done=0;
+    reg [63:0] held_rx_payload;
     real dqs_delay_ns=10.0;
     real dq_skew_ns=0.0;
     integer dq_leads_dqs=0;
@@ -80,8 +83,21 @@ module tb_aps6408_diag;
     always @(posedge psram_clk or negedge psram_clk)
         if (!psram_ce_n) last_psram_edge=$realtime;
     always @(dq)
-        if (!psram_ce_n && dut.dq_oe && $realtime-last_psram_edge < 3.0)
-            $fatal(1,"FPGA DQ changed within 3 ns of PSRAM clock edge");
+        if (!psram_ce_n && dut.dq_oe) begin
+            last_fpga_data=$realtime;
+            if ($realtime-last_psram_edge < 3.0)
+                $fatal(1,"FPGA DQ changed within 3 ns of PSRAM clock edge");
+        end
+    always @(posedge psram_clk or negedge psram_clk)
+        if (!psram_ce_n && dut.dq_oe && $realtime-last_fpga_data < 3.0)
+            $fatal(1,"FPGA DQ has less than 3 ns setup before PSRAM clock edge");
+    always @(posedge clk_phy) begin
+        if (rx_was_done && dut.rx.done && dut.rx.arm_sync && !reset &&
+            {dut.rx.early_word,dut.rx.mid_word,dut.rx.late_word,dut.rx.edge_word} !== held_rx_payload)
+            $fatal(1,"Receive payload changed before controller released arm");
+        rx_was_done <= dut.rx.done;
+        held_rx_payload <= {dut.rx.early_word,dut.rx.mid_word,dut.rx.late_word,dut.rx.edge_word};
+    end
 
     function integer cell_for;
         input [31:0] a;

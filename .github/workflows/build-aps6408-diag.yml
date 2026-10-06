@@ -2,6 +2,11 @@ name: Build APS6408 diagnostic
 
 on:
   workflow_dispatch:
+    inputs:
+      simulation_only:
+        description: Run protocol simulations without rebuilding Quartus
+        type: boolean
+        default: false
   push:
     branches:
       - feature/saturn-psram-33m87-slow1
@@ -57,6 +62,7 @@ jobs:
           done
 
       - name: Free runner disk space
+        if: ${{ !inputs.simulation_only }}
         shell: bash
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
@@ -64,9 +70,11 @@ jobs:
           df -h
 
       - name: Pull fixed Quartus image
+        if: ${{ !inputs.simulation_only }}
         run: docker pull theypsilon/quartus-lite-c5:17.0.2
 
       - name: Compile diagnostic revision
+        if: ${{ !inputs.simulation_only }}
         shell: bash
         run: |
           mkdir -p .ci
@@ -77,6 +85,7 @@ jobs:
             bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_APS6408_Diag.qsf; printf "Available compile processors: %s\n" "$cores"; quartus_sh --flow compile Saturn_APS6408_Diag 2>&1 | tee .ci/aps6408-build.log'
 
       - name: Report APS6408 critical timing paths
+        if: ${{ !inputs.simulation_only }}
         shell: bash
         run: |
           docker run --rm \
@@ -86,7 +95,7 @@ jobs:
             bash -lc 'set -euo pipefail; quartus_sta -t sim/psram/report_aps6408_timing.tcl 2>&1 | tee .ci/aps6408-critical-paths.log'
 
       - name: Upload bitstream and reports
-        if: always()
+        if: ${{ always() && !inputs.simulation_only }}
         uses: actions/upload-artifact@v4
         with:
           name: APS6408_Diag-${{ github.run_number }}
