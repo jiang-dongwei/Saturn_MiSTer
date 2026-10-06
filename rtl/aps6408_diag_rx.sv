@@ -9,6 +9,7 @@ module aps6408_diag_rx (
     output reg done = 0,
     output reg [15:0] early_word = 0,
     output reg [15:0] mid_word = 0,
+    output reg [15:0] quarter_word = 0,
     output reg [15:0] late_word = 0,
     output reg [15:0] edge_word = 0,
     output reg [15:0] clock_word = 0,
@@ -33,7 +34,7 @@ module aps6408_diag_rx (
     reg data_phase = 0;
     reg [1:0] rise_event, fall_event, clock_event;
     reg [6:0] edge_low, edge_high;
-    (* preserve *) reg [23:0] data_low, data_high;
+    (* preserve *) reg [31:0] data_low, data_high;
     reg reference_pending = 0;
     reg [1:0] reference_delay = 0;
     reg reference_phase = 0;
@@ -45,7 +46,7 @@ module aps6408_diag_rx (
         (active_speed == 2 ? !second_delay : (|fall_event));
     wire capture_phase = byte_count == 0 ? rise_event[1] :
                          active_speed == 2 ? data_phase : fall_event[1];
-    wire [23:0] capture_data = capture_phase ? data_high : data_low;
+    wire [31:0] capture_data = capture_phase ? data_high : data_low;
 
     always @(negedge clk) clock_negative <= psram_clk;
     always @(posedge clk) begin
@@ -61,9 +62,9 @@ module aps6408_diag_rx (
         previous_clock_low <= clock_low;
         previous_clock_high <= clock_high;
         older_clock_high <= previous_clock_high;
-        // Both lanes carry EARLY (-1), MID (0) and LATE (+3) DDR samples.
-        data_low <= {older_high[7:0], previous_low[7:0], pair_high[7:0]};
-        data_high <= {previous_low[7:0], previous_high[7:0], input_falling[7:0]};
+        // EARLY (-1), MID (0), QUARTER (+1) and LATE (+3) DDR samples.
+        data_low <= {older_high[7:0], previous_low[7:0], previous_high[7:0], pair_high[7:0]};
+        data_high <= {previous_low[7:0], previous_high[7:0], pair_low[7:0], input_falling[7:0]};
         rise_event <= {previous_high[8] && !previous_low[8],
                        previous_low[8] && !older_high[8]};
         fall_event <= {!previous_high[8] && previous_low[8],
@@ -86,6 +87,7 @@ module aps6408_diag_rx (
             active_speed <= speed;
             early_word <= 0;
             mid_word <= 0;
+            quarter_word <= 0;
             late_word <= 0;
             edge_word <= 0;
             clock_word <= 0;
@@ -121,15 +123,17 @@ module aps6408_diag_rx (
                     edge_word[7:0] <= {1'b0, fall_event[1] ? edge_high : edge_low};
                 if (first_capture || second_capture) begin
                     if (byte_count == 0) begin
-                        early_word[15:8] <= capture_data[23:16];
-                        mid_word[15:8] <= capture_data[15:8];
+                        early_word[15:8] <= capture_data[31:24];
+                        mid_word[15:8] <= capture_data[23:16];
+                        quarter_word[15:8] <= capture_data[15:8];
                         late_word[15:8] <= capture_data[7:0];
                         edge_word[15:8] <= {1'b0, capture_phase ? edge_high : edge_low};
                         data_phase <= capture_phase;
                         second_delay <= 1;
                     end else begin
-                        early_word[7:0] <= capture_data[23:16];
-                        mid_word[7:0] <= capture_data[15:8];
+                        early_word[7:0] <= capture_data[31:24];
+                        mid_word[7:0] <= capture_data[23:16];
+                        quarter_word[7:0] <= capture_data[15:8];
                         late_word[7:0] <= capture_data[7:0];
                         if (active_speed != 2) edge_word[7:0] <= {1'b0, capture_phase ? edge_high : edge_low};
                         done <= 1;

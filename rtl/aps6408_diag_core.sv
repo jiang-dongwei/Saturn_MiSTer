@@ -17,10 +17,12 @@ module aps6408_diag_core #(
     output reg [15:0] actual_data,
     output reg [15:0] sample_early,
     output reg [15:0] sample_mid,
+    output reg [15:0] sample_quarter,
     output reg [15:0] sample_late,
     output reg [15:0] retry_read_data,
     output reg retry_read_valid,
     output reg [1:0] read_capture_tap,
+    output reg [1:0] read_capture_tap_second,
     output reg [15:0] mr_pair0,
     output reg [15:0] mr_pair1,
     output reg [15:0] mr_pair2,
@@ -58,6 +60,7 @@ module aps6408_diag_core #(
     reg [15:0] read_word;
     reg [15:0] mr0_early;
     reg [15:0] mr0_mid;
+    reg [15:0] mr0_quarter;
     reg [15:0] mr0_late;
     reg [15:0] dqs_edge_word;
     reg [7:0] tx_data;
@@ -66,11 +69,13 @@ module aps6408_diag_core #(
     reg tx_dm_oe;
     wire rx_done;
     wire [15:0] rx_early, rx_mid, rx_late, rx_edges;
+    wire [15:0] rx_quarter;
     wire [15:0] rx_clock;
     wire rx_clock_done;
     reg rx_done_meta, rx_done_sync;
     reg rx_clock_done_meta, rx_clock_done_sync;
     reg [15:0] rx_early_hold, rx_mid_hold, rx_late_hold, rx_edges_hold;
+    reg [15:0] rx_quarter_hold;
     reg [15:0] rx_clock_hold;
     reg [15:0] clk_read_word;
 
@@ -123,22 +128,82 @@ module aps6408_diag_core #(
     wire [2:0] half_period = active_speed == 0 ? 3'd4 : active_speed == 1 ? 3'd2 : 3'd1;
     wire tick = (div_count == half_period-1'b1);
     wire rx_arm = (state == S_TURN || state == S_READ);
-    wire mid_training_valid = valid_training_pair(mr0_mid, sample_mid);
-    wire late_training_valid = valid_training_pair(mr0_late, sample_late);
-    wire early_training_valid = valid_training_pair(mr0_early, sample_early);
-    wire training_valid = mid_training_valid || late_training_valid || early_training_valid;
-    wire [1:0] trained_tap = speed_select != 2 && mid_training_valid ? 2'd1 :
-                            late_training_valid ? 2'd2 : mid_training_valid ? 2'd1 : 2'd0;
-    wire [15:0] trained_first = trained_tap == 2 ? mr0_late :
-                                trained_tap == 1 ? mr0_mid : mr0_early;
-    wire [15:0] trained_second = trained_tap == 2 ? sample_late :
-                                 trained_tap == 1 ? sample_mid : sample_early;
+    function [15:0] tap_word;
+        input [1:0] tap;
+        input [15:0] early_value, mid_value, late_value, quarter_value;
+        begin
+            case (tap)
+                0: tap_word = early_value;
+                1: tap_word = mid_value;
+                2: tap_word = late_value;
+                default: tap_word = quarter_value;
+            endcase
+        end
+    endfunction
+    function [1:0] first_tap_order;
+        input [1:0] index;
+        begin
+            case (index)
+                0: first_tap_order = 1;
+                1: first_tap_order = 2;
+                2: first_tap_order = 3;
+                default: first_tap_order = 0;
+            endcase
+        end
+    endfunction
+    function [1:0] second_tap_order;
+        input [1:0] index;
+        input fast_mode;
+        begin
+            case (index)
+                0: second_tap_order = fast_mode ? 3 : 2;
+                1: second_tap_order = fast_mode ? 2 : 3;
+                2: second_tap_order = 1;
+                default: second_tap_order = 0;
+            endcase
+        end
+    endfunction
+    wire [15:0] valid_tap_pairs;
+    genvar first_index, second_index;
+    generate for (first_index=0; first_index<4; first_index=first_index+1) begin : first_training
+        for (second_index=0; second_index<4; second_index=second_index+1) begin : second_training
+            wire [1:0] first_tap = first_tap_order(first_index);
+            wire [1:0] second_tap = second_tap_order(second_index, speed_select == 2);
+            wire [15:0] previous_first = tap_word(first_tap, mr0_early, mr0_mid, mr0_late, mr0_quarter);
+            wire [15:0] previous_second = tap_word(second_tap, mr0_early, mr0_mid, mr0_late, mr0_quarter);
+            wire [15:0] current_first = tap_word(first_tap, sample_early, sample_mid, sample_late, sample_quarter);
+            wire [15:0] current_second = tap_word(second_tap, sample_early, sample_mid, sample_late, sample_quarter);
+            wire [15:0] previous_pair = {previous_first[15:8], previous_second[7:0]};
+            wire [15:0] current_pair = {current_first[15:8], current_second[7:0]};
+            assign valid_tap_pairs[first_index*4+second_index] =
+                valid_training_pair(previous_pair, current_pair) &&
+                (speed_select != 0 || current_pair == clk_read_word);
+        end
+    end endgenerate
+    reg [3:0] trained_pair;
+    integer pair_index;
+    always @* begin
+        trained_pair = 0;
+        for (pair_index=15; pair_index>=0; pair_index=pair_index-1)
+            if (valid_tap_pairs[pair_index]) trained_pair = pair_index;
+    end
+    wire training_valid = |valid_tap_pairs;
+    wire [1:0] trained_tap = first_tap_order(trained_pair[3:2]);
+    wire [1:0] trained_tap_second = second_tap_order(trained_pair[1:0], speed_select == 2);
+    wire [15:0] trained_previous_hi = tap_word(trained_tap, mr0_early, mr0_mid, mr0_late, mr0_quarter);
+    wire [15:0] trained_previous_lo = tap_word(trained_tap_second, mr0_early, mr0_mid, mr0_late, mr0_quarter);
+    wire [15:0] trained_current_hi = tap_word(trained_tap, sample_early, sample_mid, sample_late, sample_quarter);
+    wire [15:0] trained_current_lo = tap_word(trained_tap_second, sample_early, sample_mid, sample_late, sample_quarter);
+    wire [15:0] trained_first = {trained_previous_hi[15:8], trained_previous_lo[7:0]};
+    wire [15:0] trained_second = {trained_current_hi[15:8], trained_current_lo[7:0]};
+    wire [15:0] receive_hi = tap_word(retry_slow ? 2'd1 : read_capture_tap, rx_early_hold, rx_mid_hold, rx_late_hold, rx_quarter_hold);
+    wire [15:0] receive_lo = tap_word(retry_slow ? 2'd2 : read_capture_tap_second, rx_early_hold, rx_mid_hold, rx_late_hold, rx_quarter_hold);
 
     aps6408_diag_rx rx (
         .clk(clk_phy), .reset(reset), .arm(rx_arm), .speed(active_speed),
         .psram_clk(psram_clock_monitor), .dq(PSRAM_DQ), .dqs(PSRAM_DQS),
         .done(rx_done), .early_word(rx_early), .mid_word(rx_mid),
-        .late_word(rx_late), .edge_word(rx_edges), .clock_word(rx_clock),
+        .late_word(rx_late), .quarter_word(rx_quarter), .edge_word(rx_edges), .clock_word(rx_clock),
         .clock_done(rx_clock_done)
     );
 
@@ -155,6 +220,7 @@ module aps6408_diag_core #(
         rx_clock_done_sync <= rx_clock_done_meta;
         rx_early_hold <= rx_early;
         rx_mid_hold <= rx_mid;
+        rx_quarter_hold <= rx_quarter;
         rx_late_hold <= rx_late;
         rx_edges_hold <= rx_edges;
         rx_clock_hold <= rx_clock;
@@ -187,6 +253,7 @@ module aps6408_diag_core #(
             mr0_mid <= 0;
             mr0_late <= 0;
             read_capture_tap <= 2'd1;
+            read_capture_tap_second <= 2'd2;
             dqs_edge_word <= 0;
             clk_read_word <= 0;
             result_code <= 0;
@@ -345,13 +412,13 @@ module aps6408_diag_core #(
                         end
                     end
                     if (rx_done_sync && (!id_phase || rx_clock_done_sync)) begin
-                        read_word <= retry_slow ? rx_mid_hold : read_capture_tap == 2 ? rx_late_hold :
-                                     read_capture_tap == 1 ? rx_mid_hold : rx_early_hold;
+                        read_word <= {receive_hi[15:8], receive_lo[7:0]};
                         dqs_edge_word <= rx_edges_hold;
                         clk_read_word <= rx_clock_hold;
                         if (!retry_slow) begin
                             sample_early <= rx_early_hold;
                             sample_mid <= rx_mid_hold;
+                            sample_quarter <= rx_quarter_hold;
                             sample_late <= rx_late_hold;
                         end
                         state <= S_END;
@@ -385,6 +452,7 @@ module aps6408_diag_core #(
                             mr_pair0 <= read_word;
                             mr0_early <= sample_early;
                             mr0_mid <= sample_mid;
+                            mr0_quarter <= sample_quarter;
                             mr0_late <= sample_late;
                             id_slot <= 1;
                             state <= S_START;
@@ -399,8 +467,9 @@ module aps6408_diag_core #(
                             // only for 8.47 MHz. At faster settings, DQS is
                             // the read timing reference; the memory tests
                             // still check every returned data word.
-                            if (training_valid && (speed_select != 0 || trained_second == clk_read_word)) begin
+                            if (training_valid) begin
                                 read_capture_tap <= trained_tap;
+                                read_capture_tap_second <= trained_tap_second;
                                 mr_pair0 <= trained_first;
                                 mr_pair1 <= trained_second;
                                 id_word <= trained_second;

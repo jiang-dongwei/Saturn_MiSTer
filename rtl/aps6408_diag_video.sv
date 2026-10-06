@@ -19,10 +19,12 @@ module aps6408_diag_video
 	input      [15:0] read_edge_pair,
 	input      [15:0] read_sample_early,
 	input      [15:0] read_sample_mid,
+    input      [15:0] read_sample_quarter,
 	input      [15:0] read_sample_late,
 	input      [15:0] retry_read_data,
 	input             retry_read_valid,
 	input      [1:0]  read_capture_tap,
+    input      [1:0] read_capture_tap_second,
 
 	output            ce_pixel,
 	output reg  [7:0] red,
@@ -78,6 +80,7 @@ localparam [383:0] TXT_E2_EDGES = {"DQS EDGES:", {38{8'h20}}};
 localparam [383:0] TXT_RX_EARLY = {"RX TAP: EARLY", {35{8'h20}}};
 localparam [383:0] TXT_RX_MID = {"RX TAP: MID", {37{8'h20}}};
 localparam [383:0] TXT_RX_LATE = {"RX TAP: LATE", {36{8'h20}}};
+localparam [383:0] TXT_RX_QUARTER = {"RX TAP: QTR", {37{8'h20}}};
 
 function [7:0] fixed_char;
 	input [383:0] text;
@@ -340,12 +343,17 @@ function [7:0] screen_char;
 				end
 			end
 			20: begin
-				value = fixed_char(TXT_MODE, column);
-				if ((column >= 7) && (column < 18))
-					value = mode_char(column - 7);
+                value = fixed_char({"QUARTER:", {40{8'h20}}}, column);
+                if (column >= 10 && column < 14)
+                    value = hex_char(read_sample_quarter[15-((column-10)*4) -: 4]);
 			end
-            21: value = fixed_char(read_capture_tap == 2'd2 ? TXT_RX_LATE :
-                                   read_capture_tap == 2'd1 ? TXT_RX_MID : TXT_RX_EARLY, column);
+            21: begin
+                value = fixed_char(read_capture_tap == 2 ? TXT_RX_LATE : read_capture_tap == 1 ? TXT_RX_MID :
+                                   read_capture_tap == 3 ? TXT_RX_QUARTER : TXT_RX_EARLY, column);
+                if (column >= 20 && column < 24) value = fixed_char({"D1: ", {44{8'h20}}}, column-20);
+                if (column >= 24) value = fixed_char(read_capture_tap_second == 2 ? TXT_RX_LATE :
+                    read_capture_tap_second == 1 ? TXT_RX_MID : read_capture_tap_second == 3 ? TXT_RX_QUARTER : TXT_RX_EARLY, column-16);
+            end
 			23: begin
 				value = fixed_char((stage_code == 8'hE2 || stage_code == 8'hE6) ? TXT_E2_SAMPLES :
 				                   stage_code == 8'h58 ? TXT_HELP_DDIO : TXT_HELP1, column);

@@ -20,9 +20,11 @@ module tb_aps6408_diag;
     wire [15:0] id_word;
     wire [15:0] expected_data, actual_data;
     wire [15:0] sample_early, sample_mid, sample_late;
+    wire [15:0] sample_quarter;
     wire [15:0] retry_read_data;
     wire retry_read_valid;
     wire [1:0] read_capture_tap;
+    wire [1:0] read_capture_tap_second;
     wire [15:0] mr_pair0, mr_pair1, mr_pair2;
     wire [15:0] dqs_edge_pair1, clk_pair1;
     wire [7:0] diagnostic_leds;
@@ -42,9 +44,11 @@ module tb_aps6408_diag;
         .expected_data(expected_data), .actual_data(actual_data),
         .sample_early(sample_early), .sample_mid(sample_mid),
         .sample_late(sample_late),
+        .sample_quarter(sample_quarter),
         .retry_read_data(retry_read_data),
         .retry_read_valid(retry_read_valid),
         .read_capture_tap(read_capture_tap),
+        .read_capture_tap_second(read_capture_tap_second),
         .mr_pair0(mr_pair0), .mr_pair1(mr_pair1),
         .mr_pair2(mr_pair2),
         .dqs_edge_pair1(dqs_edge_pair1),
@@ -66,7 +70,7 @@ module tb_aps6408_diag;
     realtime last_psram_edge=-1.0e9;
     realtime last_fpga_data=-1.0e9;
     reg rx_was_done=0;
-    reg [63:0] held_rx_payload;
+    reg [79:0] held_rx_payload;
     real dqs_delay_ns=10.0;
     real dq_skew_ns=0.0;
     integer dq_leads_dqs=0;
@@ -95,10 +99,10 @@ module tb_aps6408_diag;
             $fatal(1,"FPGA DQ has less than 3 ns setup before PSRAM clock edge");
     always @(posedge clk_phy) begin
         if (rx_was_done && dut.rx.done && dut.rx.arm_sync && !reset &&
-            {dut.rx.early_word,dut.rx.mid_word,dut.rx.late_word,dut.rx.edge_word} !== held_rx_payload)
+            {dut.rx.early_word,dut.rx.mid_word,dut.rx.quarter_word,dut.rx.late_word,dut.rx.edge_word} !== held_rx_payload)
             $fatal(1,"Receive payload changed before controller released arm");
         rx_was_done <= dut.rx.done;
-        held_rx_payload <= {dut.rx.early_word,dut.rx.mid_word,dut.rx.late_word,dut.rx.edge_word};
+        held_rx_payload <= {dut.rx.early_word,dut.rx.mid_word,dut.rx.quarter_word,dut.rx.late_word,dut.rx.edge_word};
     end
 
     function integer cell_for;
@@ -256,8 +260,8 @@ module tb_aps6408_diag;
               id_reads != 2 || writes != 1024 || reads != 1024)))
             $fatal(1,"diagnostic failed: result=%d stage=%h addr=%h exp=%h got=%h clk=%h dqs=%h writes=%d reads=%d",
                    result_code,stage_code,failure_address,expected_data,actual_data,clk_pair1,dqs_edge_pair1,writes,reads);
-        $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d DQS=%0.2fns skew=%0.2fns tap=%0d",
-                 result_code,stage_code,writes,reads,dqs_delay_ns,dq_skew_ns,read_capture_tap);
+        $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d DQS=%0.2fns skew=%0.2fns tap=%0d/%0d",
+                 result_code,stage_code,writes,reads,dqs_delay_ns,dq_skew_ns,read_capture_tap,read_capture_tap_second);
         if (!no_dqs && !missing_slot1 && !bad_id && !early_dqs && !corrupt && !alias_bit12) begin
             reset=1;
             repeat (4) @(posedge clk);
