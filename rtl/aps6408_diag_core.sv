@@ -336,7 +336,8 @@ module aps6408_diag_core #(
                             state <= S_FAIL;
                         end
                     end
-                    if (rx_done_sync) begin
+                    if (rx_done_sync && (!id_phase ||
+                        (timeout_edges >= 10 && !clk_sample_pending))) begin
                         read_word <= active_speed != 2 || read_capture_tap == 2 ? rx_late_hold :
                                      read_capture_tap == 1 ? rx_mid_hold : rx_early_hold;
                         dqs_edge_word <= rx_edges_hold;
