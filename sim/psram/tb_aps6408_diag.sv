@@ -257,7 +257,8 @@ module tb_aps6408_diag;
               ((dqs_delay_ns == 10.0) &&
                (dqs_edge_pair1[15:8] < 8'd9 || dqs_edge_pair1[15:8] > 8'd11 ||
                 (!late_memory_fall && dqs_edge_pair1[7:0] != dqs_edge_pair1[15:8]+1'b1))) ||
-              id_reads != 2 || writes != 1024 || reads != 1024)))
+              dut.reference_mr0 !== 16'hA00D || dut.reference_mr1 !== 16'h0D93 ||
+              id_reads != (speed_select == 0 ? 2 : 4) || writes != 1024 || reads != 1024)))
             $fatal(1,"diagnostic failed: result=%d stage=%h addr=%h exp=%h got=%h clk=%h dqs=%h writes=%d reads=%d",
                    result_code,stage_code,failure_address,expected_data,actual_data,clk_pair1,dqs_edge_pair1,writes,reads);
         $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d DQS=%0.2fns skew=%0.2fns tap=%0d/%0d",

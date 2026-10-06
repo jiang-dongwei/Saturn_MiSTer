@@ -51,6 +51,8 @@ module aps6408_diag_core #(
     reg [7:0] cell_index;
     reg [1:0] pattern_pass;
     reg id_phase;
+    reg reference_phase;
+    reg [15:0] reference_mr0, reference_mr1, clk_previous_pair;
     reg [1:0] id_slot;
     reg read_phase;
     reg retry_slow;
@@ -124,7 +126,7 @@ module aps6408_diag_core #(
 
     wire [23:0] address = id_phase ? {22'd0,id_slot} : address_for(cell_index);
     wire [15:0] pattern = pattern_for(cell_index, pattern_pass);
-    wire [1:0] active_speed = retry_slow ? 2'd1 : speed_select;
+    wire [1:0] active_speed = id_phase && reference_phase ? 2'd0 : retry_slow ? 2'd1 : speed_select;
     wire [2:0] half_period = active_speed == 0 ? 3'd4 : active_speed == 1 ? 3'd2 : 3'd1;
     wire tick = (div_count == half_period-1'b1);
     wire rx_arm = (state == S_TURN || state == S_READ);
@@ -177,7 +179,8 @@ module aps6408_diag_core #(
             wire [15:0] current_pair = {current_first[15:8], current_second[7:0]};
             assign valid_tap_pairs[first_index*4+second_index] =
                 valid_training_pair(previous_pair, current_pair) &&
-                (speed_select != 0 || current_pair == clk_read_word);
+                (reference_phase ? previous_pair == clk_previous_pair && current_pair == clk_read_word :
+                                   previous_pair == reference_mr0 && current_pair == reference_mr1);
         end
     end endgenerate
     reg [3:0] trained_pair;
@@ -239,6 +242,10 @@ module aps6408_diag_core #(
             cell_index <= 0;
             pattern_pass <= 0;
             id_phase <= 1;
+            reference_phase <= 1;
+            reference_mr0 <= 0;
+            reference_mr1 <= 0;
+            clk_previous_pair <= 0;
             id_slot <= 0;
             read_phase <= 0;
             retry_slow <= 0;
@@ -456,6 +463,7 @@ module aps6408_diag_core #(
                             mr0_early <= sample_early;
                             mr0_mid <= sample_mid;
                             mr0_quarter <= sample_quarter;
+                            clk_previous_pair <= clk_read_word;
                             mr0_late <= sample_late;
                             id_slot <= 1;
                             state <= S_START;
@@ -476,7 +484,13 @@ module aps6408_diag_core #(
                                 mr_pair0 <= trained_first;
                                 mr_pair1 <= trained_second;
                                 id_word <= trained_second;
-                                id_phase <= 0;
+                                if (reference_phase) begin
+                                    reference_mr0 <= clk_previous_pair;
+                                    reference_mr1 <= clk_read_word;
+                                    reference_phase <= 0;
+                                end
+                                if (reference_phase && speed_select != 0) id_slot <= 0;
+                                else id_phase <= 0;
                                 state <= S_START;
                             end else begin
                                 stage_code <= 8'hE6;
