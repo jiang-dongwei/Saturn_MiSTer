@@ -66,6 +66,8 @@ module aps6408_diag_core #(
     reg [7:0] dq_prev2;
     reg fast_second_pending;
     reg [3:0] fast_second_delay;
+    reg late_commit_pending;
+    reg late_commit_byte;
     reg [2:0] sample_delay;
     reg sample_pending;
     reg [15:0] dqs_edge_word;
@@ -168,6 +170,8 @@ module aps6408_diag_core #(
             read_capture_tap <= 2'd1;
             fast_second_pending <= 0;
             fast_second_delay <= 0;
+            late_commit_pending <= 0;
+            late_commit_byte <= 0;
             sample_delay <= 0;
             sample_pending <= 0;
             dqs_edge_word <= 0;
@@ -193,6 +197,11 @@ module aps6408_diag_core #(
             clk_pair1 <= 0;
             diagnostic_leds <= 0;
         end else begin
+            if (late_commit_pending) begin
+                if (late_commit_byte) read_word[7:0] <= sample_late[7:0];
+                else read_word[15:8] <= sample_late[15:8];
+                late_commit_pending <= 0;
+            end
             if (fast_second_pending && fast_second_delay != 0)
                 fast_second_delay <= fast_second_delay - 1'b1;
             if (tick) div_count <= 0;
@@ -310,6 +319,7 @@ module aps6408_diag_core #(
                     edge_index <= 0;
                     data_index <= 0;
                     fast_second_pending <= 0;
+                    late_commit_pending <= 0;
                     timeout_edges <= 0;
                     sample_pending <= 0;
                     dqs_edge_word <= 0;
@@ -416,16 +426,20 @@ module aps6408_diag_core #(
                                     sample_mid[15:8] <= dq_prev;
                                     sample_late[15:8] <= PSRAM_DQ;
                                 end
-                                read_word[15:8] <= read_capture_tap == 2'd2 ? PSRAM_DQ :
-                                    read_capture_tap == 2'd1 ? dq_prev : dq_prev2;
+                                if (read_capture_tap != 2'd2)
+                                    read_word[15:8] <= read_capture_tap == 2'd1 ? dq_prev : dq_prev2;
                             end else begin
                                 if (!retry_slow) begin
                                     sample_early[7:0] <= dq_prev2;
                                     sample_mid[7:0] <= dq_prev;
                                     sample_late[7:0] <= PSRAM_DQ;
                                 end
-                                read_word[7:0] <= read_capture_tap == 2'd2 ? PSRAM_DQ :
-                                    read_capture_tap == 2'd1 ? dq_prev : dq_prev2;
+                                if (read_capture_tap != 2'd2)
+                                    read_word[7:0] <= read_capture_tap == 2'd1 ? dq_prev : dq_prev2;
+                            end
+                            if (read_capture_tap == 2'd2) begin
+                                late_commit_pending <= 1;
+                                late_commit_byte <= (data_index != 0);
                             end
                         end
                         if (data_index == 0) dqs_edge_word[15:8] <= {1'b0, timeout_edges};
