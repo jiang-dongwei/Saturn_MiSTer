@@ -25,9 +25,12 @@ def check_report(report):
     for name in SUMMARIES:
         rows = []
         for columns in tables[name]:
+            if columns[:2] == ["Clock", "Slack"]:
+                continue
             try:
                 slack = float(columns[1])
             except ValueError:
+                errors.append(f"Invalid slack in {name}: {columns[0]}")
                 continue
             try:
                 tns = float(columns[2])

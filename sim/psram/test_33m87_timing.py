@@ -42,6 +42,8 @@ class TimingGateTests(unittest.TestCase):
     def test_incomplete_or_invalid_reports_are_rejected(self):
         for report in ("", REPORT.split("; Hold Summary ;")[0],
                        REPORT.replace("; 0.353 ;", "; NaN ;"),
+                       REPORT.replace("; 0.353 ;", "; unreadable ;"),
+                       REPORT.replace("; Setup Summary ;", "; Setup Summary ;\n; other_clock ; unreadable ; 0.000 ;"),
                        REPORT.replace("; 0.353 ; 0.000 ;", "; 0.353 ; NaN ;"),
                        REPORT.replace("33.87 MHz", "67.74 MHz"),
                        REPORT.replace("67.74 MHz", "33.87 MHz"),
