@@ -43,6 +43,8 @@ jobs:
             rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv sim/psram/tb_aps6408_diag.sv
           vvp .ci/aps6408_diag.vvp +speed16
           vvp .ci/aps6408_diag.vvp +speed16 +dq_lags_dqs
+          vvp .ci/aps6408_diag.vvp +speed16 +late_memory_fall
+          vvp .ci/aps6408_diag.vvp +speed16 +corrupt
           vvp .ci/aps6408_diag.vvp +speed33
           vvp .ci/aps6408_diag.vvp +speed33 +corrupt
           vvp .ci/aps6408_diag.vvp +speed33 +dq_leads_dqs

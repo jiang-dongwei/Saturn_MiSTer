@@ -9,7 +9,7 @@ module aps6408_diag_rx (
     output reg done = 0,
     output reg [15:0] early_word = 0,
     output reg [15:0] mid_word = 0,
-    output reg [15:0] quarter_word = 0,
+    output reg [15:0] center_word = 0,
     output reg [15:0] late_word = 0,
     output reg [15:0] edge_word = 0,
     output reg [15:0] clock_word = 0,
@@ -30,7 +30,7 @@ module aps6408_diag_rx (
     reg [1:0] active_speed = 0;
     reg [6:0] edge_count = 0;
     reg [1:0] byte_count = 0;
-    reg second_delay = 0;
+    reg [1:0] second_delay = 0;
     reg data_phase = 0;
     reg [1:0] rise_event, fall_event, clock_event;
     reg [6:0] edge_low, edge_high;
@@ -43,9 +43,9 @@ module aps6408_diag_rx (
     wire clock_change_high = previous_clock_high != previous_clock_low;
     wire first_capture = byte_count == 0 && (|rise_event);
     wire second_capture = byte_count == 1 &&
-        (active_speed == 2 ? !second_delay : (|fall_event));
+        (active_speed != 0 ? second_delay == 0 : (|fall_event));
     wire capture_phase = byte_count == 0 ? rise_event[1] :
-                         active_speed == 2 ? data_phase : fall_event[1];
+                         active_speed != 0 ? data_phase : fall_event[1];
     wire [31:0] capture_data = capture_phase ? data_high : data_low;
 
     always @(negedge clk) clock_negative <= psram_clk;
@@ -62,9 +62,9 @@ module aps6408_diag_rx (
         previous_clock_low <= clock_low;
         previous_clock_high <= clock_high;
         older_clock_high <= previous_clock_high;
-        // EARLY (-1), MID (0), QUARTER (+1) and LATE (+3) DDR samples.
-        data_low <= {older_high[7:0], previous_low[7:0], previous_high[7:0], pair_high[7:0]};
-        data_high <= {previous_low[7:0], previous_high[7:0], pair_low[7:0], input_falling[7:0]};
+        // EARLY (-1), MID (0), CENTER (+2) and LATE (+3) DDR samples.
+        data_low <= {older_high[7:0], previous_low[7:0], pair_low[7:0], pair_high[7:0]};
+        data_high <= {previous_low[7:0], previous_high[7:0], pair_high[7:0], input_falling[7:0]};
         rise_event <= {previous_high[8] && !previous_low[8],
                        previous_low[8] && !older_high[8]};
         fall_event <= {!previous_high[8] && previous_low[8],
@@ -87,7 +87,7 @@ module aps6408_diag_rx (
             active_speed <= speed;
             early_word <= 0;
             mid_word <= 0;
-            quarter_word <= 0;
+            center_word <= 0;
             late_word <= 0;
             edge_word <= 0;
             clock_word <= 0;
@@ -118,24 +118,24 @@ module aps6408_diag_rx (
                 reference_byte <= clock_event[1] ? edge_high == 10 : edge_low == 10;
             end
             if (!done) begin
-                if (byte_count == 1 && second_delay) second_delay <= 0;
-                if (active_speed == 2 && byte_count != 0 && (|fall_event) && edge_word[7:0] == 0)
+                if (byte_count == 1 && second_delay != 0) second_delay <= second_delay - 1'b1;
+                if (active_speed != 0 && byte_count != 0 && (|fall_event) && edge_word[7:0] == 0)
                     edge_word[7:0] <= {1'b0, fall_event[1] ? edge_high : edge_low};
                 if (first_capture || second_capture) begin
                     if (byte_count == 0) begin
                         early_word[15:8] <= capture_data[31:24];
                         mid_word[15:8] <= capture_data[23:16];
-                        quarter_word[15:8] <= capture_data[15:8];
+                        center_word[15:8] <= capture_data[15:8];
                         late_word[15:8] <= capture_data[7:0];
                         edge_word[15:8] <= {1'b0, capture_phase ? edge_high : edge_low};
                         data_phase <= capture_phase;
-                        second_delay <= 1;
+                        second_delay <= active_speed == 1 ? 3 : 1;
                     end else begin
                         early_word[7:0] <= capture_data[31:24];
                         mid_word[7:0] <= capture_data[23:16];
-                        quarter_word[7:0] <= capture_data[15:8];
+                        center_word[7:0] <= capture_data[15:8];
                         late_word[7:0] <= capture_data[7:0];
-                        if (active_speed != 2) edge_word[7:0] <= {1'b0, capture_phase ? edge_high : edge_low};
+                        if (active_speed == 0) edge_word[7:0] <= {1'b0, capture_phase ? edge_high : edge_low};
                         done <= 1;
                     end
                     byte_count <= byte_count + 1'b1;

@@ -20,7 +20,7 @@ module tb_aps6408_diag;
     wire [15:0] id_word;
     wire [15:0] expected_data, actual_data;
     wire [15:0] sample_early, sample_mid, sample_late;
-    wire [15:0] sample_quarter;
+    wire [15:0] sample_center;
     wire [15:0] retry_read_data;
     wire retry_read_valid;
     wire [1:0] read_capture_tap;
@@ -44,7 +44,7 @@ module tb_aps6408_diag;
         .expected_data(expected_data), .actual_data(actual_data),
         .sample_early(sample_early), .sample_mid(sample_mid),
         .sample_late(sample_late),
-        .sample_quarter(sample_quarter),
+        .sample_center(sample_center),
         .retry_read_data(retry_read_data),
         .retry_read_valid(retry_read_valid),
         .read_capture_tap(read_capture_tap),
@@ -99,10 +99,10 @@ module tb_aps6408_diag;
             $fatal(1,"FPGA DQ has less than 3 ns setup before PSRAM clock edge");
     always @(posedge clk_phy) begin
         if (rx_was_done && dut.rx.done && dut.rx.arm_sync && !reset &&
-            {dut.rx.early_word,dut.rx.mid_word,dut.rx.quarter_word,dut.rx.late_word,dut.rx.edge_word} !== held_rx_payload)
+            {dut.rx.early_word,dut.rx.mid_word,dut.rx.center_word,dut.rx.late_word,dut.rx.edge_word} !== held_rx_payload)
             $fatal(1,"Receive payload changed before controller released arm");
         rx_was_done <= dut.rx.done;
-        held_rx_payload <= {dut.rx.early_word,dut.rx.mid_word,dut.rx.quarter_word,dut.rx.late_word,dut.rx.edge_word};
+        held_rx_payload <= {dut.rx.early_word,dut.rx.mid_word,dut.rx.center_word,dut.rx.late_word,dut.rx.edge_word};
     end
 
     function integer cell_for;

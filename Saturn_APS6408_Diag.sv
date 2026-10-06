@@ -176,7 +176,7 @@ wire [15:0] expected_data;
 wire [15:0] actual_data;
 wire [15:0] sample_early;
 wire [15:0] sample_mid;
-wire [15:0] sample_quarter;
+wire [15:0] sample_center;
 wire [15:0] sample_late;
 wire [15:0] retry_read_data;
 wire retry_read_valid;
@@ -211,7 +211,7 @@ aps6408_diag_core diagnostic
     .actual_data(actual_data),
     .sample_early(sample_early),
     .sample_mid(sample_mid),
-    .sample_quarter(sample_quarter),
+    .sample_center(sample_center),
     .sample_late(sample_late),
     .retry_read_data(retry_read_data),
     .retry_read_valid(retry_read_valid),
@@ -248,7 +248,7 @@ aps6408_diag_video video
 	.read_edge_pair(dqs_edge_pair1),
 	.read_sample_early(sample_early),
 	.read_sample_mid(sample_mid),
-    .read_sample_quarter(sample_quarter),
+    .read_sample_center(sample_center),
 	.read_sample_late(sample_late),
 	.retry_read_data(retry_read_data),
 	.retry_read_valid(retry_read_valid),

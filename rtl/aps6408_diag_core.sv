@@ -17,7 +17,7 @@ module aps6408_diag_core #(
     output reg [15:0] actual_data,
     output reg [15:0] sample_early,
     output reg [15:0] sample_mid,
-    output reg [15:0] sample_quarter,
+    output reg [15:0] sample_center,
     output reg [15:0] sample_late,
     output reg [15:0] retry_read_data,
     output reg retry_read_valid,
@@ -63,7 +63,7 @@ module aps6408_diag_core #(
     reg [15:0] read_word;
     reg [15:0] mr0_early;
     reg [15:0] mr0_mid;
-    reg [15:0] mr0_quarter;
+    reg [15:0] mr0_center;
     reg [15:0] mr0_late;
     reg [15:0] dqs_edge_word;
     reg [7:0] tx_data;
@@ -72,13 +72,13 @@ module aps6408_diag_core #(
     reg tx_dm_oe;
     wire rx_done;
     wire [15:0] rx_early, rx_mid, rx_late, rx_edges;
-    wire [15:0] rx_quarter;
+    wire [15:0] rx_center;
     wire [15:0] rx_clock;
     wire rx_clock_done;
     reg rx_done_meta, rx_done_sync;
     reg rx_clock_done_meta, rx_clock_done_sync;
     reg [15:0] rx_early_hold, rx_mid_hold, rx_late_hold, rx_edges_hold;
-    reg [15:0] rx_quarter_hold;
+    reg [15:0] rx_center_hold;
     reg [15:0] rx_clock_hold;
     reg [15:0] clk_read_word;
 
@@ -133,13 +133,13 @@ module aps6408_diag_core #(
     wire rx_arm = (state == S_TURN || state == S_READ);
     function [15:0] tap_word;
         input [1:0] tap;
-        input [15:0] early_value, mid_value, late_value, quarter_value;
+        input [15:0] early_value, mid_value, late_value, center_value;
         begin
             case (tap)
                 0: tap_word = early_value;
                 1: tap_word = mid_value;
                 2: tap_word = late_value;
-                default: tap_word = quarter_value;
+                default: tap_word = center_value;
             endcase
         end
     endfunction
@@ -171,11 +171,11 @@ module aps6408_diag_core #(
     generate for (first_index=0; first_index<4; first_index=first_index+1) begin : first_training
         for (second_index=0; second_index<4; second_index=second_index+1) begin : second_training
             wire [1:0] first_tap = first_tap_order(first_index);
-            wire [1:0] second_tap = second_tap_order(second_index, active_speed == 2);
-            wire [15:0] previous_first = tap_word(first_tap, mr0_early, mr0_mid, mr0_late, mr0_quarter);
-            wire [15:0] previous_second = tap_word(second_tap, mr0_early, mr0_mid, mr0_late, mr0_quarter);
-            wire [15:0] current_first = tap_word(first_tap, sample_early, sample_mid, sample_late, sample_quarter);
-            wire [15:0] current_second = tap_word(second_tap, sample_early, sample_mid, sample_late, sample_quarter);
+            wire [1:0] second_tap = second_tap_order(second_index, active_speed != 0);
+            wire [15:0] previous_first = tap_word(first_tap, mr0_early, mr0_mid, mr0_late, mr0_center);
+            wire [15:0] previous_second = tap_word(second_tap, mr0_early, mr0_mid, mr0_late, mr0_center);
+            wire [15:0] current_first = tap_word(first_tap, sample_early, sample_mid, sample_late, sample_center);
+            wire [15:0] current_second = tap_word(second_tap, sample_early, sample_mid, sample_late, sample_center);
             wire [15:0] previous_pair = {previous_first[15:8], previous_second[7:0]};
             wire [15:0] current_pair = {current_first[15:8], current_second[7:0]};
             assign valid_tap_pairs[first_index*4+second_index] =
@@ -193,21 +193,21 @@ module aps6408_diag_core #(
     end
     wire training_valid = |valid_tap_pairs;
     wire [1:0] trained_tap = first_tap_order(trained_pair[3:2]);
-    wire [1:0] trained_tap_second = second_tap_order(trained_pair[1:0], active_speed == 2);
-    wire [15:0] trained_previous_hi = tap_word(trained_tap, mr0_early, mr0_mid, mr0_late, mr0_quarter);
-    wire [15:0] trained_previous_lo = tap_word(trained_tap_second, mr0_early, mr0_mid, mr0_late, mr0_quarter);
-    wire [15:0] trained_current_hi = tap_word(trained_tap, sample_early, sample_mid, sample_late, sample_quarter);
-    wire [15:0] trained_current_lo = tap_word(trained_tap_second, sample_early, sample_mid, sample_late, sample_quarter);
+    wire [1:0] trained_tap_second = second_tap_order(trained_pair[1:0], active_speed != 0);
+    wire [15:0] trained_previous_hi = tap_word(trained_tap, mr0_early, mr0_mid, mr0_late, mr0_center);
+    wire [15:0] trained_previous_lo = tap_word(trained_tap_second, mr0_early, mr0_mid, mr0_late, mr0_center);
+    wire [15:0] trained_current_hi = tap_word(trained_tap, sample_early, sample_mid, sample_late, sample_center);
+    wire [15:0] trained_current_lo = tap_word(trained_tap_second, sample_early, sample_mid, sample_late, sample_center);
     wire [15:0] trained_first = {trained_previous_hi[15:8], trained_previous_lo[7:0]};
     wire [15:0] trained_second = {trained_current_hi[15:8], trained_current_lo[7:0]};
-    wire [15:0] receive_hi = tap_word(retry_slow ? reference_tap_first : read_capture_tap, rx_early_hold, rx_mid_hold, rx_late_hold, rx_quarter_hold);
-    wire [15:0] receive_lo = tap_word(retry_slow ? reference_tap_second : read_capture_tap_second, rx_early_hold, rx_mid_hold, rx_late_hold, rx_quarter_hold);
+    wire [15:0] receive_hi = tap_word(retry_slow ? reference_tap_first : read_capture_tap, rx_early_hold, rx_mid_hold, rx_late_hold, rx_center_hold);
+    wire [15:0] receive_lo = tap_word(retry_slow ? reference_tap_second : read_capture_tap_second, rx_early_hold, rx_mid_hold, rx_late_hold, rx_center_hold);
 
     aps6408_diag_rx rx (
         .clk(clk_phy), .reset(reset), .arm(rx_arm), .speed(active_speed),
         .psram_clk(psram_clock_monitor), .dq(PSRAM_DQ), .dqs(PSRAM_DQS),
         .done(rx_done), .early_word(rx_early), .mid_word(rx_mid),
-        .late_word(rx_late), .quarter_word(rx_quarter), .edge_word(rx_edges), .clock_word(rx_clock),
+        .late_word(rx_late), .center_word(rx_center), .edge_word(rx_edges), .clock_word(rx_clock),
         .clock_done(rx_clock_done)
     );
 
@@ -224,7 +224,7 @@ module aps6408_diag_core #(
         rx_clock_done_sync <= rx_clock_done_meta;
         rx_early_hold <= rx_early;
         rx_mid_hold <= rx_mid;
-        rx_quarter_hold <= rx_quarter;
+        rx_center_hold <= rx_center;
         rx_late_hold <= rx_late;
         rx_edges_hold <= rx_edges;
         rx_clock_hold <= rx_clock;
@@ -261,7 +261,7 @@ module aps6408_diag_core #(
             read_word <= 0;
             mr0_early <= 0;
             mr0_mid <= 0;
-            mr0_quarter <= 0;
+            mr0_center <= 0;
             mr0_late <= 0;
             read_capture_tap <= 2'd1;
             read_capture_tap_second <= 2'd2;
@@ -275,7 +275,7 @@ module aps6408_diag_core #(
             actual_data <= 0;
             sample_early <= 0;
             sample_mid <= 0;
-            sample_quarter <= 0;
+            sample_center <= 0;
             sample_late <= 0;
             retry_read_data <= 0;
             retry_read_valid <= 0;
@@ -352,7 +352,7 @@ module aps6408_diag_core #(
                     if (!retry_slow) begin
                         sample_early <= 0;
                         sample_mid <= 0;
-                        sample_quarter <= 0;
+                        sample_center <= 0;
                         sample_late <= 0;
                         retry_read_valid <= 0;
                     end
@@ -431,7 +431,7 @@ module aps6408_diag_core #(
                         if (!retry_slow) begin
                             sample_early <= rx_early_hold;
                             sample_mid <= rx_mid_hold;
-                            sample_quarter <= rx_quarter_hold;
+                            sample_center <= rx_center_hold;
                             sample_late <= rx_late_hold;
                         end
                         state <= S_END;
@@ -465,7 +465,7 @@ module aps6408_diag_core #(
                             mr_pair0 <= read_word;
                             mr0_early <= sample_early;
                             mr0_mid <= sample_mid;
-                            mr0_quarter <= sample_quarter;
+                            mr0_center <= sample_center;
                             clk_previous_pair <= clk_read_word;
                             mr0_late <= sample_late;
                             id_slot <= 1;
