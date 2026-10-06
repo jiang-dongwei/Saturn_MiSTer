@@ -123,6 +123,16 @@ module aps6408_diag_core #(
     wire [2:0] half_period = active_speed == 0 ? 3'd4 : active_speed == 1 ? 3'd2 : 3'd1;
     wire tick = (div_count == half_period-1'b1);
     wire rx_arm = (state == S_TURN || state == S_READ);
+    wire mid_training_valid = valid_training_pair(mr0_mid, sample_mid);
+    wire late_training_valid = valid_training_pair(mr0_late, sample_late);
+    wire early_training_valid = valid_training_pair(mr0_early, sample_early);
+    wire training_valid = mid_training_valid || late_training_valid || early_training_valid;
+    wire [1:0] trained_tap = speed_select != 2 && mid_training_valid ? 2'd1 :
+                            late_training_valid ? 2'd2 : mid_training_valid ? 2'd1 : 2'd0;
+    wire [15:0] trained_first = trained_tap == 2 ? mr0_late :
+                                trained_tap == 1 ? mr0_mid : mr0_early;
+    wire [15:0] trained_second = trained_tap == 2 ? sample_late :
+                                 trained_tap == 1 ? sample_mid : sample_early;
 
     aps6408_diag_rx rx (
         .clk(clk_phy), .reset(reset), .arm(rx_arm), .speed(active_speed),
@@ -335,7 +345,7 @@ module aps6408_diag_core #(
                         end
                     end
                     if (rx_done_sync && (!id_phase || rx_clock_done_sync)) begin
-                        read_word <= active_speed != 2 || read_capture_tap == 2 ? rx_late_hold :
+                        read_word <= retry_slow ? rx_mid_hold : read_capture_tap == 2 ? rx_late_hold :
                                      read_capture_tap == 1 ? rx_mid_hold : rx_early_hold;
                         dqs_edge_word <= rx_edges_hold;
                         clk_read_word <= rx_clock_hold;
@@ -389,39 +399,19 @@ module aps6408_diag_core #(
                             // only for 8.47 MHz. At faster settings, DQS is
                             // the read timing reference; the memory tests
                             // still check every returned data word.
-                            if (speed_select == 2'd2 && valid_training_pair(mr0_late, sample_late)) begin
-                                read_capture_tap <= 2'd2;
-                                mr_pair0 <= mr0_late;
-                                mr_pair1 <= sample_late;
-                                id_word <= sample_late;
+                            if (training_valid && (speed_select != 0 || trained_second == clk_read_word)) begin
+                                read_capture_tap <= trained_tap;
+                                mr_pair0 <= trained_first;
+                                mr_pair1 <= trained_second;
+                                id_word <= trained_second;
                                 id_phase <= 0;
                                 state <= S_START;
-                            end else if (speed_select == 2'd2 && valid_training_pair(mr0_mid, sample_mid)) begin
-                                read_capture_tap <= 2'd1;
-                                mr_pair0 <= mr0_mid;
-                                mr_pair1 <= sample_mid;
-                                id_word <= sample_mid;
-                                id_phase <= 0;
-                                state <= S_START;
-                            end else if (speed_select == 2'd2 && valid_training_pair(mr0_early, sample_early)) begin
-                                read_capture_tap <= 2'd0;
-                                mr_pair0 <= mr0_early;
-                                mr_pair1 <= sample_early;
-                                id_word <= sample_early;
-                                id_phase <= 0;
-                                state <= S_START;
-                            end else if ((speed_select == 2'd2) ||
-                                ((read_word[15:8] & 8'h1F) != 8'h0D) ||
-                                ((read_word[7:0] & 8'h1F) != 8'h13) ||
-                                ((speed_select == 2'd0) && (read_word != clk_read_word))) begin
+                            end else begin
                                 stage_code <= 8'hE6;
                                 failure_address <= 24'h000001;
                                 expected_data <= 16'h0D13;
                                 actual_data <= read_word;
                                 state <= S_FAIL;
-                            end else begin
-                                id_phase <= 0;
-                                state <= S_START;
                             end
                         end else begin
                             state <= S_FAIL;

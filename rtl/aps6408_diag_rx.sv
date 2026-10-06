@@ -33,7 +33,7 @@ module aps6408_diag_rx (
     reg data_phase = 0;
     reg [1:0] rise_event, fall_event, clock_event;
     reg [6:0] edge_low, edge_high;
-    reg [23:0] data_low, data_high;
+    (* preserve *) reg [23:0] data_low, data_high;
     reg reference_pending = 0;
     reg [1:0] reference_delay = 0;
     reg reference_phase = 0;
@@ -61,9 +61,9 @@ module aps6408_diag_rx (
         previous_clock_low <= clock_low;
         previous_clock_high <= clock_high;
         older_clock_high <= previous_clock_high;
-        // Both lanes carry EARLY (-1), MID (0) and LATE (+2) DDR samples.
-        data_low <= {older_high[7:0], previous_low[7:0], pair_low[7:0]};
-        data_high <= {previous_low[7:0], previous_high[7:0], pair_high[7:0]};
+        // Both lanes carry EARLY (-1), MID (0) and LATE (+3) DDR samples.
+        data_low <= {older_high[7:0], previous_low[7:0], pair_high[7:0]};
+        data_high <= {previous_low[7:0], previous_high[7:0], input_falling[7:0]};
         rise_event <= {previous_high[8] && !previous_low[8],
                        previous_low[8] && !older_high[8]};
         fall_event <= {!previous_high[8] && previous_low[8],
