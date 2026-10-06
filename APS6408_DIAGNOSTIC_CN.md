@@ -62,13 +62,97 @@ Global Reset 版冷启动后由 `E1` 变为 `E3`，屏幕原始 MR 值约为 `CA
 
 ## 构建与仿真
 
+### 2026-10-06：33.87 MHz 串口实测
+
+当前 COM13 板卡是 APS6408 八线 DDR。8.47 MHz 旧候选读到
+`MR1/MR2=0D93` 并通过 4×256 地址检查；四线 QPI core 不适用于此板。
+诊断现在通过 OSD 选择 8.47、16.93、33.87 MHz，不需要 BIOS 或游戏。
+构建和功能仿真全部在 GitHub Runner 运行，Quartus 固定为 17.0.2。
+
+33 MHz 接收增加了 8 个负边沿 DQ 输入寄存器和 DQS 首级输入寄存器，
+Fitter 确认共 9 个输入寄存器实际打包进 IO。读取 MR0/1、MR1/2 时，
+校验重叠的 MR1 字节及厂商/密度位，再选择有效 LATE、MID 或 EARLY 档位。
+此选择仅发生在身份读取阶段，内存检查一直使用固定档位，不按预期数据
+为每次读取挑选样本。错误仍冻结为 FAIL；33 MHz 失败后的 16.93 MHz
+重读只显示 `SLOW` 诊断值，不能将高速失败改为 PASS。
+
+| 位流源码 | 33.87 MHz 真机结果 | 关键原始字段 |
+| --- | --- | --- |
+| `334a27e` | FAIL/E2 | 地址 `000800`，预期 `000B`，实际 `0019`，SLOW `000B` |
+| `9049da1` | FAIL/E6 | MR `0D8D`，EARLY `0D93`，MID `0D8D` |
+| `5c71ce9` | FAIL/E6 | MR `0D9F`，EARLY `0D93`，MID `0D9F` |
+| `461db60` | FAIL/E2 | MR `0D93`，EARLY 档，地址 `000080`，预期 `0007`，实际 `000E`，DQS `0B0E`，SLOW `0007` |
+| `fbf63bb` | FAIL/E2 | MID 档，第三图样地址 `000000`，预期 `A55A`，实际 `A5DA`，DQS `0B0C`，SLOW `A55A` |
+| `a64523b` | FAIL/E6 | EARLY `000D`，MID `059F`，LATE `0D93`；先前只校准两档，无法选择有效 LATE |
+| `f5abd7a` | FAIL/E2 | LATE 档，地址 `339EE4`，预期 `FF7F`，实际 `FFFF`，DQS `0A00`，SLOW `FF7F` |
+| `c2468d8` | FAIL/E2 | 两次配置分别在 `000000` 出现 `A55A→A5DA`、在 `339EE4` 出现 `FF7F→FFFF`；均为 DQ7 差异 |
+
+`461db60` 的同一固件在 8.47 和 16.93 MHz 均 PASS/FF；17 项仿真通过。
+它的 RBF 为 2,447,824 字节，SHA-256
+`96e6782171893628805b873d35e76d744f334bee2fc6f4a96d0f356de7da808c`。
+多角 TimeQuest 最差 setup/hold 为 -36.572/-8.229 ns，仍未时序签核。
+
+针对内存读取出现不相邻的两个 DQS 边沿，后续诊断在 33 MHz 用首个
+DQS 上升沿定位 D0，D1 在一个 DDR 半周期后使用同一档位采样；下降沿
+单独记录，未观察到时为 `00`。8/16 MHz 仍分别按原 CLK/DQS 边沿定位数据。
+新增延迟内存下降沿的模型场景用于验证该诊断，不代表器件电气时序合规。
+该版本 `fbf63bb` 的 18 项仿真、Quartus 编译和串口完整性校验通过，
+真机完成前两组图样后，在第三组出现 DQ7 单比特差异，仍为 FAIL。
+RBF 为 2,470,248 字节，SHA-256
+`99a871ba5bbb83a8a8bb4eeb778e4f33bbb0ec641b50cd529900309d818c1e2c`。
+多角 setup/hold 为 -36.420/-8.229 ns。
+
+后续使用 APS 专用 PLL 将采样时钟改为 270.9504 MHz，外部 PSRAM
+仍以 8.47/16.93/33.87 MHz 运行；33 MHz 每个 DDR 字节有 4 个采样周期。
+上电与复位恢复计数同步加倍，以保持 2 ms/2 µs 的等待时间；外部时钟
+约束相应改为 divide-by-8。原 QPI PLL 不变。`a64523b` 实测只有 LATE
+寄存器得到有效身份值，因未提供该档位而报 E6；其多角 setup/hold 为
+-41.339/-8.712 ns。
+
+三档校准版按有效 LATE、MID、EARLY 的顺序选择固定档位。`f5abd7a`
+在 33 MHz 通过身份训练，但内存仍出现 DQ7 错误；同版 8 MHz PASS，
+16 MHz 在地址 `09240E` 预期 `002B`、实际 `0023`，三个诊断样本却均为
+`002B`，暴露主读与诊断样本使用不同输入捕获路径的问题。
+
+`c2468d8` 在 DQS 检测后的负边沿用 IO 输入寄存器捕获 LATE 数据，
+下一正边沿将同一份样本提交到身份训练样本和主读数据寄存器。
+16 MHz 主读也改用该 IO 输入寄存器，8 MHz 路径不变。新增仅 LATE
+有效的窗口、该窗口的数据损坏和错误 ID 场景，共 21 项仿真。
+用户确认 U14/AG9 等引脚仅用于 PSRAM，没有 I²C/模拟 IO 引脚复用。
+本版 [Runner 37421172419](https://github.com/jiang-dongwei/Saturn_MiSTer/actions/runs/37421172419)
+的 21 项功能仿真和 Quartus 编译成功，Fitter 确认 9 个 IO 输入寄存器。
+RBF 为 2,453,308 字节，SHA-256
+`2056d86c3b7fee0f6ae0bf178b1cb4302b5cb2fbe4cfb994ab61cef70406c938`。
+COM13 发送后板端长度和 SHA-256 一致，加载独立测试文件
+`/media/fat/_Console/APS6408_33_CADENCE_c2468d8.rbf`。
+
+真机 8.47 MHz PASS/FF；16.93 MHz FAIL/E6，MR=`0D00`、DQS=`0900`，
+未读全身份寄存器；33.87 MHz 两次配置均 FAIL/E2，身份 `0D93`、
+RX LATE、DQS=`0A00`，故障字段见上表。对应 16 MHz 慢速重读分别为
+`A500`、`FF00`，本版低速重读路径也存在回归，不能据此判定写入正确与否。
+板上最后保留本版 33 MHz 失败页面，CFG 首字节 `10h`。
+
+最差 setup/hold 为 -40.710/-8.713 ns；slow 100°C 模型的采样时钟域
+Fmax 仅 71.87 MHz，远低于实际 270.9504 MHz。这是控制逻辑/输入捕获
+时序仍未收敛的证据，不能简单解释为外部约束保守，也不能宣称采样移动
+已解决问题。后续应先分离高速接收捕获与较低频控制逻辑、取得关键路径
+报告并收敛内部时序，再以真机验证 DQ7 的有效窗口。
+
+本测试仍仅覆盖 4 组图样、每组 256 个分散地址；既不是完整 8 MiB 扫描，
+也不验证 Saturn/RAMH、游戏兼容性、连续吞吐量或冷启动/PVT 稳定性。
+
+通过 GitHub Runner 构建，禁止在本地执行 Quartus 或 HDL 仿真：
+
 ```sh
-quartus_sh --flow compile Saturn_APS6408_Diag
+gh workflow run build-aps6408-diag.yml --repo jiang-dongwei/Saturn_MiSTer \
+  --ref codex/qpi-33m87-validation
 ```
 
 输出位于 `output_files_aps6408_diag/Saturn_APS6408_Diag.rbf`。2026-09-28 旧版全编译通过，SHA-256 为 `da060e7abf1f7c48acd229655177efdc653475989b51a3834c88bc5570a02936`；新版需重新编译后核对文件哈希。新增 MR 身份读取后，正常、数据错误、DQS 超时、A12 地址线别名及身份错误五种仿真场景均通过。
 
 本次 TimeQuest 在 slow 100°C 模型下报告最差 setup 余量 **-28.870 ns**、最差 hold 余量 **-6.741 ns**，且整体设计存在未完全约束的路径。低速诊断采用系统时钟过采样 DQS，现有同步 I/O 约束无法准确描述「检测 DQS 后数个系统周期再采样 DQ」的条件关系；不能将本次编译视为外部 PSRAM 时序收敛。上板后应以诊断结果及示波器/逻辑分析仪验证读写窗口。若要提高频率或作为 Saturn RAMH 后端，应改用专门的 DQS/DDIO 捕获结构与相应的时序约束。
+
+以下命令由 GitHub Runner 执行；实际 workflow 还覆盖 16/33 MHz 和采样窗口：
 
 ```sh
 iverilog -g2012 -s tb_aps6408_diag -o /tmp/aps6408_diag.vvp \
