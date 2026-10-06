@@ -57,6 +57,16 @@ def check_report(report):
                             ("|psram_speed_pll|", 67.7376)):
         matches = [columns for columns in tables["Clocks"] if label in columns[0]
                    and (label == "PSRAM_33M87_CLK_EXT" or columns[0].endswith("|divclk"))]
+        if label == "|psram_speed_pll|":
+            # The stress core also uses the same PLL's 33.87 MHz video output.
+            active = []
+            for columns in matches:
+                frequency = re.fullmatch(r"([0-9.]+) MHz", columns[3]) if len(columns) > 3 else None
+                if not frequency:
+                    errors.append(f"Invalid active PLL frequency: {columns[0]}")
+                elif abs(float(frequency[1]) - expected) <= 0.02:
+                    active.append(columns)
+            matches = active
         if len(matches) != 1:
             errors.append(f"Expected one active clock matching {label}, got {len(matches)}")
             continue
@@ -65,7 +75,7 @@ def check_report(report):
             errors.append(f"Wrong or absent clock frequency for {label}")
 
     for line in report.splitlines():
-        if re.search(r"Ignored .*Saturn_PSRAM_33M87\.sdc", line):
+        if re.search(r"Ignored .*Saturn_PSRAM_(?:Stress_)?33M87\.sdc", line):
             errors.append(line.strip())
         if re.search(r"PSRAM_DQ.*No input delay|PSRAM_(?:CE_N|DQ).*No output delay", line):
             errors.append(line.strip())

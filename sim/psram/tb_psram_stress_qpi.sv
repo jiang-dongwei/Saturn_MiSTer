@@ -1,10 +1,20 @@
 `timescale 1ns/1ps
 
-module tb_psram_stress_qpi;
+module tb_psram_stress_qpi #(
+ parameter integer ASYNC_ENGINE = 0,
+ parameter integer FAST_READ_PIPELINE = 0,
+ parameter integer READ_OUTPUT_DELAY_NS = 0
+);
 
 reg clk = 1'b0;
 reg reset = 1'b1;
-always #7.381 clk = ~clk;
+always #(ASYNC_ENGINE ? 4.365 : 7.381) clk = ~clk;
+reg engine_clk = 0;
+always #7.381 engine_clk = ~engine_clk;
+reg [2:0] engine_reset_pipe = 3'b111;
+always @(posedge engine_clk or posedge reset)
+ if (reset) engine_reset_pipe <= 3'b111;
+ else engine_reset_pipe <= {engine_reset_pipe[1:0], 1'b0};
 
 wire [1:0] result_code;
 wire [7:0] phase_code;
@@ -44,7 +54,7 @@ localparam integer TB_READ_LINE_BYTES = 16;
 `endif
 `ifdef PSRAM_STRESS_TB_LATE_SAMPLE
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
-localparam [7:0] TB_GUARD_CYCLES = 8'd2;
+localparam [7:0] TB_GUARD_CYCLES = ASYNC_ENGINE ? 8'd8 : 8'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 1;
 localparam integer TB_DUPLICATE_WRITES = 1;
 localparam integer TB_DIRECT_READ_CAPTURE = 1;
@@ -56,31 +66,31 @@ localparam integer TB_DUPLICATE_WRITES = 1;
 localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `elsif PSRAM_STRESS_TB_DWRITE
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
-localparam [7:0] TB_GUARD_CYCLES = 8'd2;
+localparam [7:0] TB_GUARD_CYCLES = ASYNC_ENGINE ? 8'd8 : 8'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 1;
 localparam integer TB_DUPLICATE_WRITES = 1;
 localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `elsif PSRAM_STRESS_TB_CONFIRM
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
-localparam [7:0] TB_GUARD_CYCLES = 8'd2;
+localparam [7:0] TB_GUARD_CYCLES = ASYNC_ENGINE ? 8'd8 : 8'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 1;
 localparam integer TB_DUPLICATE_WRITES = 0;
 localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `elsif PSRAM_STRESS_TB_SAFE
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
-localparam [7:0] TB_GUARD_CYCLES = 8'd2;
+localparam [7:0] TB_GUARD_CYCLES = ASYNC_ENGINE ? 8'd8 : 8'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 localparam integer TB_DUPLICATE_WRITES = 0;
 localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `elsif PSRAM_STRESS_TB_SLOW
 localparam [5:0] TB_HALF_DIVIDER = 6'd4;
-localparam [7:0] TB_GUARD_CYCLES = 8'd2;
+localparam [7:0] TB_GUARD_CYCLES = ASYNC_ENGINE ? 8'd8 : 8'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 localparam integer TB_DUPLICATE_WRITES = 0;
 localparam integer TB_DIRECT_READ_CAPTURE = 0;
 `else
-localparam [5:0] TB_HALF_DIVIDER = 6'd2;
-localparam [7:0] TB_GUARD_CYCLES = 8'd2;
+localparam [5:0] TB_HALF_DIVIDER = ASYNC_ENGINE ? 6'd1 : 6'd2;
+localparam [7:0] TB_GUARD_CYCLES = ASYNC_ENGINE ? 8'd8 : 8'd2;
 localparam integer TB_CONFIRM_ON_MISMATCH = 0;
 localparam integer TB_DUPLICATE_WRITES = 0;
 localparam integer TB_DIRECT_READ_CAPTURE = 0;
@@ -95,12 +105,16 @@ psram_stress_core
 	.READ_LINE_BYTES(TB_READ_LINE_BYTES),
 	.CONFIRM_ON_MISMATCH(TB_CONFIRM_ON_MISMATCH),
 	.DUPLICATE_WRITES(TB_DUPLICATE_WRITES),
-	.DIRECT_READ_CAPTURE(TB_DIRECT_READ_CAPTURE)
+	.DIRECT_READ_CAPTURE(TB_DIRECT_READ_CAPTURE),
+	.ASYNC_ENGINE(ASYNC_ENGINE),
+	.FAST_READ_PIPELINE(FAST_READ_PIPELINE)
 )
 dut
 (
 	.clk(clk),
 	.reset(reset),
+	.engine_clk(engine_clk),
+	.engine_reset(engine_reset_pipe[2]),
 	.result_code(result_code),
 	.phase_code(phase_code),
 	.pattern_id(pattern_id),
@@ -125,7 +139,7 @@ dut
 
 psram_diag_model
 #(
-	.READ_OUTPUT_DELAY_NS(0),
+	.READ_OUTPUT_DELAY_NS(READ_OUTPUT_DELAY_NS),
 	.ADDRESS_MASK(23'h000FFF)
 )
 memory
@@ -138,7 +152,8 @@ memory
 integer ce_high_cycles = 0;
 reg gap_tracking = 1'b0;
 reg gap_observed = 1'b0;
-always @(posedge clk) begin
+wire monitor_clk = ASYNC_ENGINE ? engine_clk : clk;
+always @(posedge monitor_clk) begin
 	if (reset) begin
 		ce_high_cycles <= 0;
 		gap_tracking <= 1'b0;
@@ -165,13 +180,16 @@ always @(posedge clk) begin
 	end
 end
 
+generate if (ASYNC_ENGINE == 0) begin : legacy_fault
+ initial if ($test$plusargs("CORRUPT_LEGACY_SAMPLE")) begin
+  wait (init_done);
+  force dut.adapter.g_direct_engine.engine.phy.dq_sample = 4'h0;
+ end
+end endgenerate
+
 initial begin
 	repeat (6) @(posedge clk);
 	reset <= 1'b0;
-	if ($test$plusargs("CORRUPT_LEGACY_SAMPLE")) begin
-		wait (init_done);
-		force dut.adapter.engine.phy.dq_sample = 4'h0;
-	end
 	if ($test$plusargs("LONG_GAP_CHECK")) begin
 		wait (gap_observed);
 		$display("PASS: CE# high gap is at least %0d control cycles",
@@ -184,8 +202,8 @@ initial begin
 		         phase_code, device_id, expected_data, actual_data);
 		$fatal(1);
 	end
-	$display("PASS: bit-level QPI stress loop operations=%0d id=%04x",
-	         operation_count, device_id);
+	$display("PASS: bit-level QPI stress loop operations=%0d id=%04x async=%0d pipeline=%0d delay=%0d",
+	         operation_count, device_id, ASYNC_ENGINE, FAST_READ_PIPELINE, READ_OUTPUT_DELAY_NS);
 	$finish;
 end
 

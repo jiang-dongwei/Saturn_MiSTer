@@ -5,7 +5,8 @@ module psram_stress_video
 	parameter integer CONFIRM_VIEW = 0,
 	parameter integer DWRITE_VIEW = 0,
 	parameter integer LATE_SAMPLE_VIEW = 0,
-	parameter integer LONG_GAP_VIEW = 0
+	parameter integer LONG_GAP_VIEW = 0,
+	parameter integer PIPELINED_33M87_VIEW = 0
 )
 (
 	input             clk,
@@ -55,7 +56,8 @@ always @(posedge clk) begin
 	else pixel_divider <= pixel_divider + 1'b1;
 end
 
-localparam [383:0] TXT_TITLE = {"SATURN PSRAM STRESS TEST", {24{8'h20}}};
+localparam [383:0] TXT_TITLE = (PIPELINED_33M87_VIEW != 0) ?
+    {"SATURN QPI33 PIPE TEST", {27{8'h20}}} : {"SATURN PSRAM STRESS TEST", {24{8'h20}}};
 localparam [383:0] TXT_RESULT = {"RESULT:", {41{8'h20}}};
 localparam [383:0] TXT_PHASE = {"PHASE:", {42{8'h20}}};
 localparam [383:0] TXT_PATTERN = {"PATTERN:", {40{8'h20}}};
@@ -71,6 +73,7 @@ localparam [383:0] TXT_R0 = {"R0 FIRST:", {39{8'h20}}};
 localparam [383:0] TXT_R1 = {"R1 AGAIN:", {39{8'h20}}};
 localparam [383:0] TXT_R2 = {"R2 AGAIN:", {39{8'h20}}};
 localparam [383:0] TXT_HELP1 = {"QPI 16.93 MHZ 16B LINE", {26{8'h20}}};
+localparam [383:0] TXT_HELP1_33M87 = {"QPI 33.87 MHZ CDC PIPE 16B", {22{8'h20}}};
 localparam [383:0] TXT_HELP1_4B = {"QPI 16.93 MHZ 4B READ", {27{8'h20}}};
 localparam [383:0] TXT_HELP1_SLOW = {"QPI 8.47 MHZ 16B LINE", {27{8'h20}}};
 localparam [383:0] TXT_HELP1_SAFE = {"QPI 8.47 MHZ 4B READ", {28{8'h20}}};
@@ -225,7 +228,9 @@ function [7:0] screen_char;
 				end
 			end
 			26: begin
-				if (LATE_SAMPLE_VIEW != 0)
+				if (PIPELINED_33M87_VIEW != 0)
+					value = fixed_char(TXT_HELP1_33M87, column);
+				else if (LATE_SAMPLE_VIEW != 0)
 					value = fixed_char(TXT_HELP1_LATE, column);
 				else if (LONG_GAP_VIEW != 0)
 					value = fixed_char(TXT_HELP1_GAP, column);

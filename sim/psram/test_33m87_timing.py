@@ -32,6 +32,12 @@ class TimingGateTests(unittest.TestCase):
     def test_constrained_clock_output_is_allowed(self):
         self.assertTrue(check_report(REPORT)["passed"])
 
+    def test_additional_video_output_and_duplicate_engine(self):
+        video = "; emu|psram_speed_pll|pll_inst|video|divclk ; Generated ; 29.524 ; 33.87 MHz ;\n"
+        report = REPORT.replace("; Clocks ;", "; Clocks ;\n" + video)
+        self.assertTrue(check_report(report)["passed"])
+        self.assertFalse(check_report(report.replace("video|divclk ; Generated ; 29.524 ; 33.87", "video|divclk ; Generated ; 14.762 ; 67.74"))["passed"])
+
     def test_engine_and_other_clock_violations_are_rejected(self):
         for value in ("0.353", "0.586", "3.270", "0.927", "1.091"):
             with self.subTest(slack=value):
@@ -60,6 +66,7 @@ class TimingGateTests(unittest.TestCase):
 
     def test_missing_dq_delays_or_ignored_constraints_are_rejected(self):
         for warning in (
+            "Warning: Ignored set_input_delay at Saturn_PSRAM_Stress_33M87.sdc(12)",
             "; PSRAM_DQ[3] ; No input delay ;",
             "; PSRAM_CE_N ; No output delay ;",
             "Warning: Ignored set_false_path at Saturn_PSRAM_33M87.sdc(30)",
