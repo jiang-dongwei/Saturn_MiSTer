@@ -196,7 +196,7 @@ module tb_aps6408_diag;
         early_dqs=$test$plusargs("early_dqs");
         dq_leads_dqs=$test$plusargs("dq_leads_dqs");
         late_memory_fall=$test$plusargs("late_memory_fall");
-        if (dq_leads_dqs) dqs_delay_ns=14.5;
+        if (dq_leads_dqs) dqs_delay_ns=15.5;
         dq_lags_dqs=$test$plusargs("dq_lags_dqs");
         if (dq_lags_dqs) begin dqs_delay_ns=2.0; dq_skew_ns=6.5; end
         if ($value$plusargs("dqs_delay_ns=%f",dqs_delay_ns)) begin end
