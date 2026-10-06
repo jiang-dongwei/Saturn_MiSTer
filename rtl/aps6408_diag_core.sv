@@ -156,11 +156,10 @@ module aps6408_diag_core #(
     endfunction
     function [1:0] second_tap_order;
         input [1:0] index;
-        input fast_mode;
         begin
             case (index)
-                0: second_tap_order = fast_mode ? 3 : 2;
-                1: second_tap_order = fast_mode ? 2 : 3;
+                0: second_tap_order = 2;
+                1: second_tap_order = 3;
                 2: second_tap_order = 1;
                 default: second_tap_order = 0;
             endcase
@@ -171,7 +170,7 @@ module aps6408_diag_core #(
     generate for (first_index=0; first_index<4; first_index=first_index+1) begin : first_training
         for (second_index=0; second_index<4; second_index=second_index+1) begin : second_training
             wire [1:0] first_tap = first_tap_order(first_index);
-            wire [1:0] second_tap = second_tap_order(second_index, active_speed != 0);
+            wire [1:0] second_tap = second_tap_order(second_index);
             wire [15:0] previous_first = tap_word(first_tap, mr0_early, mr0_mid, mr0_late, mr0_center);
             wire [15:0] previous_second = tap_word(second_tap, mr0_early, mr0_mid, mr0_late, mr0_center);
             wire [15:0] current_first = tap_word(first_tap, sample_early, sample_mid, sample_late, sample_center);
@@ -193,7 +192,7 @@ module aps6408_diag_core #(
     end
     wire training_valid = |valid_tap_pairs;
     wire [1:0] trained_tap = first_tap_order(trained_pair[3:2]);
-    wire [1:0] trained_tap_second = second_tap_order(trained_pair[1:0], active_speed != 0);
+    wire [1:0] trained_tap_second = second_tap_order(trained_pair[1:0]);
     wire [15:0] trained_previous_hi = tap_word(trained_tap, mr0_early, mr0_mid, mr0_late, mr0_center);
     wire [15:0] trained_previous_lo = tap_word(trained_tap_second, mr0_early, mr0_mid, mr0_late, mr0_center);
     wire [15:0] trained_current_hi = tap_word(trained_tap, sample_early, sample_mid, sample_late, sample_center);
