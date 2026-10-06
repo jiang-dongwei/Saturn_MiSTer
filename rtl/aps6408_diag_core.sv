@@ -202,7 +202,7 @@ module aps6408_diag_core #(
                     if (late_commit_byte) sample_late[7:0] <= dq_input_sample;
                     else sample_late[15:8] <= dq_input_sample;
                 end
-                if (read_capture_tap == 2'd2) begin
+                if (active_speed == 2'd1 || read_capture_tap == 2'd2) begin
                     if (late_commit_byte) read_word[7:0] <= dq_input_sample;
                     else read_word[15:8] <= dq_input_sample;
                 end
@@ -417,12 +417,12 @@ module aps6408_diag_core #(
                             sample_delay <= fast_sample ? 3'd1 : 3'd4;
                         end
                         if (fast_sample && !fastest_sample) begin
+                            late_commit_pending <= 1;
+                            late_commit_byte <= (data_index != 0);
                             if (data_index == 0) begin
                                 if (!retry_slow) sample_early[15:8] <= PSRAM_DQ;
-                                read_word[15:8] <= PSRAM_DQ;
                             end else begin
                                 if (!retry_slow) sample_early[7:0] <= PSRAM_DQ;
-                                read_word[7:0] <= PSRAM_DQ;
                             end
                         end
                         if (fastest_sample) begin
