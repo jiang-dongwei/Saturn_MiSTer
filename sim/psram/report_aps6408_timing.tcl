@@ -4,7 +4,7 @@ read_sdc
 update_timing_netlist
 
 set diagnostic_regs [get_registers {*|diagnostic|*}]
-set dq_regs [get_registers {*|diagnostic|dq_input_sample*}]
+set dq_regs [get_registers {*|diagnostic|*dq_input_sample*}]
 set external_inputs [get_ports {PSRAM_DQ[*] PSRAM_DQS}]
 if {[get_collection_size $diagnostic_regs] == 0 || [get_collection_size $dq_regs] != 8} {
     error "Missing fitted APS6408 diagnostic or input registers"

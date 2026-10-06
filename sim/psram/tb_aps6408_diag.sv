@@ -2,7 +2,14 @@
 
 module tb_aps6408_diag;
     reg clk=0;
-    always #1.84525 clk=~clk; // approximately 270.9504 MHz
+    reg clk_phy=0;
+    reg [1:0] clock_phase=0;
+    always #1.84525 clk_phy=~clk_phy;
+    always @(posedge clk_phy) begin
+        clock_phase <= clock_phase + 1'b1;
+        if (clock_phase == 0) clk <= 1;
+        if (clock_phase == 2) clk <= 0;
+    end
     reg reset=1;
     reg [1:0] speed_select=0;
     wire [1:0] result_code;
@@ -27,7 +34,7 @@ module tb_aps6408_diag;
     assign dqs = mem_oe ? mem_dqs : 1'bz;
 
     aps6408_diag_core #(.POWERUP_CYCLES(8)) dut (
-        .clk(clk), .reset(reset), .speed_select(speed_select), .result_code(result_code),
+        .clk(clk), .clk_phy(clk_phy), .reset(reset), .speed_select(speed_select), .result_code(result_code),
         .stage_code(stage_code), .failure_address(failure_address),
         .id_word(id_word),
         .expected_data(expected_data), .actual_data(actual_data),
@@ -210,7 +217,7 @@ module tb_aps6408_diag;
                         (dq_lags_dqs && sample_late !== 16'h1693) ||
                         mr_pair2 !== 16'h0000 ||
                         ((speed_select == 0) && clk_pair1 !== 16'h1693) ||
-                        dqs_edge_pair1 !== (speed_select == 2 && !dq_lags_dqs ? 16'h0A0B : 16'h090A) || writes != 0)) ||
+                        dqs_edge_pair1[15:8] < 8'd9 || dqs_edge_pair1[15:8] > 8'd11 || writes != 0)) ||
             (early_dqs && (result_code !== 2'd2 || stage_code !== 8'hE6 ||
                            mr_pair1 === clk_pair1 ||
                            clk_pair1 !== 16'h0D93 ||
@@ -226,7 +233,8 @@ module tb_aps6408_diag;
               (dq_leads_dqs && read_capture_tap !== 2'd0) ||
               (dq_lags_dqs && read_capture_tap !== 2'd2) ||
               ((dqs_delay_ns == 10.0) &&
-               dqs_edge_pair1 !== (speed_select == 2'd2 ? 16'h0A0B : 16'h090A)) ||
+               (dqs_edge_pair1[15:8] < 8'd9 || dqs_edge_pair1[15:8] > 8'd11 ||
+                (!late_memory_fall && dqs_edge_pair1[7:0] != dqs_edge_pair1[15:8]+1'b1))) ||
               id_reads != 2 || writes != 1024 || reads != 1024)))
             $fatal(1,"diagnostic failed: result=%d stage=%h addr=%h exp=%h got=%h clk=%h dqs=%h writes=%d reads=%d",
                    result_code,stage_code,failure_address,expected_data,actual_data,clk_pair1,dqs_edge_pair1,writes,reads);

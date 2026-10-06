@@ -1,11 +1,12 @@
 // Low-speed, standalone APS6408L-3OBM-BA DDR OPI board diagnostic.
-// The FPGA clock oversamples the source-synchronous DQS input. This is a
+// A separate receive clock oversamples the source-synchronous DQS input. This is a
 // switchable bring-up diagnostic, not a Saturn RAMH backend.
 module aps6408_diag_core #(
-    parameter integer POWERUP_CYCLES = 541904, // 2 ms at 270.9504 MHz
-    parameter integer RESET_RECOVERY_CYCLES = 542 // at least 2 us
+    parameter integer POWERUP_CYCLES = 135476, // 2 ms at 67.7376 MHz
+    parameter integer RESET_RECOVERY_CYCLES = 136 // at least 2 us
 ) (
     input clk,
+    input clk_phy,
     input reset,
     input [1:0] speed_select,
     output reg [1:0] result_code,
@@ -39,8 +40,8 @@ module aps6408_diag_core #(
                      S_RESET_END=14, S_RESET_WAIT=15;
     reg [3:0] state;
     reg did_global_reset = 1'b0;
-    reg [19:0] power_count;
-    reg [7:0] div_count;
+    reg [17:0] power_count;
+    reg [2:0] div_count;
     reg [7:0] gap_count;
     reg [6:0] timeout_edges;
     reg [4:0] edge_index;
@@ -58,19 +59,15 @@ module aps6408_diag_core #(
     reg [15:0] mr0_early;
     reg [15:0] mr0_mid;
     reg [15:0] mr0_late;
-    reg dqs_sample;
-    reg dqs_history;
-    reg dqs_prev;
-    reg [7:0] dq_input_sample;
-    reg [7:0] dq_prev;
-    reg [7:0] dq_prev2;
-    reg fast_second_pending;
-    reg [3:0] fast_second_delay;
-    reg late_commit_pending;
-    reg late_commit_byte;
-    reg [2:0] sample_delay;
-    reg sample_pending;
     reg [15:0] dqs_edge_word;
+    reg [7:0] tx_data;
+    reg tx_oe;
+    reg tx_dm_oe;
+    wire rx_done;
+    wire [15:0] rx_early, rx_mid, rx_late, rx_edges;
+    wire [7:0] rx_latest;
+    reg rx_done_meta, rx_done_sync;
+    reg [15:0] rx_early_hold, rx_mid_hold, rx_late_hold, rx_edges_hold;
     reg [15:0] clk_read_word;
     reg [2:0] clk_sample_delay;
     reg clk_sample_pending;
@@ -121,31 +118,35 @@ module aps6408_diag_core #(
 
     wire [23:0] address = id_phase ? {22'd0,id_slot} : address_for(cell_index);
     wire [15:0] pattern = pattern_for(cell_index, pattern_pass);
-    // 270.9504 MHz / (2 * half_period): 8.4672, 16.9344, 33.8688 MHz.
     wire [1:0] active_speed = retry_slow ? 2'd1 : speed_select;
-    wire [4:0] half_period = active_speed == 2'd0 ? 5'd16 :
-                             active_speed == 2'd1 ? 5'd8 : 5'd4;
+    wire [2:0] half_period = active_speed == 0 ? 3'd4 : active_speed == 1 ? 3'd2 : 3'd1;
     wire tick = (div_count == half_period-1'b1);
-    wire fast_sample = (active_speed != 2'd0);
-    wire fastest_sample = (active_speed >= 2'd2);
-    wire dqs_rise = (fast_sample && !fastest_sample) ? (dqs_sample && !dqs_history) :
-                                  (dqs_history && !dqs_prev);
-    wire dqs_fall = (fast_sample && !fastest_sample) ? (!dqs_sample && dqs_history) :
-                                  (!dqs_history && dqs_prev);
+    wire rx_arm = (state == S_TURN || state == S_READ);
 
-    always @(negedge clk) dq_input_sample <= PSRAM_DQ;
+    aps6408_diag_rx rx (
+        .clk(clk_phy), .reset(reset), .arm(rx_arm), .speed(active_speed),
+        .psram_clk(PSRAM_CLK), .dq(PSRAM_DQ), .dqs(PSRAM_DQS),
+        .done(rx_done), .early_word(rx_early), .mid_word(rx_mid),
+        .late_word(rx_late), .edge_word(rx_edges), .dq_input_sample(rx_latest)
+    );
 
-    // At 33.87 MHz this selects the falling-edge DQ sample half a fabric
-    // cycle after the first DQS observation, inside the two-cycle data eye.
+    always @(negedge clk) begin
+        dq_out <= tx_data;
+        dq_oe <= tx_oe && state != S_TURN;
+        dm_oe <= tx_dm_oe;
+    end
+
     always @(posedge clk) begin
-        dqs_sample <= PSRAM_DQS;
-        dqs_history <= dqs_sample;
-        dqs_prev <= dqs_history;
-        dq_prev <= dq_input_sample;
-        dq_prev2 <= dq_prev;
-
+        rx_done_meta <= rx_done;
+        rx_done_sync <= rx_done_meta;
+        rx_early_hold <= rx_early;
+        rx_mid_hold <= rx_mid;
+        rx_late_hold <= rx_late;
+        rx_edges_hold <= rx_edges;
         if (reset) begin
             state <= S_POWER;
+            rx_done_meta <= 0;
+            rx_done_sync <= 0;
             power_count <= 0;
             div_count <= 0;
             gap_count <= 0;
@@ -158,9 +159,9 @@ module aps6408_diag_core #(
             id_slot <= 0;
             read_phase <= 0;
             retry_slow <= 0;
-            dq_out <= 0;
-            dq_oe <= 0;
-            dm_oe <= 0;
+            tx_data <= 0;
+            tx_oe <= 0;
+            tx_dm_oe <= 0;
             PSRAM_CLK <= 0;
             PSRAM_CE_N <= 1;
             read_word <= 0;
@@ -168,12 +169,6 @@ module aps6408_diag_core #(
             mr0_mid <= 0;
             mr0_late <= 0;
             read_capture_tap <= 2'd1;
-            fast_second_pending <= 0;
-            fast_second_delay <= 0;
-            late_commit_pending <= 0;
-            late_commit_byte <= 0;
-            sample_delay <= 0;
-            sample_pending <= 0;
             dqs_edge_word <= 0;
             clk_read_word <= 0;
             clk_sample_delay <= 0;
@@ -197,79 +192,16 @@ module aps6408_diag_core #(
             clk_pair1 <= 0;
             diagnostic_leds <= 0;
         end else begin
-            if (late_commit_pending) begin
-                if (!retry_slow) begin
-                    if (late_commit_byte) sample_late[7:0] <= dq_input_sample;
-                    else sample_late[15:8] <= dq_input_sample;
-                end
-                if (active_speed == 2'd1 || read_capture_tap == 2'd2) begin
-                    if (late_commit_byte) read_word[7:0] <= dq_input_sample;
-                    else read_word[15:8] <= dq_input_sample;
-                end
-                late_commit_pending <= 0;
-            end
-            if (fast_second_pending && fast_second_delay != 0)
-                fast_second_delay <= fast_second_delay - 1'b1;
             if (tick) div_count <= 0;
             else div_count <= div_count + 1'b1;
-
-            if (sample_pending) begin
-                if (sample_delay == 4) begin
-                    if (!retry_slow) begin
-                        if (data_index == 0) sample_early[15:8] <= PSRAM_DQ;
-                        else sample_early[7:0] <= PSRAM_DQ;
-                    end
-                end
-                if (!fastest_sample && sample_delay == (fast_sample ? 1 : 2)) begin
-                    if (data_index == 0) begin
-                        if (!retry_slow) sample_mid[15:8] <= PSRAM_DQ;
-                        if (!fast_sample) read_word[15:8] <= PSRAM_DQ;
-                    end else begin
-                        if (!retry_slow) sample_mid[7:0] <= PSRAM_DQ;
-                        if (!fast_sample) read_word[7:0] <= PSRAM_DQ;
-                    end
-                end
-                if (sample_delay != 0) sample_delay <= sample_delay - 1'b1;
-                else begin
-                    sample_pending <= 0;
-                    if (data_index == 0) begin
-                        if (!retry_slow) sample_late[15:8] <= PSRAM_DQ;
-                        data_index <= 1;
-                    end else begin
-                        if (!retry_slow) sample_late[7:0] <= PSRAM_DQ;
-                        data_index <= 2;
-                    end
-                end
-            end
 
             if (clk_sample_pending) begin
                 if (clk_sample_delay != 0)
                     clk_sample_delay <= clk_sample_delay - 1'b1;
                 else begin
-                    if (clk_sample_byte) clk_read_word[7:0] <= PSRAM_DQ;
-                    else clk_read_word[15:8] <= PSRAM_DQ;
+                    if (clk_sample_byte) clk_read_word[7:0] <= rx_latest;
+                    else clk_read_word[15:8] <= rx_latest;
                     clk_sample_pending <= 0;
-                end
-            end
-
-            // Keep command/address and write data stable across each PSRAM
-            // clock edge. Prepare the next byte one fabric cycle afterward.
-            if (div_count == 0) begin
-                if (state == S_CMD) begin
-                    case (edge_index)
-                        2: dq_out <= 8'h00;             // A3
-                        3: dq_out <= address[23:16];   // A2
-                        4: dq_out <= address[15:8];    // A1
-                        5: dq_out <= address[7:0];     // A0
-                    endcase
-                end else if (state == S_WRITE) begin
-                    if (data_index == 0) begin
-                        dq_oe <= 1;
-                        dm_oe <= 1;
-                        dq_out <= pattern[15:8];
-                    end else if (data_index == 1) begin
-                        dq_out <= pattern[7:0];
-                    end
                 end
             end
 
@@ -285,9 +217,9 @@ module aps6408_diag_core #(
                 S_RESET_START: begin
                     PSRAM_CE_N <= 0;
                     PSRAM_CLK <= 0;
-                    dq_oe <= 1;
-                    dq_out <= 8'hFF;
-                    dm_oe <= 0;
+                    tx_oe <= 1;
+                    tx_data <= 8'hFF;
+                    tx_dm_oe <= 0;
                     div_count <= 0;
                     edge_index <= 0;
                     stage_code <= 8'h02;
@@ -297,7 +229,7 @@ module aps6408_diag_core #(
                 S_RESET_CMD: if (tick) begin
                     PSRAM_CLK <= ~PSRAM_CLK;
                     edge_index <= edge_index + 1'b1;
-                    if (edge_index == 1) dq_oe <= 0;
+                    if (edge_index == 1) tx_oe <= 0;
                     if (edge_index == 7) state <= S_RESET_END;
                 end
 
@@ -318,16 +250,13 @@ module aps6408_diag_core #(
                 S_START: begin
                     PSRAM_CE_N <= 0;
                     PSRAM_CLK <= 0;
-                    dq_oe <= 1;
-                    dq_out <= id_phase ? 8'h40 : (read_phase ? 8'h20 : 8'hA0);
-                    dm_oe <= 0;
+                    tx_oe <= 1;
+                    tx_data <= id_phase ? 8'h40 : (read_phase ? 8'h20 : 8'hA0);
+                    tx_dm_oe <= 0;
                     div_count <= 0;
                     edge_index <= 0;
                     data_index <= 0;
-                    fast_second_pending <= 0;
-                    late_commit_pending <= 0;
                     timeout_edges <= 0;
-                    sample_pending <= 0;
                     dqs_edge_word <= 0;
                     clk_read_word <= 0;
                     clk_sample_pending <= 0;
@@ -345,6 +274,12 @@ module aps6408_diag_core #(
                 S_CMD: if (tick) begin
                     PSRAM_CLK <= ~PSRAM_CLK;
                     edge_index <= edge_index + 1'b1;
+                    case (edge_index)
+                        1: tx_data <= 8'h00;
+                        2: tx_data <= address[23:16];
+                        3: tx_data <= address[15:8];
+                        4: tx_data <= address[7:0];
+                    endcase
                     if (edge_index == 5) begin
                         state <= S_TURN;
                         edge_index <= 0;
@@ -353,7 +288,7 @@ module aps6408_diag_core #(
 
                 // Preserve address hold time after the final falling edge.
                 S_TURN: begin
-                    dq_oe <= 0;
+                    tx_oe <= 0;
                     state <= (id_phase || read_phase) ? S_READ : S_LATENCY;
                 end
 
@@ -365,6 +300,9 @@ module aps6408_diag_core #(
                     if (edge_index == 7) begin
                         state <= S_WRITE;
                         data_index <= 0;
+                        tx_oe <= 1;
+                        tx_dm_oe <= 1;
+                        tx_data <= pattern[15:8];
                     end
                 end
 
@@ -372,6 +310,7 @@ module aps6408_diag_core #(
                     PSRAM_CLK <= ~PSRAM_CLK;
                     if (data_index == 0) begin
                         data_index <= 1;
+                        tx_data <= pattern[7:0];
                     end else begin
                         state <= S_END;
                     end
@@ -383,7 +322,7 @@ module aps6408_diag_core #(
                         timeout_edges <= timeout_edges + 1'b1;
                         if (id_phase && (timeout_edges == 8 || timeout_edges == 9)) begin
                             clk_sample_pending <= 1;
-                            clk_sample_delay <= speed_select == 2'd0 ? 3'd7 : 3'd1;
+                            clk_sample_delay <= 0;
                             clk_sample_byte <= (timeout_edges == 9);
                         end
                         // Bound a missing-DQS transaction. Register reads use
@@ -397,66 +336,24 @@ module aps6408_diag_core #(
                             state <= S_FAIL;
                         end
                     end
-                    // The initial DQS transition into the low preamble is
-                    // not data. D0 starts at the first rising strobe edge.
-                    // At 33 MHz, DQS locates D0; D1 follows one DDR half-period
-                    // later. Record the falling strobe independently.
-                    if (fastest_sample && data_index != 0 && dqs_fall &&
-                        dqs_edge_word[7:0] == 0)
-                        dqs_edge_word[7:0] <= {1'b0, timeout_edges};
-                    if ((((data_index == 0) && dqs_rise) ||
-                         ((data_index == 1) && (fastest_sample ?
-                            (fast_second_pending && fast_second_delay == 0) : dqs_fall))) &&
-                        !sample_pending) begin
-                        if (fastest_sample) begin
-                            data_index <= data_index + 1'b1;
-                            fast_second_pending <= (data_index == 0);
-                            fast_second_delay <= half_period - 1'b1;
-                        end else begin
-                            sample_pending <= 1;
-                            sample_delay <= fast_sample ? 3'd1 : 3'd4;
+                    if (rx_done_sync) begin
+                        read_word <= active_speed != 2 || read_capture_tap == 2 ? rx_late_hold :
+                                     read_capture_tap == 1 ? rx_mid_hold : rx_early_hold;
+                        dqs_edge_word <= rx_edges_hold;
+                        if (!retry_slow) begin
+                            sample_early <= rx_early_hold;
+                            sample_mid <= rx_mid_hold;
+                            sample_late <= rx_late_hold;
                         end
-                        if (fast_sample && !fastest_sample) begin
-                            late_commit_pending <= 1;
-                            late_commit_byte <= (data_index != 0);
-                            if (data_index == 0) begin
-                                if (!retry_slow) sample_early[15:8] <= PSRAM_DQ;
-                            end else begin
-                                if (!retry_slow) sample_early[7:0] <= PSRAM_DQ;
-                            end
-                        end
-                        if (fastest_sample) begin
-                            if (data_index == 0) begin
-                                if (!retry_slow) begin
-                                    sample_early[15:8] <= dq_prev2;
-                                    sample_mid[15:8] <= dq_prev;
-                                end
-                                if (read_capture_tap != 2'd2)
-                                    read_word[15:8] <= read_capture_tap == 2'd1 ? dq_prev : dq_prev2;
-                            end else begin
-                                if (!retry_slow) begin
-                                    sample_early[7:0] <= dq_prev2;
-                                    sample_mid[7:0] <= dq_prev;
-                                end
-                                if (read_capture_tap != 2'd2)
-                                    read_word[7:0] <= read_capture_tap == 2'd1 ? dq_prev : dq_prev2;
-                            end
-                            late_commit_pending <= 1;
-                            late_commit_byte <= (data_index != 0);
-                        end
-                        if (data_index == 0) dqs_edge_word[15:8] <= {1'b0, timeout_edges};
-                        else if (!fastest_sample) dqs_edge_word[7:0] <= {1'b0, timeout_edges};
-                    end
-                    if (data_index == 2 && !sample_pending &&
-                        (!id_phase || (timeout_edges >= 10 && !clk_sample_pending)))
                         state <= S_END;
+                    end
                 end
 
                 S_END: if (tick) begin
                     PSRAM_CE_N <= 1;
                     PSRAM_CLK <= 0;
-                    dq_oe <= 0;
-                    dm_oe <= 0;
+                    tx_oe <= 0;
+                    tx_dm_oe <= 0;
                     gap_count <= 0;
                     state <= S_GAP;
                 end
@@ -488,7 +385,7 @@ module aps6408_diag_core #(
                             clk_pair1 <= clk_read_word;
                             // MR1[4:0] is APM vendor 0Dh; MR2[4:0]
                             // identifies generation 3 and 64 Mbit density.
-                            // The CLK-domain reference capture was calibrated
+                            // The CLK-domain reference capture is checked
                             // only for 8.47 MHz. At faster settings, DQS is
                             // the read timing reference; the memory tests
                             // still check every returned data word.
@@ -569,8 +466,8 @@ module aps6408_diag_core #(
                     diagnostic_leds <= 8'h80;
                     PSRAM_CE_N <= 1;
                     PSRAM_CLK <= 0;
-                    dq_oe <= 0;
-                    dm_oe <= 0;
+                    tx_oe <= 0;
+                    tx_dm_oe <= 0;
                 end
                 default: state <= S_FAIL;
             endcase
