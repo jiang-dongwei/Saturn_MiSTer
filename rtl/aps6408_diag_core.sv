@@ -61,17 +61,18 @@ module aps6408_diag_core #(
     reg [15:0] mr0_late;
     reg [15:0] dqs_edge_word;
     reg [7:0] tx_data;
+    (* preserve, dont_merge *) reg psram_clock_monitor;
     reg tx_oe;
     reg tx_dm_oe;
     wire rx_done;
     wire [15:0] rx_early, rx_mid, rx_late, rx_edges;
-    wire [7:0] rx_latest;
+    wire [15:0] rx_clock;
+    wire rx_clock_done;
     reg rx_done_meta, rx_done_sync;
+    reg rx_clock_done_meta, rx_clock_done_sync;
     reg [15:0] rx_early_hold, rx_mid_hold, rx_late_hold, rx_edges_hold;
+    reg [15:0] rx_clock_hold;
     reg [15:0] clk_read_word;
-    reg [2:0] clk_sample_delay;
-    reg clk_sample_pending;
-    reg clk_sample_byte;
 
     assign PSRAM_DQ = dq_oe ? dq_out : 8'hzz;
     assign PSRAM_DQS = dm_oe ? 1'b0 : 1'bz; // DM=0 enables both write bytes
@@ -125,9 +126,10 @@ module aps6408_diag_core #(
 
     aps6408_diag_rx rx (
         .clk(clk_phy), .reset(reset), .arm(rx_arm), .speed(active_speed),
-        .psram_clk(PSRAM_CLK), .dq(PSRAM_DQ), .dqs(PSRAM_DQS),
+        .psram_clk(psram_clock_monitor), .dq(PSRAM_DQ), .dqs(PSRAM_DQS),
         .done(rx_done), .early_word(rx_early), .mid_word(rx_mid),
-        .late_word(rx_late), .edge_word(rx_edges), .dq_input_sample(rx_latest)
+        .late_word(rx_late), .edge_word(rx_edges), .clock_word(rx_clock),
+        .clock_done(rx_clock_done)
     );
 
     always @(negedge clk) begin
@@ -139,14 +141,19 @@ module aps6408_diag_core #(
     always @(posedge clk) begin
         rx_done_meta <= rx_done;
         rx_done_sync <= rx_done_meta;
+        rx_clock_done_meta <= rx_clock_done;
+        rx_clock_done_sync <= rx_clock_done_meta;
         rx_early_hold <= rx_early;
         rx_mid_hold <= rx_mid;
         rx_late_hold <= rx_late;
         rx_edges_hold <= rx_edges;
+        rx_clock_hold <= rx_clock;
         if (reset) begin
             state <= S_POWER;
             rx_done_meta <= 0;
             rx_done_sync <= 0;
+            rx_clock_done_meta <= 0;
+            rx_clock_done_sync <= 0;
             power_count <= 0;
             div_count <= 0;
             gap_count <= 0;
@@ -163,6 +170,7 @@ module aps6408_diag_core #(
             tx_oe <= 0;
             tx_dm_oe <= 0;
             PSRAM_CLK <= 0;
+            psram_clock_monitor <= 0;
             PSRAM_CE_N <= 1;
             read_word <= 0;
             mr0_early <= 0;
@@ -171,9 +179,6 @@ module aps6408_diag_core #(
             read_capture_tap <= 2'd1;
             dqs_edge_word <= 0;
             clk_read_word <= 0;
-            clk_sample_delay <= 0;
-            clk_sample_pending <= 0;
-            clk_sample_byte <= 0;
             result_code <= 0;
             stage_code <= 8'h01;
             failure_address <= 0;
@@ -195,20 +200,11 @@ module aps6408_diag_core #(
             if (tick) div_count <= 0;
             else div_count <= div_count + 1'b1;
 
-            if (clk_sample_pending) begin
-                if (clk_sample_delay != 0)
-                    clk_sample_delay <= clk_sample_delay - 1'b1;
-                else begin
-                    if (clk_sample_byte) clk_read_word[7:0] <= rx_latest;
-                    else clk_read_word[15:8] <= rx_latest;
-                    clk_sample_pending <= 0;
-                end
-            end
-
             case (state)
                 S_POWER: begin
                     PSRAM_CE_N <= 1;
                     PSRAM_CLK <= 0;
+                    psram_clock_monitor <= 0;
                     if (power_count == POWERUP_CYCLES-1)
                         state <= did_global_reset ? S_START : S_RESET_START;
                     else power_count <= power_count + 1'b1;
@@ -217,6 +213,7 @@ module aps6408_diag_core #(
                 S_RESET_START: begin
                     PSRAM_CE_N <= 0;
                     PSRAM_CLK <= 0;
+                    psram_clock_monitor <= 0;
                     tx_oe <= 1;
                     tx_data <= 8'hFF;
                     tx_dm_oe <= 0;
@@ -228,6 +225,7 @@ module aps6408_diag_core #(
 
                 S_RESET_CMD: if (tick) begin
                     PSRAM_CLK <= ~PSRAM_CLK;
+                    psram_clock_monitor <= ~PSRAM_CLK;
                     edge_index <= edge_index + 1'b1;
                     if (edge_index == 1) tx_oe <= 0;
                     if (edge_index == 7) state <= S_RESET_END;
@@ -236,6 +234,7 @@ module aps6408_diag_core #(
                 S_RESET_END: if (tick) begin
                     PSRAM_CE_N <= 1;
                     PSRAM_CLK <= 0;
+                    psram_clock_monitor <= 0;
                     did_global_reset <= 1;
                     power_count <= 0;
                     state <= S_RESET_WAIT;
@@ -250,6 +249,7 @@ module aps6408_diag_core #(
                 S_START: begin
                     PSRAM_CE_N <= 0;
                     PSRAM_CLK <= 0;
+                    psram_clock_monitor <= 0;
                     tx_oe <= 1;
                     tx_data <= id_phase ? 8'h40 : (read_phase ? 8'h20 : 8'hA0);
                     tx_dm_oe <= 0;
@@ -259,7 +259,6 @@ module aps6408_diag_core #(
                     timeout_edges <= 0;
                     dqs_edge_word <= 0;
                     clk_read_word <= 0;
-                    clk_sample_pending <= 0;
                     read_word <= 0;
                     if (!retry_slow) begin
                         sample_early <= 0;
@@ -273,6 +272,7 @@ module aps6408_diag_core #(
 
                 S_CMD: if (tick) begin
                     PSRAM_CLK <= ~PSRAM_CLK;
+                    psram_clock_monitor <= ~PSRAM_CLK;
                     edge_index <= edge_index + 1'b1;
                     case (edge_index)
                         1: tx_data <= 8'h00;
@@ -294,6 +294,7 @@ module aps6408_diag_core #(
 
                 S_LATENCY: if (tick) begin
                     PSRAM_CLK <= ~PSRAM_CLK;
+                    psram_clock_monitor <= ~PSRAM_CLK;
                     edge_index <= edge_index + 1'b1;
                     // LC=5 includes the final address cycle. Four more
                     // full clocks (eight DDR edges) precede the first data.
@@ -308,6 +309,7 @@ module aps6408_diag_core #(
 
                 S_WRITE: if (tick) begin
                     PSRAM_CLK <= ~PSRAM_CLK;
+                    psram_clock_monitor <= ~PSRAM_CLK;
                     if (data_index == 0) begin
                         data_index <= 1;
                         tx_data <= pattern[7:0];
@@ -319,12 +321,8 @@ module aps6408_diag_core #(
                 S_READ: begin
                     if (tick) begin
                         PSRAM_CLK <= ~PSRAM_CLK;
+                        psram_clock_monitor <= ~PSRAM_CLK;
                         timeout_edges <= timeout_edges + 1'b1;
-                        if (id_phase && (timeout_edges == 8 || timeout_edges == 9)) begin
-                            clk_sample_pending <= 1;
-                            clk_sample_delay <= 0;
-                            clk_sample_byte <= (timeout_edges == 9);
-                        end
                         // Bound a missing-DQS transaction. Register reads use
                         // fixed LC=5; memory reads may incur refresh pushout.
                         if (timeout_edges == (id_phase ? 7'd17 : 7'd50)) begin
@@ -332,15 +330,15 @@ module aps6408_diag_core #(
                             failure_address <= address;
                             dqs_edge_pair1 <= dqs_edge_word;
                             mr_pair1 <= read_word;
-                            clk_pair1 <= clk_read_word;
+                            clk_pair1 <= rx_clock_hold;
                             state <= S_FAIL;
                         end
                     end
-                    if (rx_done_sync && (!id_phase ||
-                        (timeout_edges >= 10 && !clk_sample_pending))) begin
+                    if (rx_done_sync && (!id_phase || rx_clock_done_sync)) begin
                         read_word <= active_speed != 2 || read_capture_tap == 2 ? rx_late_hold :
                                      read_capture_tap == 1 ? rx_mid_hold : rx_early_hold;
                         dqs_edge_word <= rx_edges_hold;
+                        clk_read_word <= rx_clock_hold;
                         if (!retry_slow) begin
                             sample_early <= rx_early_hold;
                             sample_mid <= rx_mid_hold;
@@ -353,6 +351,7 @@ module aps6408_diag_core #(
                 S_END: if (tick) begin
                     PSRAM_CE_N <= 1;
                     PSRAM_CLK <= 0;
+                    psram_clock_monitor <= 0;
                     tx_oe <= 0;
                     tx_dm_oe <= 0;
                     gap_count <= 0;
@@ -467,6 +466,7 @@ module aps6408_diag_core #(
                     diagnostic_leds <= 8'h80;
                     PSRAM_CE_N <= 1;
                     PSRAM_CLK <= 0;
+                    psram_clock_monitor <= 0;
                     tx_oe <= 0;
                     tx_dm_oe <= 0;
                 end

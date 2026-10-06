@@ -78,7 +78,6 @@ localparam [383:0] TXT_E2_EDGES = {"DQS EDGES:", {38{8'h20}}};
 localparam [383:0] TXT_RX_EARLY = {"RX TAP: EARLY", {35{8'h20}}};
 localparam [383:0] TXT_RX_MID = {"RX TAP: MID", {37{8'h20}}};
 localparam [383:0] TXT_RX_LATE = {"RX TAP: LATE", {36{8'h20}}};
-localparam [383:0] TXT_RX_RAW = {"RX TAP: RAW", {37{8'h20}}};
 
 function [7:0] fixed_char;
 	input [383:0] text;
@@ -345,8 +344,7 @@ function [7:0] screen_char;
 				if ((column >= 7) && (column < 18))
 					value = mode_char(column - 7);
 			end
-            21: value = fixed_char(speed_index == 3'd0 ? TXT_RX_RAW :
-                                   speed_index == 3'd1 ? TXT_RX_LATE :
+            21: value = fixed_char(speed_index < 3'd2 ? TXT_RX_LATE :
 			                       read_capture_tap == 2'd2 ? TXT_RX_LATE :
                                    read_capture_tap == 2'd1 ? TXT_RX_MID : TXT_RX_EARLY, column);
 			23: begin
