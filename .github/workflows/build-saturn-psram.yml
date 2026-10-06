@@ -79,7 +79,7 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/project" \
             --workdir /project \
             theypsilon/quartus-lite-c5:17.0.2 \
-            bash -lc 'set -euo pipefail; quartus_sh --flow compile Saturn_PSRAM_33M87 2>&1 | tee .ci/Saturn_PSRAM_33M87-build.log; quartus_sta -t sim/psram/report_33m87_timing.tcl 2>&1 | tee .ci/Saturn_PSRAM_33M87-paths.log'
+            bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_PSRAM_33M87.qsf; printf "Available compile processors: %s\n" "$cores"; quartus_sh --flow compile Saturn_PSRAM_33M87 2>&1 | tee .ci/Saturn_PSRAM_33M87-build.log; quartus_sta -t sim/psram/report_33m87_timing.tcl 2>&1 | tee .ci/Saturn_PSRAM_33M87-paths.log'
 
       - name: Verify RBF and timing constraints
         shell: bash
