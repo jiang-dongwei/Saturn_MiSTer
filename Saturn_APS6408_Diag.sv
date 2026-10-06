@@ -179,7 +179,7 @@ wire [15:0] sample_mid;
 wire [15:0] sample_late;
 wire [15:0] retry_read_data;
 wire retry_read_valid;
-wire read_capture_tap;
+wire [1:0] read_capture_tap;
 wire [15:0] mr_pair0;
 wire [15:0] mr_pair1;
 wire [15:0] mr_pair2;

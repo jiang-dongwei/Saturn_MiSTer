@@ -19,7 +19,7 @@ module aps6408_diag_core #(
     output reg [15:0] sample_late,
     output reg [15:0] retry_read_data,
     output reg retry_read_valid,
-    output reg read_capture_tap,
+    output reg [1:0] read_capture_tap,
     output reg [15:0] mr_pair0,
     output reg [15:0] mr_pair1,
     output reg [15:0] mr_pair2,
@@ -57,6 +57,7 @@ module aps6408_diag_core #(
     reg [15:0] read_word;
     reg [15:0] mr0_early;
     reg [15:0] mr0_mid;
+    reg [15:0] mr0_late;
     reg dqs_sample;
     reg dqs_history;
     reg dqs_prev;
@@ -163,7 +164,8 @@ module aps6408_diag_core #(
             read_word <= 0;
             mr0_early <= 0;
             mr0_mid <= 0;
-            read_capture_tap <= 1'b1;
+            mr0_late <= 0;
+            read_capture_tap <= 2'd1;
             fast_second_pending <= 0;
             fast_second_delay <= 0;
             sample_delay <= 0;
@@ -414,14 +416,16 @@ module aps6408_diag_core #(
                                     sample_mid[15:8] <= dq_prev;
                                     sample_late[15:8] <= PSRAM_DQ;
                                 end
-                                read_word[15:8] <= read_capture_tap ? dq_prev : dq_prev2;
+                                read_word[15:8] <= read_capture_tap == 2'd2 ? PSRAM_DQ :
+                                    read_capture_tap == 2'd1 ? dq_prev : dq_prev2;
                             end else begin
                                 if (!retry_slow) begin
                                     sample_early[7:0] <= dq_prev2;
                                     sample_mid[7:0] <= dq_prev;
                                     sample_late[7:0] <= PSRAM_DQ;
                                 end
-                                read_word[7:0] <= read_capture_tap ? dq_prev : dq_prev2;
+                                read_word[7:0] <= read_capture_tap == 2'd2 ? PSRAM_DQ :
+                                    read_capture_tap == 2'd1 ? dq_prev : dq_prev2;
                             end
                         end
                         if (data_index == 0) dqs_edge_word[15:8] <= {1'b0, timeout_edges};
@@ -458,6 +462,7 @@ module aps6408_diag_core #(
                             mr_pair0 <= read_word;
                             mr0_early <= sample_early;
                             mr0_mid <= sample_mid;
+                            mr0_late <= sample_late;
                             id_slot <= 1;
                             state <= S_START;
                         end else if (id_slot == 1) begin
@@ -471,15 +476,22 @@ module aps6408_diag_core #(
                             // only for 8.47 MHz. At faster settings, DQS is
                             // the read timing reference; the memory tests
                             // still check every returned data word.
-                            if (speed_select == 2'd2 && valid_training_pair(mr0_mid, sample_mid)) begin
-                                read_capture_tap <= 1'b1;
+                            if (speed_select == 2'd2 && valid_training_pair(mr0_late, sample_late)) begin
+                                read_capture_tap <= 2'd2;
+                                mr_pair0 <= mr0_late;
+                                mr_pair1 <= sample_late;
+                                id_word <= sample_late;
+                                id_phase <= 0;
+                                state <= S_START;
+                            end else if (speed_select == 2'd2 && valid_training_pair(mr0_mid, sample_mid)) begin
+                                read_capture_tap <= 2'd1;
                                 mr_pair0 <= mr0_mid;
                                 mr_pair1 <= sample_mid;
                                 id_word <= sample_mid;
                                 id_phase <= 0;
                                 state <= S_START;
                             end else if (speed_select == 2'd2 && valid_training_pair(mr0_early, sample_early)) begin
-                                read_capture_tap <= 1'b0;
+                                read_capture_tap <= 2'd0;
                                 mr_pair0 <= mr0_early;
                                 mr_pair1 <= sample_early;
                                 id_word <= sample_early;

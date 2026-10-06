@@ -13,7 +13,7 @@ module tb_aps6408_diag;
     wire [15:0] sample_early, sample_mid, sample_late;
     wire [15:0] retry_read_data;
     wire retry_read_valid;
-    wire read_capture_tap;
+    wire [1:0] read_capture_tap;
     wire [15:0] mr_pair0, mr_pair1, mr_pair2;
     wire [15:0] dqs_edge_pair1, clk_pair1;
     wire [7:0] diagnostic_leds;
@@ -58,6 +58,7 @@ module tb_aps6408_diag;
     real dqs_delay_ns=10.0;
     real dq_skew_ns=0.0;
     integer dq_leads_dqs=0;
+    integer dq_lags_dqs=0;
     integer late_memory_fall=0;
 
     task return_byte;
@@ -189,6 +190,8 @@ module tb_aps6408_diag;
         dq_leads_dqs=$test$plusargs("dq_leads_dqs");
         late_memory_fall=$test$plusargs("late_memory_fall");
         if (dq_leads_dqs) dqs_delay_ns=14.5;
+        dq_lags_dqs=$test$plusargs("dq_lags_dqs");
+        if (dq_lags_dqs) begin dqs_delay_ns=2.0; dq_skew_ns=6.5; end
         if ($value$plusargs("dqs_delay_ns=%f",dqs_delay_ns)) begin end
         if ($value$plusargs("dq_skew_ns=%f",dq_skew_ns)) begin end
         if ($test$plusargs("speed16")) speed_select=1;
@@ -203,11 +206,11 @@ module tb_aps6408_diag;
                               failure_address !== 24'h000001 ||
                               mr_pair0 !== 16'hA00D || dqs_edge_pair1 !== 0)) ||
             (bad_id && (result_code !== 2'd2 || stage_code !== 8'hE6 ||
-                        mr_pair0 !== 16'hA016 ||
-                        mr_pair1 !== 16'h1693 ||
+                        (!dq_lags_dqs && (mr_pair0 !== 16'hA016 || mr_pair1 !== 16'h1693)) ||
+                        (dq_lags_dqs && sample_late !== 16'h1693) ||
                         mr_pair2 !== 16'h0000 ||
                         ((speed_select == 0) && clk_pair1 !== 16'h1693) ||
-                        dqs_edge_pair1 !== (speed_select == 2 ? 16'h0A0B : 16'h090A) || writes != 0)) ||
+                        dqs_edge_pair1 !== (speed_select == 2 && !dq_lags_dqs ? 16'h0A0B : 16'h090A) || writes != 0)) ||
             (early_dqs && (result_code !== 2'd2 || stage_code !== 8'hE6 ||
                            mr_pair1 === clk_pair1 ||
                            clk_pair1 !== 16'h0D93 ||
@@ -220,7 +223,8 @@ module tb_aps6408_diag;
               mr_pair0 !== 16'hA00D || mr_pair1 !== 16'h0D93 ||
               mr_pair2 !== 16'h0000 ||
               ((speed_select == 0) && clk_pair1 !== 16'h0D93) ||
-              (dq_leads_dqs && read_capture_tap !== 1'b0) ||
+              (dq_leads_dqs && read_capture_tap !== 2'd0) ||
+              (dq_lags_dqs && read_capture_tap !== 2'd2) ||
               ((dqs_delay_ns == 10.0) &&
                dqs_edge_pair1 !== (speed_select == 2'd2 ? 16'h0A0B : 16'h090A)) ||
               id_reads != 2 || writes != 1024 || reads != 1024)))

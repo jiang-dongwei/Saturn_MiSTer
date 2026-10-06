@@ -11,6 +11,7 @@ on:
       - Saturn_APS6408_Diag.*
       - files_aps6408_diag.qip
       - rtl/aps6408_diag_*.sv
+      - rtl/aps6408_diag_pll/**
       - sim/psram/tb_aps6408_diag.sv
       - sys/sys_psram_opi.tcl
       - sys/sys.tcl
@@ -39,6 +40,9 @@ jobs:
           vvp .ci/aps6408_diag.vvp +speed33
           vvp .ci/aps6408_diag.vvp +speed33 +corrupt
           vvp .ci/aps6408_diag.vvp +speed33 +dq_leads_dqs
+          vvp .ci/aps6408_diag.vvp +speed33 +dq_lags_dqs
+          vvp .ci/aps6408_diag.vvp +speed33 +dq_lags_dqs +corrupt
+          vvp .ci/aps6408_diag.vvp +speed33 +dq_lags_dqs +bad_id
           vvp .ci/aps6408_diag.vvp +speed33 +late_memory_fall
           vvp .ci/aps6408_diag.vvp +speed33 +bad_id
           for delay in 2 6 7.2 10 13; do
