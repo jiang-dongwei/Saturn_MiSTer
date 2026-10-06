@@ -63,9 +63,9 @@ localparam [383:0] TXT_RESULT = {"RESULT:", {41{8'h20}}};
 localparam [383:0] TXT_STAGE = {"STAGE:", {42{8'h20}}};
 localparam [383:0] TXT_ID = {"MR1/MR2:", {40{8'h20}}};
 localparam [383:0] TXT_KGD = {"INTERFACE: X8 DDR", {31{8'h20}}};
-localparam [383:0] TXT_SPEED8 = {"CLOCK: 8.47 MHZ", {33{8'h20}}};
-localparam [383:0] TXT_SPEED16 = {"CLOCK: 16.93 MHZ", {32{8'h20}}};
-localparam [383:0] TXT_SPEED33 = {"CLOCK: 33.87 MHZ", {32{8'h20}}};
+localparam [383:0] TXT_SPEED8 = {"TARGET: 8.47 MHZ", {32{8'h20}}};
+localparam [383:0] TXT_SPEED16 = {"TARGET: 16.93 MHZ", {31{8'h20}}};
+localparam [383:0] TXT_SPEED33 = {"TARGET: 33.87 MHZ", {31{8'h20}}};
 localparam [383:0] TXT_ADDRESS = {"ADDRESS:", {40{8'h20}}};
 localparam [383:0] TXT_EXPECTED = {"EXPECTED:", {39{8'h20}}};
 localparam [383:0] TXT_ACTUAL = {"ACTUAL:", {41{8'h20}}};
@@ -221,6 +221,18 @@ function [7:0] screen_char;
 		value = 8'h20;
 		case (row)
 			1: value = fixed_char(TXT_TITLE, column);
+            2: begin
+                value = fixed_char({"WRITE:            READ: ", {24{8'h20}}}, column);
+                if (column >= 7 && column < 16)
+                    value = fixed_char((mode == 1 || speed_index == 0) ? {"8.47 MHZ", {40{8'h20}}} :
+                        speed_index == 1 ? {"16.93 MHZ", {39{8'h20}}} : {"33.87 MHZ", {39{8'h20}}}, column-7);
+                if (column >= 24 && column < 33)
+                    value = fixed_char((mode == 2 || speed_index == 0) ? {"8.47 MHZ", {40{8'h20}}} :
+                        speed_index == 1 ? {"16.93 MHZ", {39{8'h20}}} : {"33.87 MHZ", {39{8'h20}}}, column-24);
+            end
+            3: value = fixed_char(mode == 1 ? {"MODE: LOW WRITE", {33{8'h20}}} :
+                                  mode == 2 ? {"MODE: LOW READ", {34{8'h20}}} :
+                                  {"MODE: SAME SPEED", {32{8'h20}}}, column);
 			4: begin
 				value = fixed_char(TXT_RESULT, column);
 				if ((column >= 8) && (column < 15))
@@ -372,7 +384,7 @@ function [7:0] screen_char;
 					value = hex_char(read_edge_pair[15-((column-11)*4) -: 4]);
 				if (stage_code == 8'hE2 && retry_read_valid) begin
 					if (column >= 18 && column < 23)
-						value = fixed_char({"SLOW:", {43{8'h20}}}, column-18);
+						value = fixed_char({"R8:  ", {43{8'h20}}}, column-18);
 					if (column >= 24 && column < 28)
 						value = hex_char(retry_read_data[15-((column-24)*4) -: 4]);
 				end

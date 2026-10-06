@@ -64,6 +64,15 @@ jobs:
             fi
           done
 
+          for speed in speed16 speed33; do
+            for mode in low_write low_read; do
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$mode"
+              for fault in high_write_fault high_read_fault corrupt; do
+                vvp .ci/aps6408_diag.vvp "+$speed" "+$mode" "+$fault"
+              done
+            done
+          done
+
       - name: Free runner disk space
         if: ${{ !inputs.simulation_only }}
         shell: bash

@@ -9,6 +9,7 @@ module aps6408_diag_core #(
     input clk_phy,
     input reset,
     input [1:0] speed_select,
+    input [1:0] test_mode,
     output reg [1:0] result_code,
     output reg [7:0] stage_code,
     output reg [23:0] failure_address,
@@ -127,7 +128,11 @@ module aps6408_diag_core #(
 
     wire [23:0] address = id_phase ? {22'd0,id_slot} : address_for(cell_index);
     wire [15:0] pattern = pattern_for(cell_index, pattern_pass);
-    wire [1:0] active_speed = id_phase && reference_phase ? 2'd0 : retry_slow ? 2'd1 : speed_select;
+    wire [1:0] write_speed = test_mode == 1 ? 2'd0 : speed_select;
+    wire [1:0] read_speed = test_mode == 2 ? 2'd0 : speed_select;
+    wire [1:0] active_speed = retry_slow || (id_phase && reference_phase) ? 2'd0 :
+                              id_phase || read_phase ? read_speed : write_speed;
+    wire use_reference_taps = retry_slow || (!id_phase && read_phase && read_speed == 0);
     wire [2:0] half_period = active_speed == 0 ? 3'd4 : active_speed == 1 ? 3'd2 : 3'd1;
     wire tick = (div_count == half_period-1'b1);
     wire rx_arm = (state == S_TURN || state == S_READ);
@@ -199,8 +204,8 @@ module aps6408_diag_core #(
     wire [15:0] trained_current_lo = tap_word(trained_tap_second, sample_early, sample_mid, sample_late, sample_center);
     wire [15:0] trained_first = {trained_previous_hi[15:8], trained_previous_lo[7:0]};
     wire [15:0] trained_second = {trained_current_hi[15:8], trained_current_lo[7:0]};
-    wire [15:0] receive_hi = tap_word(retry_slow ? reference_tap_first : read_capture_tap, rx_early_hold, rx_mid_hold, rx_late_hold, rx_center_hold);
-    wire [15:0] receive_lo = tap_word(retry_slow ? reference_tap_second : read_capture_tap_second, rx_early_hold, rx_mid_hold, rx_late_hold, rx_center_hold);
+    wire [15:0] receive_hi = tap_word(use_reference_taps ? reference_tap_first : read_capture_tap, rx_early_hold, rx_mid_hold, rx_late_hold, rx_center_hold);
+    wire [15:0] receive_lo = tap_word(use_reference_taps ? reference_tap_second : read_capture_tap_second, rx_early_hold, rx_mid_hold, rx_late_hold, rx_center_hold);
 
     aps6408_diag_rx rx (
         .clk(clk_phy), .reset(reset), .arm(rx_arm), .speed(active_speed),
@@ -493,7 +498,7 @@ module aps6408_diag_core #(
                                     reference_tap_second <= trained_tap_second;
                                     reference_phase <= 0;
                                 end
-                                if (reference_phase && speed_select != 0) id_slot <= 0;
+                                if (reference_phase && read_speed != 0) id_slot <= 0;
                                 else id_phase <= 0;
                                 state <= S_START;
                             end else begin
@@ -512,7 +517,7 @@ module aps6408_diag_core #(
                         expected_data <= pattern;
                         actual_data <= read_word;
                         dqs_edge_pair1 <= dqs_edge_word;
-                        if (speed_select == 2'd2) begin
+                        if (read_speed != 0) begin
                             retry_slow <= 1;
                             state <= S_START;
                         end else state <= S_FAIL;
