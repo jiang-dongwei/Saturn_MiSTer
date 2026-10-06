@@ -58,13 +58,14 @@ module tb_aps6408_diag;
     real dqs_delay_ns=10.0;
     real dq_skew_ns=0.0;
     integer dq_leads_dqs=0;
+    integer late_memory_fall=0;
 
     task return_byte;
         input [7:0] value;
         input strobe;
         begin
             mem_dq <= #(dq_leads_dqs ? 1.0 : dqs_delay_ns+dq_skew_ns) value;
-            mem_dqs <= #(dqs_delay_ns) strobe;
+            mem_dqs <= #(dqs_delay_ns + ((late_memory_fall && instruction == 8'h20 && !strobe) ? 29.524 : 0.0)) strobe;
         end
     endtask
 
@@ -186,6 +187,7 @@ module tb_aps6408_diag;
         bad_id=$test$plusargs("bad_id");
         early_dqs=$test$plusargs("early_dqs");
         dq_leads_dqs=$test$plusargs("dq_leads_dqs");
+        late_memory_fall=$test$plusargs("late_memory_fall");
         if ($value$plusargs("dqs_delay_ns=%f",dqs_delay_ns)) begin end
         if ($value$plusargs("dq_skew_ns=%f",dq_skew_ns)) begin end
         if ($test$plusargs("speed16")) speed_select=1;

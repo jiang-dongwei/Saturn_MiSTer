@@ -63,6 +63,8 @@ module aps6408_diag_core #(
     reg [7:0] dq_input_sample;
     reg [7:0] dq_prev;
     reg [7:0] dq_prev2;
+    reg fast_second_pending;
+    reg [3:0] fast_second_delay;
     reg [2:0] sample_delay;
     reg sample_pending;
     reg [15:0] dqs_edge_word;
@@ -162,6 +164,8 @@ module aps6408_diag_core #(
             mr0_early <= 0;
             mr0_mid <= 0;
             read_capture_tap <= 1'b1;
+            fast_second_pending <= 0;
+            fast_second_delay <= 0;
             sample_delay <= 0;
             sample_pending <= 0;
             dqs_edge_word <= 0;
@@ -187,6 +191,8 @@ module aps6408_diag_core #(
             clk_pair1 <= 0;
             diagnostic_leds <= 0;
         end else begin
+            if (fast_second_pending && fast_second_delay != 0)
+                fast_second_delay <= fast_second_delay - 1'b1;
             if (tick) div_count <= 0;
             else div_count <= div_count + 1'b1;
 
@@ -301,6 +307,7 @@ module aps6408_diag_core #(
                     div_count <= 0;
                     edge_index <= 0;
                     data_index <= 0;
+                    fast_second_pending <= 0;
                     timeout_edges <= 0;
                     sample_pending <= 0;
                     dqs_edge_word <= 0;
@@ -374,12 +381,20 @@ module aps6408_diag_core #(
                     end
                     // The initial DQS transition into the low preamble is
                     // not data. D0 starts at the first rising strobe edge.
+                    // At 33 MHz, DQS locates D0; D1 follows one DDR half-period
+                    // later. Record the falling strobe independently.
+                    if (fastest_sample && data_index != 0 && dqs_fall &&
+                        dqs_edge_word[7:0] == 0)
+                        dqs_edge_word[7:0] <= {1'b0, timeout_edges};
                     if ((((data_index == 0) && dqs_rise) ||
-                         ((data_index == 1) && dqs_fall)) &&
+                         ((data_index == 1) && (fastest_sample ?
+                            (fast_second_pending && fast_second_delay == 0) : dqs_fall))) &&
                         !sample_pending) begin
-                        if (fastest_sample)
+                        if (fastest_sample) begin
                             data_index <= data_index + 1'b1;
-                        else begin
+                            fast_second_pending <= (data_index == 0);
+                            fast_second_delay <= half_period - 1'b1;
+                        end else begin
                             sample_pending <= 1;
                             sample_delay <= fast_sample ? 3'd1 : 3'd4;
                         end
@@ -410,7 +425,7 @@ module aps6408_diag_core #(
                             end
                         end
                         if (data_index == 0) dqs_edge_word[15:8] <= {1'b0, timeout_edges};
-                        else dqs_edge_word[7:0] <= {1'b0, timeout_edges};
+                        else if (!fastest_sample) dqs_edge_word[7:0] <= {1'b0, timeout_edges};
                     end
                     if (data_index == 2 && !sample_pending &&
                         (!id_phase || (timeout_edges >= 10 && !clk_sample_pending)))
