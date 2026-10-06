@@ -2,6 +2,21 @@
 
 Quartus revision：`Saturn_APS6408_Diag.qpf`。顶层仍是 MiSTer `sys_top`，只运行 PSRAM 诊断，不运行 Saturn 核心，也不使用 SDRAM/DDR 代替 PSRAM。
 
+每次构建的修改、测试结果和原因判断统一记在
+[编译与测试记录](编译与测试记录.md)；本文保留接线、协议和详细证据。
+最新位流 `14ac8ec` 实测 8.47 MHz PASS，16.93/33.87 MHz 仍 FAIL/E2，
+不能作为高速稳定性验收；完整结果见统一记录及下方本版记录。
+
+当前诊断通过 OSD 选择 8.47、16.93、33.87 MHz，不需要 BIOS 或游戏。
+控制运行于 67.7376 MHz，DQ/DQS 使用 Cyclone V `ALTDDIO_IN` 在
+135.4752 MHz 双边沿捕获，采样间隔约 3.69 ns。D0、D1 分别校准固定档位：
+先在 8.47 MHz 用独立 CLK 参考核对完整 MR0/1、MR1/2，再以这些字节核对
+目标速度的采样候选。当前 `CENTER` 位于 DQS 定位后第 2 个 DDR 样本，
+约 7.38 ns，处于 MID 与 LATE 之间；先前 `QUARTER` 版记录保留在下方。
+目前 D0 优先匹配完整 MR 参考的 MID，D1 优先有效 LATE，备选 CENTER/MID/EARLY。
+内存检查不按预期数据挑选样本；高速失败后的慢速复读只提供诊断值，保留首次 FAIL。
+构建成功、功能仿真通过和内部时序通过均不能替代板测，实际结果见下方逐版记录。
+
 ## 接线
 
 J1 属于 MiSTER Pi 拓展坞。PSRAM 小板 CN5 的物理管脚经拓展坞 J1 对应到下表 FPGA 管脚。拓展坞资料中的「PCB 标准网络名」源于旧版六线接口，只能供参考，不能当作这块八线 DDR PSRAM 的实际信号名；例如 J1 9 的旧名 `psram_clk` 实际接本板 DQ5。
@@ -20,21 +35,23 @@ J1 属于 MiSTER Pi 拓展坞。PSRAM 小板 CN5 的物理管脚经拓展坞 J1 
 | 10 | DQ1 | AH8 | Arduino_IO7 |
 | 11 | DQ6 | AE15 | Arduino_IO9 |
 
-实物照片确认主板为 Retro Remake **MiSTER Pi**。标准 DE10-Nano 的 U29 按键电路不能直接套用到此主板；先前据此认定 AH17/AH16 发生争用的结论已撤回。用户提供的 `123.pdf` 原理图证实 PSRAM 小板 CN5 1/2 分别是 CLK/CE#，9/11 分别是 DQ5/DQ6；结合拓展坞 J1 的封装管脚表，当前八线诊断引脚文件的这四根线映射正确。尚需用 MiSTER Pi 自身原理图核实 AH17/AH16 在主板上是否另有驱动。若另外装有会主动使用 IO_SCL/IO_SDA 的 I/O 扩展板，仍须确认不会与 DQS/DQ7 冲突。
+实物照片确认主板为 Retro Remake **MiSTER Pi**。标准 DE10-Nano 的 U29 按键电路不能直接套用到此主板；先前据此认定 AH17/AH16 发生争用的结论已撤回。用户提供的 `123.pdf` 原理图证实 PSRAM 小板 CN5 1/2 分别是 CLK/CE#，9/11 分别是 DQ5/DQ6；结合拓展坞 J1 的封装管脚表，当前八线诊断引脚文件的这四根线映射正确。2026-10-06 用户确认这些管脚专用于 PSRAM，U14/AG9 没有 I²C/模拟 I/O 复用。因此复用争用不再是本轮的主要假设；该确认本身不能排除电气裕量或焊接问题。
 
 ## 测试内容
 
-上电等待 2 ms 后，先发送四个时钟周期的 `FFh` Global Reset，并在 CE# 拉高后再等待至少 2 µs，然后用 `40h` 命令读取 MR1/MR2。小板原理图中 RESET# 由 10 kΩ 上拉，未连接 FPGA；因此按器件手册使用 Global Reset 完成上电初始化。屏幕显示原始两个字节；MR1 的低 5 位应为厂商码 `0D`，MR2 的低 5 位应为 64 Mbit、第三代器件码 `13`。其余位不参与比较。当前候选以约 8.47 MHz 发送八线 DDR OPI 线性写入 `A0h`、线性读取 `20h`。每轮先写再读 256 个偶地址，重复 4 组数据图样，共进行 1024 次写入和 1024 次读取。地址包括原有的 25 个稀疏地址（0、A1～A22、`3FFFFE`、`7FFFFE`），以及 231 个分散在 8 MiB 空间的地址；每轮每个地址的数据不同，以检测地址别名。4 组图样覆盖全 0、全 1 和交错位，并随地址变化。此测试仍不是完整 8 MiB 扫描。读取用 DQS 的首个上升沿与随后的下降沿采样；写入时将 DQS/DM 驱动为低，以使两个字节都写入。
+上电等待 2 ms 后，先发送四个时钟周期的 `FFh` Global Reset，并在 CE# 拉高后再等待至少 2 µs。小板原理图中 RESET# 由 10 kΩ 上拉，未连接 FPGA；因此使用 Global Reset 完成初始化。随后用 `40h` 在 8.47 MHz 读取 MR0/1、MR1/2，核对重叠 MR1 字节及厂商/密度位，并要求 DQS 候选与独立 CLK 参考的完整字节相同。MR1 的低 5 位应为 `0D`，MR2 的低 5 位应为 `13`。选择 16.93 或 33.87 MHz 时，再以该速度重读两组寄存器，分别为 D0、D1 选择匹配完整低速参考的固定采样档位；校准失败则报 E6，不写内存。
+
+按所选速度发送八线 DDR OPI 线性写入 `A0h`、线性读取 `20h`。每轮先写再读 256 个偶地址，重复 4 组数据图样，共进行 1024 次写入和 1024 次读取。地址包括原有的 25 个稀疏地址（0、A1～A22、`3FFFFE`、`7FFFFE`），以及 231 个分散在 8 MiB 空间的地址；每轮每个地址的数据不同，以检测地址别名。4 组图样覆盖全 0、全 1 和交错位，并随地址变化。此测试仍不是完整 8 MiB 扫描。8 MHz 用 DQS 上升和下降定位两个字节；16/33 MHz 用首个上升定位 D0，一个 DDR 字节时隙后定位 D1，并单独记录下降沿。写入时将 DQS/DM 驱动为低，以使两个字节都写入。
 
 屏幕和 LED：
 
 - `10`：写入；`20`：读取；`FF` / LED6：通过。
-- `E1` / LED7：等待两个 DQS 数据边沿超时。新版同时显示出错寄存器地址、已观察到的 DQS 边沿位置、DQS 采样值和固定 CLK 采样值；未出现的边沿位置为 `00`。
+- `E1` / LED7：等待接收完成超时。新版同时显示出错寄存器地址、已观察到的 DQS 边沿位置、DQS 采样值和固定 CLK 采样值；未出现的边沿位置为 `00`。
 - `E2` / LED7：读回数据与写入值不一致。屏幕显示出错地址、预期值和实际值。
 - `E3` / LED7：MR1/MR2 身份值不符。屏幕 `MR1/MR2` 显示原始读取值；此时内存写入测试尚未开始。
 - `E4` / LED7：MR1/MR2 身份值不符，并显示同一次读取在 DQS 边沿后较早、当前、较晚三个采样位置的原始双字节值。
 - `E5` / LED7：MR1/MR2 身份值不符，并显示以地址 0、1、2 发起的三次寄存器读取结果，分别为 MR0/1、MR1/2、MR2/3。
-- `E6` / LED7：MR1/MR2 身份值不符，或 DQS 与固定 CLK 采样不一致；`DQS EDGE` 是两次捕获时已经发出的读阶段半时钟数（正常仿真为 `090A`），`DQS DATA` 是 DQS 触发得到的 MR1/MR2，`CLK DATA` 是不依赖 DQS、在默认 LC=5 的两个数据时隙按 CLK 延时采到的原始字节。两份数据均须结合实际边沿位置判断，不能单凭其中一份就认定是真实寄存器值。
+- `E6` / LED7：完整 MR 校准失败，包括身份不符、低速 DQS 候选与 CLK 参考不符，或目标速度没有匹配低速完整参考的字节档位。`DQS EDGE` 是捕获时已观察到的读阶段半时钟数，`DQS DATA` 是 DQS 触发得到的 MR1/MR2，`CLK DATA` 是不依赖 DQS、在默认 LC=5 的两个数据时隙按 CLK 延时采到的原始字节；高速下后者仅作显示。两份数据均须结合实际边沿位置判断，不能单凭其中一份就认定是真实寄存器值。
 
 2026-09-29 首次实物运行旧版：在 `000000` 读出 `1616`，预期 `0000`，报 `E2`。仅凭该值无法区分命令/读采样、DQ 接线、写入未生效等原因；新版先读身份寄存器以缩小范围。旧版屏幕中的 “EIGHT LOCATIONS” 是遗漏更新的静态文字，实际固件测试 25 个地址。
 
@@ -69,7 +86,7 @@ Global Reset 版冷启动后由 `E1` 变为 `E3`，屏幕原始 MR 值约为 `CA
 诊断现在通过 OSD 选择 8.47、16.93、33.87 MHz，不需要 BIOS 或游戏。
 构建和功能仿真全部在 GitHub Runner 运行，Quartus 固定为 17.0.2。
 
-33 MHz 接收增加了 8 个负边沿 DQ 输入寄存器和 DQS 首级输入寄存器，
+早期 33 MHz 接收增加了 8 个负边沿 DQ 输入寄存器和 DQS 首级输入寄存器，
 Fitter 确认共 9 个输入寄存器实际打包进 IO。读取 MR0/1、MR1/2 时，
 校验重叠的 MR1 字节及厂商/密度位，再选择有效 LATE、MID 或 EARLY 档位。
 此选择仅发生在身份读取阶段，内存检查一直使用固定档位，不按预期数据
@@ -86,6 +103,7 @@ Fitter 确认共 9 个输入寄存器实际打包进 IO。读取 MR0/1、MR1/2 �
 | `a64523b` | FAIL/E6 | EARLY `000D`，MID `059F`，LATE `0D93`；先前只校准两档，无法选择有效 LATE |
 | `f5abd7a` | FAIL/E2 | LATE 档，地址 `339EE4`，预期 `FF7F`，实际 `FFFF`，DQS `0A00`，SLOW `FF7F` |
 | `c2468d8` | FAIL/E2 | 两次配置分别在 `000000` 出现 `A55A→A5DA`、在 `339EE4` 出现 `FF7F→FFFF`；均为 DQ7 差异 |
+| `bbcbf6e` | FAIL/E2 | 两次配置均在 `000000` 出现 `A55A→A5DA`；LATE、DQS `0A0B`、16 MHz 重读 `A55A` |
 
 `461db60` 的同一固件在 8.47 和 16.93 MHz 均 PASS/FF；17 项仿真通过。
 它的 RBF 为 2,447,824 字节，SHA-256
@@ -130,13 +148,138 @@ COM13 发送后板端长度和 SHA-256 一致，加载独立测试文件
 未读全身份寄存器；33.87 MHz 两次配置均 FAIL/E2，身份 `0D93`、
 RX LATE、DQS=`0A00`，故障字段见上表。对应 16 MHz 慢速重读分别为
 `A500`、`FF00`，本版低速重读路径也存在回归，不能据此判定写入正确与否。
-板上最后保留本版 33 MHz 失败页面，CFG 首字节 `10h`。
+该轮板上保留本版 33 MHz 失败页面，CFG 首字节 `10h`。
 
 最差 setup/hold 为 -40.710/-8.713 ns；slow 100°C 模型的采样时钟域
 Fmax 仅 71.87 MHz，远低于实际 270.9504 MHz。这是控制逻辑/输入捕获
 时序仍未收敛的证据，不能简单解释为外部约束保守，也不能宣称采样移动
 已解决问题。后续应先分离高速接收捕获与较低频控制逻辑、取得关键路径
 报告并收敛内部时序，再以真机验证 DQ7 的有效窗口。
+
+详细基线 `d51ba5d` 的 slow 100°C 报告证实内部最差 setup 为
+−5.112 ns：负边沿 IO 输入到比较逻辑只有 1.845 ns，数据路径
+5.787 ns。`cell_index` 到发送数据路径也达到 9.273 ns。
+这些是内部路径问题，不能归因于外部 `set_input_delay`。
+
+`bbcbf6e` 将流程、地址和数据比较移至 67.7376 MHz，独立接收模块
+仍以 270.9504 MHz 同一正边沿采样，先经无条件流水寄存器再锁存。
+CLK 参考读数在接收模块内保持，经完成信号同步后传给控制器。
+发送数据在 67 MHz 正边沿准备、负边沿提交，模型验证至少 3 ns
+建立和保持时间；原有 2 ms/2 µs 初始化等待和外部 I/O 约束不变。
+[Runner 37428192103](https://github.com/jiang-dongwei/Saturn_MiSTer/actions/runs/37428192103)
+通过 21 项加强仿真及编译，Fitter 打包 9 个输入寄存器。
+四角内部 setup/hold 最差 −1.988/+0.151 ns，仍未通过。
+最差路径现在是 `dq_input_sample[3]` 到 `dq_prev[3]`，IO 到逻辑
+数据延迟 4.272 ns、时钟偏差 −1.206 ns，而可用周期只有 3.690 ns。
+整体 setup/hold 为 −35.649/−8.103 ns；两类报告分别保留。
+
+该版 COM13 传输后的长度和 SHA-256 一致。33.87 MHz 两次重载均
+FAIL/E2，字段见上表；16.93 MHz 在 `40EDA8` 出现
+`3FC0→BFC0`，MID=`3FC0`、LATE=`BFC0`，仍涉及 DQ7。
+8.47 MHz 身份 DQS 数据为 `0D93`，固定 CLK 参考为 `000D`，
+因此报 E6；这是参考采样提前，不能将该次身份校验记作 PASS。
+RBF 2,455,432 字节，SHA-256 为
+`473cad2ea2dc142eb0e6ffda7c6447fe586cbc46059b5a5d02c956f36c52d825`。
+
+接收修复采用 Cyclone V `ALTDDIO_IN`：135.4752 MHz 双边沿采样，
+每 3.69 ns 一个样本，两路先寄存，再以 135 MHz 处理 DQS 事件和
+EARLY/MID/LATE 候选。控制和发送仍为 67.7376 MHz，外部频率不变。
+固定 CLK 参考考虑流水历史中的最后一个地址下降沿；8 MHz 另加
+两个接收周期等待，使采样处于字节中部。功能模型描述 DDR 输入的
+负边沿采样及正边沿重同步，不能替代器件电气检查。
+
+### DDR 输入版 `b0f020f`：实际构建与板测
+
+[Runner 37430906883](https://github.com/jiang-dongwei/Saturn_MiSTer/actions/runs/37430906883) 的 21 项仿真及 Quartus 17.0.2 编译完成。
+位流使用 135.4752 MHz ALTDDIO 双边沿捕获，控制为 67.7376 MHz。
+四角内部 setup/hold 最差为 0.389/0.167 ns，内部检查 PASS。
+整体 setup/hold 仍为 -36.177/-8.228 ns，不能视为整机 PVT 签核。
+COM13 传输后长度与 SHA-256 一致；以下全部来自板端原始截图：
+
+- `16MHz_b0f020f_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 16.93 MHZ; ADDRESS:  40EDA8; EXPECTED:  3FC0; ACTUAL:  BFC0; RX TAP: LATE
+- `33MHz_b0f020f_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 33.87 MHZ; ADDRESS:  000000; EXPECTED:  A55A; ACTUAL:  A5DA; RX TAP: LATE; DQS EDGES: 0A00   SLOW: A55A
+- `33MHz_b0f020f_2`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 33.87 MHZ; ADDRESS:  000000; EXPECTED:  A55A; ACTUAL:  A5DA; RX TAP: LATE; DQS EDGES: 0A00   SLOW: A55A
+- `8MHz_b0f020f_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 8.47 MHZ; ADDRESS:  40EDA8; EXPECTED:  3FC0; ACTUAL:  BFC0; RX TAP: LATE
+
+RBF `APS6408_33MHz_b0f020f.rbf` 为 2,439,908 字节，SHA-256
+`5fb40fa305ba6bf5a7d55b7f76e5ba24bd71fa809cb4d23c44f44b82f571a57a`。板上最终保留最后一次 33.87 MHz 页面，CFG 首字节 `10h`。
+没有断电冷启动、完整 8 MiB 扫描、Saturn/RAMH 或游戏验证。
+
+### DDR 输入版 `e133f8c`：实际构建与板测
+
+[Runner 37432637025](https://github.com/jiang-dongwei/Saturn_MiSTer/actions/runs/37432637025) 的 22 项仿真及 Quartus 17.0.2 编译完成。
+位流使用 135.4752 MHz ALTDDIO 双边沿捕获，控制为 67.7376 MHz。
+四角内部 setup/hold 最差为 0.5/0.167 ns，内部检查 PASS。
+整体 setup/hold 仍为 -36.177/-8.228 ns，不能视为整机 PVT 签核。
+COM13 传输后长度与 SHA-256 一致；以下全部来自板端原始截图：
+
+- `16MHz_e133f8c_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 16.93 MHZ; ADDRESS:  3994CC; EXPECTED:  FF73; ACTUAL:  FFF3; RX TAP: MID
+- `33MHz_e133f8c_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 33.87 MHZ; ADDRESS:  000002; EXPECTED:  A45B; ACTUAL:  A4DB; RX TAP: LATE; DQS EDGES: 0A00   SLOW: A4DB
+- `33MHz_e133f8c_2`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 33.87 MHZ; ADDRESS:  000002; EXPECTED:  A45B; ACTUAL:  A4DB; RX TAP: LATE; DQS EDGES: 0A00   SLOW: A4DB
+- `8MHz_e133f8c_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 8.47 MHZ; ADDRESS:  3994CC; EXPECTED:  FF73; ACTUAL:  FFF3; RX TAP: MID
+
+RBF `APS6408_33MHz_e133f8c.rbf` 为 2,440,672 字节，SHA-256
+`b56c7b562f716d0680f32f74cb94c32c062712ce13eb30893083ebd4a660c74e`。板上最终保留最后一次 33.87 MHz 页面，CFG 首字节 `10h`。
+没有断电冷启动、完整 8 MiB 扫描、Saturn/RAMH 或游戏验证。
+
+本版 LATE 为 DQS 定位后第 3 个 DDR 样本。8/16 MHz 也校准固定档位，优先有效 MID，再尝试 LATE/EARLY；33 MHz 优先有效 LATE。慢速诊断重读固定 MID，不能覆盖首次高速 FAIL。
+
+### DDR 输入版 `f59b7f8`：实际构建与板测
+
+[Runner 37437042902](https://github.com/jiang-dongwei/Saturn_MiSTer/actions/runs/37437042902) 的 22 项仿真及 Quartus 17.0.2 编译完成。
+位流使用 135.4752 MHz ALTDDIO 双边沿捕获，控制为 67.7376 MHz。
+四角内部 setup/hold 最差为 0.753/0.135 ns，内部检查 PASS。
+整体 setup/hold 仍为 -36.177/-8.228 ns，不能视为整机 PVT 签核。
+COM13 传输后长度与 SHA-256 一致；以下全部来自板端原始截图：
+
+- `16MHz_f59b7f8_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 16.93 MHZ; ADDRESS:  123F62; EXPECTED:  003D; ACTUAL:  00BD; RX TAP: MID         D1: LATE
+- `33MHz_f59b7f8_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 33.87 MHZ; ADDRESS:  000004; EXPECTED:  FFFD; ACTUAL:  FFFF; RX TAP: MID         D1: QTR; DQS EDGES: 0A00   SLOW: FFFD
+- `33MHz_f59b7f8_2`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 33.87 MHZ; ADDRESS:  000004; EXPECTED:  FFFD; ACTUAL:  FFFF; RX TAP: MID         D1: QTR; DQS EDGES: 0A00   SLOW: FFFD
+- `8MHz_f59b7f8_1`: RESULT: PASS; STAGE:  FF; MR1 MR2:  0D93; CLOCK: 8.47 MHZ; ADDRESS:  000000; EXPECTED:  0000; ACTUAL:  0000; RX TAP: MID         D1: LATE
+
+RBF `APS6408_33MHz_f59b7f8.rbf` 为 2,431,304 字节，SHA-256
+`1fece00097198951e41d3700aba0c4de3eccf1453a13ae256884155f463dda5d`。板上最终保留最后一次 33.87 MHz 页面，CFG 首字节 `10h`。
+没有断电冷启动、完整 8 MiB 扫描、Saturn/RAMH 或游戏验证。
+
+本版分别校准 D0/D1，新增 DQS 定位后第 1 个 DDR 样本 QUARTER。先在 8.47 MHz 用 CLK 参考验证完整 MR0/1、MR1/2；目标速度的两个字节均须匹配这些参考。D0 优先有效 MID；低速 D1 优先 LATE，33 MHz D1 优先 QUARTER。诊断复读沿用低速参考档位，未另作 16.93 MHz 校准；任何复读均不覆盖首次 FAIL，也不按内存预期值选样本。
+
+### DDR 输入版 `ece1b37`：实际构建与板测
+
+[Runner 37439155495](https://github.com/jiang-dongwei/Saturn_MiSTer/actions/runs/37439155495) 的 24 项仿真及 Quartus 17.0.2 编译完成。
+位流使用 135.4752 MHz ALTDDIO 双边沿捕获，控制为 67.7376 MHz。
+四角内部 setup/hold 最差为 0.702/0.164 ns，内部检查 PASS。
+整体 setup/hold 仍为 -36.177/-8.228 ns，不能视为整机 PVT 签核。
+COM13 传输后长度与 SHA-256 一致；以下全部来自板端原始截图：
+
+- `16MHz_ece1b37_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 16.93 MHZ; ADDRESS:  000000; EXPECTED:  A55A; ACTUAL:  A5DA; RX TAP: MID         D1: CENTER
+- `33MHz_ece1b37_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 33.87 MHZ; ADDRESS:  000000; EXPECTED:  A55A; ACTUAL:  A5DA; RX TAP: MID         D1: CENTER; DQS EDGES: 0A00   SLOW: A55A
+- `33MHz_ece1b37_2`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 33.87 MHZ; ADDRESS:  000000; EXPECTED:  A55A; ACTUAL:  A5DA; RX TAP: MID         D1: CENTER; DQS EDGES: 0A00   SLOW: A55A
+- `8MHz_ece1b37_1`: RESULT: PASS; STAGE:  FF; MR1 MR2:  0D93; CLOCK: 8.47 MHZ; ADDRESS:  000000; EXPECTED:  0000; ACTUAL:  0000; RX TAP: MID         D1: LATE
+
+RBF `APS6408_33MHz_ece1b37.rbf` 为 2,453,188 字节，SHA-256
+`33f0b2139a1c1319e40e191365e4ea7da5733c8f3a87428f475e2668bafcff6e`。板上最终保留最后一次 33.87 MHz 页面，CFG 首字节 `10h`。
+没有断电冷启动、完整 8 MiB 扫描、Saturn/RAMH 或游戏验证。
+
+本版 CENTER 为 DQS 定位后第 2 个 DDR 样本，约 7.38 ns。D0 优先有效 MID；8 MHz D1 优先 LATE，16/33 MHz D1 优先 CENTER。16/33 MHz 均在首个 DQS 上升后一个 DDR 字节时隙定位 D1，下降沿独立记录。先低速 CLK 完整 MR 参考，再以全部参考字节分别校准目标速度的 D0/D1；不按预期内存值选择样本。诊断复读沿用低速参考档位，未另作 16 MHz 校准，不覆盖首次 FAIL。
+
+### DDR 输入版 `14ac8ec`：实际构建与板测
+
+[Runner 37441144476](https://github.com/jiang-dongwei/Saturn_MiSTer/actions/runs/37441144476) 的 24 项仿真及 Quartus 17.0.2 编译完成。
+位流使用 135.4752 MHz ALTDDIO 双边沿捕获，控制为 67.7376 MHz。
+四角内部 setup/hold 最差为 0.7/0.162 ns，内部检查 PASS。
+整体 setup/hold 仍为 -36.199/-8.228 ns，不能视为整机 PVT 签核。
+COM13 传输后长度与 SHA-256 一致；以下全部来自板端原始截图：
+
+- `16MHz_14ac8ec_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 16.93 MHZ; ADDRESS:  000002; EXPECTED:  A45B; ACTUAL:  A4DB; RX TAP: MID         D1: LATE
+- `33MHz_14ac8ec_1`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 33.87 MHZ; ADDRESS:  000020; EXPECTED:  A05F; ACTUAL:  A0DF; RX TAP: MID         D1: LATE; DQS EDGES: 0A00   SLOW: A0DF
+- `33MHz_14ac8ec_2`: RESULT: FAIL; STAGE:  E2; MR1 MR2:  0D93; CLOCK: 33.87 MHZ; ADDRESS:  000002; EXPECTED:  A45B; ACTUAL:  A4DB; RX TAP: MID         D1: LATE; DQS EDGES: 0A00   SLOW: A4DB
+- `8MHz_14ac8ec_1`: RESULT: PASS; STAGE:  FF; MR1 MR2:  0D93; CLOCK: 8.47 MHZ; ADDRESS:  000000; EXPECTED:  0000; ACTUAL:  0000; RX TAP: MID         D1: LATE
+
+RBF `APS6408_33MHz_14ac8ec.rbf` 为 2,459,776 字节，SHA-256
+`27b4c5c085151f56809d71089ca208e8178db27c0bf238ceae68f65e0f578870`。板上最终保留最后一次 33.87 MHz 页面，CFG 首字节 `10h`。
+没有断电冷启动、完整 8 MiB 扫描、Saturn/RAMH 或游戏验证。
+
+本版 CENTER 为 DQS 定位后第 2 个 DDR 样本，约 7.38 ns。D0 优先有效 MID；各速度 D1 均优先匹配完整 MR 参考的 LATE，备选 CENTER/MID/EARLY。16/33 MHz 均在首个 DQS 上升后一个 DDR 字节时隙定位 D1，下降沿独立记录。先低速 CLK 完整 MR 参考，再以全部参考字节分别校准目标速度的 D0/D1；不按预期内存值选择样本。诊断复读沿用低速参考档位，未另作 16 MHz 校准，不覆盖首次 FAIL。
 
 本测试仍仅覆盖 4 组图样、每组 256 个分散地址；既不是完整 8 MiB 扫描，
 也不验证 Saturn/RAMH、游戏兼容性、连续吞吐量或冷启动/PVT 稳定性。
@@ -155,8 +298,9 @@ gh workflow run build-aps6408-diag.yml --repo jiang-dongwei/Saturn_MiSTer \
 以下命令由 GitHub Runner 执行；实际 workflow 还覆盖 16/33 MHz 和采样窗口：
 
 ```sh
-iverilog -g2012 -s tb_aps6408_diag -o /tmp/aps6408_diag.vvp \
-  rtl/aps6408_diag_core.sv sim/psram/tb_aps6408_diag.sv
+iverilog -g2012 -DAPS6408_DIAG_SIM -s tb_aps6408_diag -o /tmp/aps6408_diag.vvp \
+  rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv \
+  rtl/aps6408_diag_ddio_input.sv sim/psram/tb_aps6408_diag.sv
 vvp /tmp/aps6408_diag.vvp
 vvp /tmp/aps6408_diag.vvp +corrupt
 vvp /tmp/aps6408_diag.vvp +no_dqs
