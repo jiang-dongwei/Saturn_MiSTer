@@ -39,8 +39,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y iverilog
           mkdir -p .ci
-          iverilog -g2012 -s tb_aps6408_diag -o .ci/aps6408_diag.vvp \
-            rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv sim/psram/tb_aps6408_diag.sv
+          iverilog -g2012 -DAPS6408_DIAG_SIM -s tb_aps6408_diag -o .ci/aps6408_diag.vvp \
+            rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv sim/psram/tb_aps6408_diag.sv
           vvp .ci/aps6408_diag.vvp +speed16
           vvp .ci/aps6408_diag.vvp +speed33
           vvp .ci/aps6408_diag.vvp +speed33 +corrupt

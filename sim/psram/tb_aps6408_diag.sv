@@ -3,10 +3,12 @@
 module tb_aps6408_diag;
     reg clk=0;
     reg clk_phy=0;
+    reg clk_sample=0;
     reg [1:0] clock_phase=0;
-    always #1.84525 clk_phy=~clk_phy;
-    always @(posedge clk_phy) begin
+    always #1.84525 clk_sample=~clk_sample;
+    always @(posedge clk_sample) begin
         clock_phase <= clock_phase + 1'b1;
+        clk_phy = !clock_phase[0];
         if (clock_phase == 0) clk = 1;
         if (clock_phase == 2) clk = 0;
     end

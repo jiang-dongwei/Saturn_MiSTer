@@ -14,41 +14,63 @@ module aps6408_diag_rx (
     output reg [15:0] clock_word = 0,
     output reg clock_done = 0
 );
-    reg [7:0] dq_input_sample;
-    reg dqs_sample;
-    (* preserve *) reg dqs_history;
-    (* preserve *) reg dqs_prev;
-    (* preserve *) reg [7:0] dq_prev;
-    (* preserve *) reg [7:0] dq_prev2;
+    wire [8:0] input_rising, input_falling;
+    aps6408_diag_ddio_input input_capture (
+        .clk(clk), .data({dqs, dq}),
+        .rising(input_rising), .falling(input_falling)
+    );
+    (* preserve *) reg [8:0] pair_low, pair_high;
+    reg [8:0] previous_low, previous_high, older_high;
+    reg clock_negative, clock_rising, clock_falling;
+    reg clock_low, clock_high, previous_clock_low, previous_clock_high, older_clock_high;
     reg arm_meta = 0;
     reg arm_sync = 0;
     reg armed = 0;
-    (* preserve *) reg clk_history;
-    (* preserve *) reg clk_prev;
-    reg [6:0] edge_count = 0;
     reg [1:0] active_speed = 0;
+    reg [6:0] edge_count = 0;
     reg [1:0] byte_count = 0;
-    reg [2:0] second_delay = 0;
-    reg [1:0] late_pending = 0;
-    reg late_byte = 0;
+    reg second_delay = 0;
+    reg data_phase = 0;
+    reg [1:0] rise_event, fall_event, clock_event;
+    reg [6:0] edge_low, edge_high;
+    reg [23:0] data_low, data_high;
     reg reference_pending = 0;
     reg [1:0] reference_delay = 0;
+    reg reference_phase = 0;
     reg reference_byte = 0;
-    wire rise = dqs_history && !dqs_prev;
-    wire fall = !dqs_history && dqs_prev;
-    wire capture = armed && !done &&
-        ((byte_count == 0 && rise) ||
-         (byte_count == 1 && (active_speed == 2 ? second_delay == 0 : fall)));
+    wire clock_change_low = previous_clock_low != older_clock_high;
+    wire clock_change_high = previous_clock_high != previous_clock_low;
+    wire first_capture = byte_count == 0 && (|rise_event);
+    wire second_capture = byte_count == 1 &&
+        (active_speed == 2 ? !second_delay : (|fall_event));
+    wire capture_phase = byte_count == 0 ? rise_event[1] :
+                         active_speed == 2 ? data_phase : fall_event[1];
+    wire [23:0] capture_data = capture_phase ? data_high : data_low;
 
+    always @(negedge clk) clock_negative <= psram_clk;
     always @(posedge clk) begin
-        dq_input_sample <= dq;
-        dq_prev <= dq_input_sample;
-        dq_prev2 <= dq_prev;
-        dqs_sample <= dqs;
-        dqs_history <= dqs_sample;
-        dqs_prev <= dqs_history;
-        clk_history <= psram_clk;
-        clk_prev <= clk_history;
+        clock_rising <= psram_clk;
+        clock_falling <= clock_negative;
+        pair_low <= input_falling;
+        pair_high <= input_rising;
+        previous_low <= pair_low;
+        previous_high <= pair_high;
+        older_high <= previous_high;
+        clock_low <= clock_falling;
+        clock_high <= clock_rising;
+        previous_clock_low <= clock_low;
+        previous_clock_high <= clock_high;
+        older_clock_high <= previous_clock_high;
+        // Both lanes carry EARLY (-1), MID (0) and LATE (+2) DDR samples.
+        data_low <= {older_high[7:0], previous_low[7:0], pair_low[7:0]};
+        data_high <= {previous_low[7:0], previous_high[7:0], pair_high[7:0]};
+        rise_event <= {previous_high[8] && !previous_low[8],
+                       previous_low[8] && !older_high[8]};
+        fall_event <= {!previous_high[8] && previous_low[8],
+                       !previous_low[8] && older_high[8]};
+        clock_event <= {clock_change_high, clock_change_low};
+        edge_low <= edge_count;
+        edge_high <= edge_count + clock_change_low;
         arm_meta <= arm;
         arm_sync <= arm_meta;
 
@@ -56,7 +78,6 @@ module aps6408_diag_rx (
             armed <= 0;
             done <= 0;
             byte_count <= 0;
-            late_pending <= 0;
             edge_count <= 0;
             reference_pending <= 0;
             clock_done <= 0;
@@ -69,47 +90,43 @@ module aps6408_diag_rx (
             edge_word <= 0;
             clock_word <= 0;
         end else begin
-            if (clk_history != clk_prev) edge_count <= edge_count + 1'b1;
+            edge_count <= edge_count + clock_change_low + clock_change_high;
             if (reference_pending) begin
                 if (reference_delay != 0) reference_delay <= reference_delay - 1'b1;
                 else begin
                     reference_pending <= 0;
                     if (reference_byte) begin
-                        clock_word[7:0] <= dq_prev;
+                        clock_word[7:0] <= reference_phase ? data_high[7:0] : data_low[7:0];
                         clock_done <= 1;
-                    end else clock_word[15:8] <= dq_prev;
+                    end else clock_word[15:8] <= reference_phase ? data_high[7:0] : data_low[7:0];
                 end
             end
-            if (clk_history != clk_prev && (edge_count == 8 || edge_count == 9)) begin
+            if ((clock_event[0] && (edge_low == 8 || edge_low == 9)) ||
+                (clock_event[1] && (edge_high == 8 || edge_high == 9))) begin
                 reference_pending <= 1;
-                reference_delay <= 2;
-                reference_byte <= (edge_count == 9);
+                reference_delay <= active_speed == 0 ? 2 : 0;
+                reference_phase <= clock_event[1];
+                reference_byte <= clock_event[1] ? edge_high == 9 : edge_low == 9;
             end
             if (!done) begin
-                if (byte_count == 1 && second_delay != 0)
-                    second_delay <= second_delay - 1'b1;
-                if (active_speed == 2 && byte_count != 0 && fall && edge_word[7:0] == 0)
-                    edge_word[7:0] <= {1'b0, edge_count};
-                late_pending <= {late_pending[0], 1'b0};
-                if (late_pending[1]) begin
-                    if (late_byte) begin
-                        late_word[7:0] <= dq_prev;
-                        done <= 1;
-                    end else late_word[15:8] <= dq_prev;
-                end
-                if (capture) begin
+                if (byte_count == 1 && second_delay) second_delay <= 0;
+                if (active_speed == 2 && byte_count != 0 && (|fall_event) && edge_word[7:0] == 0)
+                    edge_word[7:0] <= {1'b0, fall_event[1] ? edge_high : edge_low};
+                if (first_capture || second_capture) begin
                     if (byte_count == 0) begin
-                        early_word[15:8] <= dq_prev2;
-                        mid_word[15:8] <= dq_prev;
-                        edge_word[15:8] <= {1'b0, edge_count};
-                        second_delay <= 3;
+                        early_word[15:8] <= capture_data[23:16];
+                        mid_word[15:8] <= capture_data[15:8];
+                        late_word[15:8] <= capture_data[7:0];
+                        edge_word[15:8] <= {1'b0, capture_phase ? edge_high : edge_low};
+                        data_phase <= capture_phase;
+                        second_delay <= 1;
                     end else begin
-                        early_word[7:0] <= dq_prev2;
-                        mid_word[7:0] <= dq_prev;
-                        if (active_speed != 2) edge_word[7:0] <= {1'b0, edge_count};
+                        early_word[7:0] <= capture_data[23:16];
+                        mid_word[7:0] <= capture_data[15:8];
+                        late_word[7:0] <= capture_data[7:0];
+                        if (active_speed != 2) edge_word[7:0] <= {1'b0, capture_phase ? edge_high : edge_low};
+                        done <= 1;
                     end
-                    late_pending <= 2'b01;
-                    late_byte <= (byte_count != 0);
                     byte_count <= byte_count + 1'b1;
                 end
             end
