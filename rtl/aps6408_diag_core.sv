@@ -251,6 +251,7 @@ module aps6408_diag_core #(
             read_word <= 0;
             mr0_early <= 0;
             mr0_mid <= 0;
+            mr0_quarter <= 0;
             mr0_late <= 0;
             read_capture_tap <= 2'd1;
             read_capture_tap_second <= 2'd2;
@@ -264,6 +265,7 @@ module aps6408_diag_core #(
             actual_data <= 0;
             sample_early <= 0;
             sample_mid <= 0;
+            sample_quarter <= 0;
             sample_late <= 0;
             retry_read_data <= 0;
             retry_read_valid <= 0;
@@ -340,6 +342,7 @@ module aps6408_diag_core #(
                     if (!retry_slow) begin
                         sample_early <= 0;
                         sample_mid <= 0;
+                        sample_quarter <= 0;
                         sample_late <= 0;
                         retry_read_valid <= 0;
                     end
