@@ -57,6 +57,7 @@ module aps6408_diag_core #(
     reg dqs_sample;
     reg dqs_history;
     reg dqs_prev;
+    reg [7:0] dq_input_sample;
     reg [7:0] dq_prev;
     reg [7:0] dq_prev2;
     reg [2:0] sample_delay;
@@ -114,13 +115,15 @@ module aps6408_diag_core #(
     wire dqs_fall = (fast_sample && !fastest_sample) ? (!dqs_sample && dqs_history) :
                                   (!dqs_history && dqs_prev);
 
-    // At 33.87 MHz the second DQS stage selects the following registered DQ
-    // sample, one fabric cycle into the two-cycle data eye.
+    always @(negedge clk) dq_input_sample <= PSRAM_DQ;
+
+    // At 33.87 MHz this selects the falling-edge DQ sample half a fabric
+    // cycle after the first DQS observation, inside the two-cycle data eye.
     always @(posedge clk) begin
         dqs_sample <= PSRAM_DQS;
         dqs_history <= dqs_sample;
         dqs_prev <= dqs_history;
-        dq_prev <= PSRAM_DQ;
+        dq_prev <= dq_input_sample;
         dq_prev2 <= dq_prev;
 
         if (reset) begin
