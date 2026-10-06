@@ -198,8 +198,14 @@ module aps6408_diag_core #(
             diagnostic_leds <= 0;
         end else begin
             if (late_commit_pending) begin
-                if (late_commit_byte) read_word[7:0] <= sample_late[7:0];
-                else read_word[15:8] <= sample_late[15:8];
+                if (!retry_slow) begin
+                    if (late_commit_byte) sample_late[7:0] <= dq_input_sample;
+                    else sample_late[15:8] <= dq_input_sample;
+                end
+                if (read_capture_tap == 2'd2) begin
+                    if (late_commit_byte) read_word[7:0] <= dq_input_sample;
+                    else read_word[15:8] <= dq_input_sample;
+                end
                 late_commit_pending <= 0;
             end
             if (fast_second_pending && fast_second_delay != 0)
@@ -424,7 +430,6 @@ module aps6408_diag_core #(
                                 if (!retry_slow) begin
                                     sample_early[15:8] <= dq_prev2;
                                     sample_mid[15:8] <= dq_prev;
-                                    sample_late[15:8] <= PSRAM_DQ;
                                 end
                                 if (read_capture_tap != 2'd2)
                                     read_word[15:8] <= read_capture_tap == 2'd1 ? dq_prev : dq_prev2;
@@ -432,15 +437,12 @@ module aps6408_diag_core #(
                                 if (!retry_slow) begin
                                     sample_early[7:0] <= dq_prev2;
                                     sample_mid[7:0] <= dq_prev;
-                                    sample_late[7:0] <= PSRAM_DQ;
                                 end
                                 if (read_capture_tap != 2'd2)
                                     read_word[7:0] <= read_capture_tap == 2'd1 ? dq_prev : dq_prev2;
                             end
-                            if (read_capture_tap == 2'd2) begin
-                                late_commit_pending <= 1;
-                                late_commit_byte <= (data_index != 0);
-                            end
+                            late_commit_pending <= 1;
+                            late_commit_byte <= (data_index != 0);
                         end
                         if (data_index == 0) dqs_edge_word[15:8] <= {1'b0, timeout_edges};
                         else if (!fastest_sample) dqs_edge_word[7:0] <= {1'b0, timeout_edges};
