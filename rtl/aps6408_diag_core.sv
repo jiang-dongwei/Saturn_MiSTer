@@ -2,8 +2,8 @@
 // The FPGA clock oversamples the source-synchronous DQS input. This is a
 // switchable bring-up diagnostic, not a Saturn RAMH backend.
 module aps6408_diag_core #(
-    parameter integer POWERUP_CYCLES = 270952, // 2 ms at 135.475 MHz
-    parameter integer RESET_RECOVERY_CYCLES = 271 // at least 2 us
+    parameter integer POWERUP_CYCLES = 541904, // 2 ms at 270.9504 MHz
+    parameter integer RESET_RECOVERY_CYCLES = 542 // at least 2 us
 ) (
     input clk,
     input reset,
@@ -39,7 +39,7 @@ module aps6408_diag_core #(
                      S_RESET_END=14, S_RESET_WAIT=15;
     reg [3:0] state;
     reg did_global_reset = 1'b0;
-    reg [18:0] power_count;
+    reg [19:0] power_count;
     reg [7:0] div_count;
     reg [7:0] gap_count;
     reg [6:0] timeout_edges;
@@ -69,7 +69,7 @@ module aps6408_diag_core #(
     reg sample_pending;
     reg [15:0] dqs_edge_word;
     reg [15:0] clk_read_word;
-    reg [1:0] clk_sample_delay;
+    reg [2:0] clk_sample_delay;
     reg clk_sample_pending;
     reg clk_sample_byte;
 
@@ -118,10 +118,10 @@ module aps6408_diag_core #(
 
     wire [23:0] address = id_phase ? {22'd0,id_slot} : address_for(cell_index);
     wire [15:0] pattern = pattern_for(cell_index, pattern_pass);
-    // 135.4752 MHz / (2 * half_period): 8.4672, 16.9344, 33.8688 MHz.
+    // 270.9504 MHz / (2 * half_period): 8.4672, 16.9344, 33.8688 MHz.
     wire [1:0] active_speed = retry_slow ? 2'd1 : speed_select;
-    wire [3:0] half_period = active_speed == 2'd0 ? 4'd8 :
-                             active_speed == 2'd1 ? 4'd4 : 4'd2;
+    wire [4:0] half_period = active_speed == 2'd0 ? 5'd16 :
+                             active_speed == 2'd1 ? 5'd8 : 5'd4;
     wire tick = (div_count == half_period-1'b1);
     wire fast_sample = (active_speed != 2'd0);
     wire fastest_sample = (active_speed >= 2'd2);
@@ -365,7 +365,7 @@ module aps6408_diag_core #(
                         timeout_edges <= timeout_edges + 1'b1;
                         if (id_phase && (timeout_edges == 8 || timeout_edges == 9)) begin
                             clk_sample_pending <= 1;
-                            clk_sample_delay <= speed_select == 2'd0 ? 2'd3 : 2'd1;
+                            clk_sample_delay <= speed_select == 2'd0 ? 3'd7 : 3'd1;
                             clk_sample_byte <= (timeout_edges == 9);
                         end
                         // Bound a missing-DQS transaction. Register reads use

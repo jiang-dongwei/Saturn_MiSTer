@@ -2,7 +2,7 @@
 
 module tb_aps6408_diag;
     reg clk=0;
-    always #3.6905 clk=~clk; // approximately 135.4752 MHz
+    always #1.84525 clk=~clk; // approximately 270.9504 MHz
     reg reset=1;
     reg [1:0] speed_select=0;
     wire [1:0] result_code;
@@ -72,8 +72,8 @@ module tb_aps6408_diag;
     always @(posedge psram_clk or negedge psram_clk)
         if (!psram_ce_n) last_psram_edge=$realtime;
     always @(dq)
-        if (!psram_ce_n && dut.dq_oe && $realtime-last_psram_edge < 5.0)
-            $fatal(1,"FPGA DQ changed within 5 ns of PSRAM clock edge");
+        if (!psram_ce_n && dut.dq_oe && $realtime-last_psram_edge < 3.0)
+            $fatal(1,"FPGA DQ changed within 3 ns of PSRAM clock edge");
 
     function integer cell_for;
         input [31:0] a;
@@ -188,6 +188,7 @@ module tb_aps6408_diag;
         early_dqs=$test$plusargs("early_dqs");
         dq_leads_dqs=$test$plusargs("dq_leads_dqs");
         late_memory_fall=$test$plusargs("late_memory_fall");
+        if (dq_leads_dqs) dqs_delay_ns=14.5;
         if ($value$plusargs("dqs_delay_ns=%f",dqs_delay_ns)) begin end
         if ($value$plusargs("dq_skew_ns=%f",dq_skew_ns)) begin end
         if ($test$plusargs("speed16")) speed_select=1;

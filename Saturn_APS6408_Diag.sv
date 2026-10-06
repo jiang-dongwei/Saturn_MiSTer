@@ -123,16 +123,16 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 wire clk_33;
 wire clk_67;
-wire clk_135;
+wire clk_phy;
 wire pll_locked;
 
-psram_diag_pll pll
+aps6408_diag_pll pll
 (
 	.refclk(CLK_50M),
 	.rst(1'b0),
 	.outclk_0(clk_33),
 	.outclk_1(clk_67),
-	.outclk_2(clk_135),
+	.outclk_2(clk_phy),
 	.locked(pll_locked)
 );
 
@@ -142,7 +142,7 @@ reg [6:0] status_meta = 7'd0;
 reg [6:0] status_sync = 7'd0;
 reg [1:0] selected_speed = 2'd0;
 reg       mode_restart = 1'b0;
-always @(posedge clk_135) begin
+always @(posedge clk_phy) begin
 	status_meta <= status[6:0];
 	status_sync <= status_meta;
 	mode_restart <= 1'b0;
@@ -159,7 +159,7 @@ wire diagnostic_reset_request = RESET | buttons[1] | status_sync[0] |
 // Synchronous assertion stretching and release keep the diagnostic free of
 // the asynchronous recovery violation seen in Stage 53.
 reg [2:0] diagnostic_reset_pipe = 3'b111;
-always @(posedge clk_135) begin
+always @(posedge clk_phy) begin
 	if (diagnostic_reset_request)
 		diagnostic_reset_pipe <= 3'b111;
 	else
@@ -197,7 +197,7 @@ wire [23:0] matrix_c = {8'd0, (stage_code == 8'hE1 || stage_code == 8'hE6) ? clk
 
 aps6408_diag_core diagnostic
 (
-    .clk(clk_135),
+    .clk(clk_phy),
     .reset(diagnostic_reset),
     .speed_select(selected_speed),
     .result_code(result_code),
