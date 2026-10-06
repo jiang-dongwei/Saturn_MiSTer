@@ -53,6 +53,8 @@ module tb_aps6408_diag;
     reg device_ready=0;
     integer corrupt=0, no_dqs=0, missing_slot1=0, alias_bit12=0, bad_id=0, early_dqs=0;
     realtime last_psram_edge=-1.0e9;
+    real dqs_delay_ns=10.0;
+    real dq_skew_ns=0.0;
 
     always @(posedge psram_clk or negedge psram_clk)
         if (!psram_ce_n) last_psram_edge=$realtime;
@@ -141,11 +143,11 @@ module tb_aps6408_diag;
                         writes=writes+1;
                     end else begin
                         if (!no_dqs && !(missing_slot1 && address==1)) begin
-                            #10 mem_dq=(instruction==8'h40) ?
+                            #(dqs_delay_ns) mem_dqs=1;
+                            #(dq_skew_ns) mem_dq=(instruction==8'h40) ?
                                 ((address==0) ? 8'hA0 :
                                  (address==1) ? (bad_id ? 8'h16 : 8'h0D) : 8'h93) :
                                 (memory[cell_slot][15:8] ^ (corrupt ? 8'h01 : 8'h00));
-                            mem_dqs=1;
                         end
                         if (instruction==8'h40) id_reads=id_reads+1;
                         else reads=reads+1;
@@ -155,10 +157,10 @@ module tb_aps6408_diag;
                     if (instruction==8'hA0) memory[cell_slot][7:0]=dq;
                     else begin
                         if (!no_dqs && !(missing_slot1 && address==1)) begin
-                            #10 mem_dq=(instruction==8'h40) ?
+                            #(dqs_delay_ns) mem_dqs=0;
+                            #(dq_skew_ns) mem_dq=(instruction==8'h40) ?
                                 ((address==0) ? (bad_id ? 8'h16 : 8'h0D) :
                                  (address==1) ? 8'h93 : 8'h00) : memory[cell_slot][7:0];
-                            mem_dqs=0;
                         end
                     end
                 end
@@ -173,6 +175,8 @@ module tb_aps6408_diag;
         alias_bit12=$test$plusargs("alias_bit12");
         bad_id=$test$plusargs("bad_id");
         early_dqs=$test$plusargs("early_dqs");
+        if ($value$plusargs("dqs_delay_ns=%f",dqs_delay_ns)) begin end
+        if ($value$plusargs("dq_skew_ns=%f",dq_skew_ns)) begin end
         if ($test$plusargs("speed16")) speed_select=1;
         if ($test$plusargs("speed33")) speed_select=2;
         repeat (4) @(posedge clk);
@@ -202,12 +206,13 @@ module tb_aps6408_diag;
               mr_pair0 !== 16'hA00D || mr_pair1 !== 16'h0D93 ||
               mr_pair2 !== 16'h0000 ||
               clk_pair1 !== 16'h0D93 ||
-              dqs_edge_pair1 !== (speed_select == 2'd2 ? 16'h0A0B : 16'h090A) ||
+              ((dqs_delay_ns == 10.0) &&
+               dqs_edge_pair1 !== (speed_select == 2'd2 ? 16'h0A0B : 16'h090A)) ||
               id_reads != 2 || writes != 1024 || reads != 1024)))
             $fatal(1,"diagnostic failed: result=%d stage=%h addr=%h exp=%h got=%h clk=%h dqs=%h writes=%d reads=%d",
                    result_code,stage_code,failure_address,expected_data,actual_data,clk_pair1,dqs_edge_pair1,writes,reads);
-        $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d",
-                 result_code,stage_code,writes,reads);
+        $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d DQS=%0.2fns skew=%0.2fns",
+                 result_code,stage_code,writes,reads,dqs_delay_ns,dq_skew_ns);
         if (!no_dqs && !missing_slot1 && !bad_id && !early_dqs && !corrupt && !alias_bit12) begin
             reset=1;
             repeat (4) @(posedge clk);

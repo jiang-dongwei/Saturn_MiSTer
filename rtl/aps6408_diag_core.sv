@@ -54,7 +54,8 @@ module aps6408_diag_core #(
     reg dq_oe;
     reg dm_oe;
     reg [15:0] read_word;
-    reg [1:0] dqs_pipe;
+    reg dqs_sample;
+    reg dqs_history;
     reg dqs_prev;
     reg [7:0] dq_prev;
     reg [7:0] dq_prev2;
@@ -108,16 +109,17 @@ module aps6408_diag_core #(
     wire tick = (div_count == half_period-1'b1);
     wire fast_sample = (active_speed != 2'd0);
     wire fastest_sample = (active_speed >= 2'd2);
-    wire dqs_rise = fast_sample ? (dqs_pipe[0] && !dqs_pipe[1]) :
-                                  (dqs_pipe[1] && !dqs_prev);
-    wire dqs_fall = fast_sample ? (!dqs_pipe[0] && dqs_pipe[1]) :
-                                  (!dqs_pipe[1] && dqs_prev);
+    wire dqs_rise = (fast_sample && !fastest_sample) ? (dqs_sample && !dqs_history) :
+                                  (dqs_history && !dqs_prev);
+    wire dqs_fall = (fast_sample && !fastest_sample) ? (!dqs_sample && dqs_history) :
+                                  (!dqs_history && dqs_prev);
 
-    // The 33.87 MHz setting samples in the middle of the two-cycle data eye.
-    // This fabric-clock sampler remains experimental until hardware tested.
+    // At 33.87 MHz the second DQS stage selects the following registered DQ
+    // sample, one fabric cycle into the two-cycle data eye.
     always @(posedge clk) begin
-        dqs_pipe <= {dqs_pipe[0], PSRAM_DQS};
-        dqs_prev <= dqs_pipe[1];
+        dqs_sample <= PSRAM_DQS;
+        dqs_history <= dqs_sample;
+        dqs_prev <= dqs_history;
         dq_prev <= PSRAM_DQ;
         dq_prev2 <= dq_prev;
 
