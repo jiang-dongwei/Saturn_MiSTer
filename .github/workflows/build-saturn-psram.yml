@@ -8,6 +8,11 @@ on:
         type: boolean
         default: true
 
+      stress_core:
+        description: Build standalone 33M87 stress core instead of Saturn
+        type: boolean
+        default: false
+
 permissions:
   contents: read
 
@@ -35,8 +40,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .ci
-          for test in qpi_engine ramh_adapter ramh_random ramh_adapter_cdc; do
-            sh "sim/psram/run_${test}.sh" 2>&1 | tee ".ci/${test}-regression.log"
+          for test in qpi_engine ramh_adapter ramh_random ramh_adapter_cdc stress stress_qpi; do
+            bash "sim/psram/run_${test}.sh" 2>&1 | tee ".ci/${test}-regression.log"
           done
           python3 sim/psram/test_33m87_timing.py 2>&1 | tee .ci/timing-gate-tests.log
 
@@ -52,7 +57,7 @@ jobs:
   quartus:
     name: GitHub-only Quartus 17.0.2 build
     needs: regression
-    if: inputs.build_quartus
+    if: inputs.build_quartus && !inputs.stress_core
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -131,3 +136,86 @@ jobs:
             output_files_psram_33m87/Saturn_PSRAM_33M87.fit.rpt
             output_files_psram_33m87/Saturn_PSRAM_33M87.sta.rpt
             output_files_psram_33m87/Saturn_PSRAM_33M87.asm.rpt
+
+  stress-quartus:
+    name: GitHub-only Quartus 17.0.2 build
+    needs: regression
+    if: inputs.build_quartus && inputs.stress_core
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          docker system prune --all --force
+          df -h
+
+      - name: Pull fixed Quartus 17.0.2 image
+        shell: bash
+        run: docker pull theypsilon/quartus-lite-c5:17.0.2
+
+      - name: Compile standalone 33.8688 MHz CDC stress revision
+        shell: bash
+        run: |
+          mkdir -p .ci
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/project" \
+            --workdir /project \
+            theypsilon/quartus-lite-c5:17.0.2 \
+            bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_PSRAM_Stress_33M87.qsf; printf "Available compile processors: %s\n" "$cores"; quartus_sh --flow compile Saturn_PSRAM_Stress_33M87 2>&1 | tee .ci/Saturn_PSRAM_Stress_33M87-build.log; quartus_sta -t sim/psram/report_stress33_timing.tcl 2>&1 | tee .ci/Saturn_PSRAM_Stress_33M87-paths.log'
+
+      - name: Verify RBF and timing constraints
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.rbf
+          python3 sim/psram/check_33m87_timing.py \
+            output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.sta.rpt \
+            --output .ci/Saturn_PSRAM_Stress_33M87-timing-check.json
+
+          candidate=".ci/Saturn_PSRAM_Stress_33M87_CDC_PIPE-${GITHUB_SHA:0:7}.rbf"
+          cp output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.rbf \
+            "$candidate"
+          sha256sum "$candidate" | \
+            tee .ci/Saturn_PSRAM_Stress_33M87-rbf.sha256
+
+          {
+            echo '## Saturn PSRAM 33.8688 MHz RAMH_SLOW=1 result'
+            echo
+            echo '```text'
+            grep -hE 'Quartus Prime Full Compilation|Total logic elements|Total registers|Total block memory bits|Total pins|Slack|Timing requirements|PSRAM_33M87_CLK_EXT' \
+              output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.flow.rpt \
+              output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.fit.rpt \
+              output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.sta.rpt 2>/dev/null | tail -n 160 || true
+            echo
+            cat .ci/Saturn_PSRAM_Stress_33M87-rbf.sha256
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload RBF, build log, Fitter and TimeQuest reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Saturn_PSRAM_Stress_33M87_Build_Evidence-${{ github.run_number }}
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 30
+          path: |
+            .ci/Saturn_PSRAM_Stress_33M87-build.log
+            .ci/Saturn_PSRAM_Stress_33M87-paths.log
+            .ci/Saturn_PSRAM_Stress_33M87-timing-check.json
+            .ci/Saturn_PSRAM_Stress_33M87-rbf.sha256
+            .ci/Saturn_PSRAM_Stress_33M87_CDC_PIPE-*.rbf
+            output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.rbf
+            output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.flow.rpt
+            output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.map.rpt
+            output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.fit.rpt
+            output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.sta.rpt
+            output_files_stress_33m87/Saturn_PSRAM_Stress_33M87.asm.rpt
