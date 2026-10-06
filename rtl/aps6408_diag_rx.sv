@@ -104,15 +104,16 @@ module aps6408_diag_rx (
                     end else clock_word[15:8] <= reference_phase ? data_high[7:0] : data_low[7:0];
                 end
             end
-            if ((clock_event[0] && (edge_low == 8 || edge_low == 9)) ||
-                (clock_event[1] && (edge_high == 8 || edge_high == 9))) begin
+            // The receive history includes the final CA falling edge.
+            if ((clock_event[0] && (edge_low == 9 || edge_low == 10)) ||
+                (clock_event[1] && (edge_high == 9 || edge_high == 10))) begin
 `ifdef APS6408_DIAG_SIM
                 if ($test$plusargs("trace_rx")) $display("REF trigger t=%0t clock_event=%b edge_low=%d edge_high=%d speed=%d low=%h high=%h", $time, clock_event, edge_low, edge_high, active_speed, data_low, data_high);
 `endif
                 reference_pending <= 1;
                 reference_delay <= active_speed == 0 ? 2 : 0;
                 reference_phase <= clock_event[1];
-                reference_byte <= clock_event[1] ? edge_high == 9 : edge_low == 9;
+                reference_byte <= clock_event[1] ? edge_high == 10 : edge_low == 10;
             end
             if (!done) begin
                 if (byte_count == 1 && second_delay) second_delay <= 0;
