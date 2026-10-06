@@ -36,7 +36,21 @@
 在原来的外部下降沿前采样时刻，由无数据选择器的输入寄存器捕获 nibble；下一控制拍再移入 128-bit 缓冲。
 末尾 nibble 在 `P_HOLD` 阶段排空，命令、时钟边沿、guard 及事务完成条件保持原有协议。
 33M87 QSF 为四根 DQ 启用 FAST_INPUT_REGISTER，没有新增 false-path 或多周期例外。
-修复后的路径仍需 GitHub 完整构建验收。
+修复已由完整构建 `37404139456`（硬件源码 `ec16ba1`）验证，Fitter 确认四个 `dq_sample` 都通过 Fast Input Register assignment 打包进 I/O。
+
+| 检查 | 修复后最差余量 |
+|---|---:|
+| DQ 输入 setup / hold | +2.738 / +3.906 ns |
+| CE/DQ 输出 setup / hold | +6.253 / +2.680 ns |
+| PSRAM 引擎端点 setup / hold | +2.738 / +0.417 ns |
+| 全局 setup / hold | -0.565 / -0.356 ns |
+| recovery / removal / min pulse | +3.509 / +1.127 / +1.091 ns |
+
+PSRAM 输入、输出和引擎路径均无违例，但整机验收仍失败。
+最差 setup 是 `SH7604_BSC.MST_BUS_RLS -> ramh_din[15]`；最差 hold 是 `CART.MEM_A[9] -> ddram.cart_rcache_addr[9]`，VDP2 到 sdram1 地址路径也有 hold 违例。HDMI 时钟域 setup 仍为 -0.095 ns。
+因此没有生成命名为合格候选的副本；原始 RBF（4,619,632 bytes，SHA-256 `C7A7B63E917432BFE537C306D6777D2815606C64FC37C3A6412015A29F658DEC`）只用于诊断证据，不作为已签核真机版本。
+资源为 41,370/41,910 ALMs（99%），540/553 RAM blocks（98%）。
+最后的脚本补充 `ca24236` 拒绝不可解析的时钟 slack；GitHub 回归 `37405498920` 全部通过，HDL 与 `ec16ba1` 相同，没有重复完整编译。
 
 ## 验证流程
 
@@ -55,7 +69,7 @@ Quartus 固定为 `theypsilon/quartus-lite-c5:17.0.2`，本地只做文本与报
 
 ## 后续闭环
 
-1. 根据专用路径报告定位 PSRAM 控制域的负裕量，不用宽泛 false-path 掩盖数据路径。
+1. 继续处理 `clk_sys -> clk_ram` 的 SH2/RAMH 总线输入 setup、CART/VDP2 存储 hold 和 HDMI setup；审计真实捕获关系，不用宽泛 false-path 掩盖数据路径。PSRAM 引擎输入修复已完成，整机时序尚未收敛。
 2. 时序通过后，在正常的四线 PSRAM 板上冷启动三次，并与 28.64 MHz 生产版做同游戏 A/B。
 3. 连续运行至少 30 分钟，再测试 2～3 款不同游戏，记录加载、贴图、声音及死机异常。
 4. 33.87 MHz 完整通过前不继续升频，不覆盖生产 RBF。
