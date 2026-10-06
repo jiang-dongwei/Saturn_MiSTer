@@ -12,13 +12,13 @@ if {[get_collection_size $diagnostic_regs] == 0 || [get_collection_size $dq_regs
 puts "APS6408 REGISTERS: [get_collection_size $diagnostic_regs]"
 foreach check {setup hold} {
     puts "=== APS6408 REGISTER TO REGISTER $check ==="
-    report_timing -$check -from $diagnostic_regs -to $diagnostic_regs -npaths 20 -detail full_path
+    report_timing -$check -from $diagnostic_regs -to $diagnostic_regs -npaths 20 -detail full_path -file .ci/aps6408-internal-$check.rpt
     puts "=== APS6408 DQ INPUT REGISTER TO LOGIC $check ==="
-    report_timing -$check -from $dq_regs -to $diagnostic_regs -npaths 12 -detail full_path
+    report_timing -$check -from $dq_regs -to $diagnostic_regs -npaths 12 -detail full_path -file .ci/aps6408-dq-register-$check.rpt
     puts "=== APS6408 EXTERNAL INPUT $check ==="
-    report_timing -$check -from $external_inputs -to $diagnostic_regs -npaths 12 -detail full_path
+    report_timing -$check -from $external_inputs -to $diagnostic_regs -npaths 12 -detail full_path -file .ci/aps6408-external-$check.rpt
     puts "=== GLOBAL WORST $check ==="
-    report_timing -$check -npaths 8 -detail full_path
+    report_timing -$check -npaths 8 -detail full_path -file .ci/aps6408-global-$check.rpt
 }
 delete_timing_netlist
 project_close

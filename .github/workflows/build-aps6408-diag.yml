@@ -96,6 +96,7 @@ jobs:
           path: |
             .ci/aps6408-build.log
             .ci/aps6408-critical-paths.log
+            .ci/aps6408-*.rpt
             output_files_aps6408_diag/Saturn_APS6408_Diag.rbf
             output_files_aps6408_diag/Saturn_APS6408_Diag.flow.rpt
             output_files_aps6408_diag/Saturn_APS6408_Diag.fit.rpt
