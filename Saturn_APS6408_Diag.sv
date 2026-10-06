@@ -179,6 +179,7 @@ wire [15:0] sample_mid;
 wire [15:0] sample_late;
 wire [15:0] retry_read_data;
 wire retry_read_valid;
+wire read_capture_tap;
 wire [15:0] mr_pair0;
 wire [15:0] mr_pair1;
 wire [15:0] mr_pair2;
@@ -210,6 +211,7 @@ aps6408_diag_core diagnostic
     .sample_late(sample_late),
     .retry_read_data(retry_read_data),
     .retry_read_valid(retry_read_valid),
+    .read_capture_tap(read_capture_tap),
     .mr_pair0(mr_pair0),
     .mr_pair1(mr_pair1),
     .mr_pair2(mr_pair2),
@@ -244,6 +246,7 @@ aps6408_diag_video video
 	.read_sample_late(sample_late),
 	.retry_read_data(retry_read_data),
 	.retry_read_valid(retry_read_valid),
+	.read_capture_tap(read_capture_tap),
 	.ce_pixel(CE_PIXEL),
 	.red(VGA_R),
 	.green(VGA_G),

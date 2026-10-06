@@ -22,6 +22,7 @@ module aps6408_diag_video
 	input      [15:0] read_sample_late,
 	input      [15:0] retry_read_data,
 	input             retry_read_valid,
+	input             read_capture_tap,
 
 	output            ce_pixel,
 	output reg  [7:0] red,
@@ -74,6 +75,9 @@ localparam [383:0] TXT_HELP3 = {"E1 DQS E2 DATA E4 SAMPLE E5 MR MAP E6 EDGE", {6
 localparam [383:0] TXT_HELP4 = {"OSD SELECT CLOCK  LED7 FAIL LED6 PASS", {11{8'h20}}};
 localparam [383:0] TXT_E2_SAMPLES = {"EARLY:      MID:      LATE:    ", {17{8'h20}}};
 localparam [383:0] TXT_E2_EDGES = {"DQS EDGES:", {38{8'h20}}};
+localparam [383:0] TXT_RX_EARLY = {"RX TAP: EARLY", {35{8'h20}}};
+localparam [383:0] TXT_RX_MID = {"RX TAP: MID", {37{8'h20}}};
+localparam [383:0] TXT_RX_RAW = {"RX TAP: RAW", {37{8'h20}}};
 
 function [7:0] fixed_char;
 	input [383:0] text;
@@ -340,6 +344,8 @@ function [7:0] screen_char;
 				if ((column >= 7) && (column < 18))
 					value = mode_char(column - 7);
 			end
+			21: value = fixed_char(speed_index != 3'd2 ? TXT_RX_RAW :
+			                       read_capture_tap ? TXT_RX_MID : TXT_RX_EARLY, column);
 			23: begin
 				value = fixed_char((stage_code == 8'hE2 || stage_code == 8'hE6) ? TXT_E2_SAMPLES :
 				                   stage_code == 8'h58 ? TXT_HELP_DDIO : TXT_HELP1, column);

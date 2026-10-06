@@ -19,6 +19,7 @@ module aps6408_diag_core #(
     output reg [15:0] sample_late,
     output reg [15:0] retry_read_data,
     output reg retry_read_valid,
+    output reg read_capture_tap,
     output reg [15:0] mr_pair0,
     output reg [15:0] mr_pair1,
     output reg [15:0] mr_pair2,
@@ -54,6 +55,8 @@ module aps6408_diag_core #(
     reg dq_oe;
     reg dm_oe;
     reg [15:0] read_word;
+    reg [15:0] mr0_early;
+    reg [15:0] mr0_mid;
     reg dqs_sample;
     reg dqs_history;
     reg dqs_prev;
@@ -71,6 +74,16 @@ module aps6408_diag_core #(
     assign PSRAM_DQ = dq_oe ? dq_out : 8'hzz;
     assign PSRAM_DQS = dm_oe ? 1'b0 : 1'bz; // DM=0 enables both write bytes
     assign activity = (state != S_PASS) && (state != S_FAIL);
+
+    function valid_training_pair;
+        input [15:0] first_pair;
+        input [15:0] second_pair;
+        begin
+            valid_training_pair = (first_pair[7:0] == second_pair[15:8]) &&
+                ((second_pair[15:8] & 8'h1F) == 8'h0D) &&
+                ((second_pair[7:0] & 8'h1F) == 8'h13);
+        end
+    endfunction
 
     function [23:0] address_for;
         input [7:0] index;
@@ -146,6 +159,9 @@ module aps6408_diag_core #(
             PSRAM_CLK <= 0;
             PSRAM_CE_N <= 1;
             read_word <= 0;
+            mr0_early <= 0;
+            mr0_mid <= 0;
+            read_capture_tap <= 1'b1;
             sample_delay <= 0;
             sample_pending <= 0;
             dqs_edge_word <= 0;
@@ -383,14 +399,14 @@ module aps6408_diag_core #(
                                     sample_mid[15:8] <= dq_prev;
                                     sample_late[15:8] <= PSRAM_DQ;
                                 end
-                                read_word[15:8] <= dq_prev;
+                                read_word[15:8] <= read_capture_tap ? dq_prev : dq_prev2;
                             end else begin
                                 if (!retry_slow) begin
                                     sample_early[7:0] <= dq_prev2;
                                     sample_mid[7:0] <= dq_prev;
                                     sample_late[7:0] <= PSRAM_DQ;
                                 end
-                                read_word[7:0] <= dq_prev;
+                                read_word[7:0] <= read_capture_tap ? dq_prev : dq_prev2;
                             end
                         end
                         if (data_index == 0) dqs_edge_word[15:8] <= {1'b0, timeout_edges};
@@ -425,6 +441,8 @@ module aps6408_diag_core #(
                     end else if (id_phase) begin
                         if (id_slot == 0) begin
                             mr_pair0 <= read_word;
+                            mr0_early <= sample_early;
+                            mr0_mid <= sample_mid;
                             id_slot <= 1;
                             state <= S_START;
                         end else if (id_slot == 1) begin
@@ -438,7 +456,22 @@ module aps6408_diag_core #(
                             // only for 8.47 MHz. At faster settings, DQS is
                             // the read timing reference; the memory tests
                             // still check every returned data word.
-                            if (((read_word[15:8] & 8'h1F) != 8'h0D) ||
+                            if (speed_select == 2'd2 && valid_training_pair(mr0_mid, sample_mid)) begin
+                                read_capture_tap <= 1'b1;
+                                mr_pair0 <= mr0_mid;
+                                mr_pair1 <= sample_mid;
+                                id_word <= sample_mid;
+                                id_phase <= 0;
+                                state <= S_START;
+                            end else if (speed_select == 2'd2 && valid_training_pair(mr0_early, sample_early)) begin
+                                read_capture_tap <= 1'b0;
+                                mr_pair0 <= mr0_early;
+                                mr_pair1 <= sample_early;
+                                id_word <= sample_early;
+                                id_phase <= 0;
+                                state <= S_START;
+                            end else if ((speed_select == 2'd2) ||
+                                ((read_word[15:8] & 8'h1F) != 8'h0D) ||
                                 ((read_word[7:0] & 8'h1F) != 8'h13) ||
                                 ((speed_select == 2'd0) && (read_word != clk_read_word))) begin
                                 stage_code <= 8'hE6;
