@@ -53,6 +53,7 @@ module aps6408_diag_core #(
     reg id_phase;
     reg reference_phase;
     reg [15:0] reference_mr0, reference_mr1, clk_previous_pair;
+    reg [1:0] reference_tap_first, reference_tap_second;
     reg [1:0] id_slot;
     reg read_phase;
     reg retry_slow;
@@ -170,7 +171,7 @@ module aps6408_diag_core #(
     generate for (first_index=0; first_index<4; first_index=first_index+1) begin : first_training
         for (second_index=0; second_index<4; second_index=second_index+1) begin : second_training
             wire [1:0] first_tap = first_tap_order(first_index);
-            wire [1:0] second_tap = second_tap_order(second_index, speed_select == 2);
+            wire [1:0] second_tap = second_tap_order(second_index, active_speed == 2);
             wire [15:0] previous_first = tap_word(first_tap, mr0_early, mr0_mid, mr0_late, mr0_quarter);
             wire [15:0] previous_second = tap_word(second_tap, mr0_early, mr0_mid, mr0_late, mr0_quarter);
             wire [15:0] current_first = tap_word(first_tap, sample_early, sample_mid, sample_late, sample_quarter);
@@ -192,15 +193,15 @@ module aps6408_diag_core #(
     end
     wire training_valid = |valid_tap_pairs;
     wire [1:0] trained_tap = first_tap_order(trained_pair[3:2]);
-    wire [1:0] trained_tap_second = second_tap_order(trained_pair[1:0], speed_select == 2);
+    wire [1:0] trained_tap_second = second_tap_order(trained_pair[1:0], active_speed == 2);
     wire [15:0] trained_previous_hi = tap_word(trained_tap, mr0_early, mr0_mid, mr0_late, mr0_quarter);
     wire [15:0] trained_previous_lo = tap_word(trained_tap_second, mr0_early, mr0_mid, mr0_late, mr0_quarter);
     wire [15:0] trained_current_hi = tap_word(trained_tap, sample_early, sample_mid, sample_late, sample_quarter);
     wire [15:0] trained_current_lo = tap_word(trained_tap_second, sample_early, sample_mid, sample_late, sample_quarter);
     wire [15:0] trained_first = {trained_previous_hi[15:8], trained_previous_lo[7:0]};
     wire [15:0] trained_second = {trained_current_hi[15:8], trained_current_lo[7:0]};
-    wire [15:0] receive_hi = tap_word(retry_slow ? 2'd1 : read_capture_tap, rx_early_hold, rx_mid_hold, rx_late_hold, rx_quarter_hold);
-    wire [15:0] receive_lo = tap_word(retry_slow ? 2'd2 : read_capture_tap_second, rx_early_hold, rx_mid_hold, rx_late_hold, rx_quarter_hold);
+    wire [15:0] receive_hi = tap_word(retry_slow ? reference_tap_first : read_capture_tap, rx_early_hold, rx_mid_hold, rx_late_hold, rx_quarter_hold);
+    wire [15:0] receive_lo = tap_word(retry_slow ? reference_tap_second : read_capture_tap_second, rx_early_hold, rx_mid_hold, rx_late_hold, rx_quarter_hold);
 
     aps6408_diag_rx rx (
         .clk(clk_phy), .reset(reset), .arm(rx_arm), .speed(active_speed),
@@ -245,6 +246,8 @@ module aps6408_diag_core #(
             reference_phase <= 1;
             reference_mr0 <= 0;
             reference_mr1 <= 0;
+            reference_tap_first <= 1;
+            reference_tap_second <= 2;
             clk_previous_pair <= 0;
             id_slot <= 0;
             read_phase <= 0;
@@ -487,6 +490,8 @@ module aps6408_diag_core #(
                                 if (reference_phase) begin
                                     reference_mr0 <= clk_previous_pair;
                                     reference_mr1 <= clk_read_word;
+                                    reference_tap_first <= trained_tap;
+                                    reference_tap_second <= trained_tap_second;
                                     reference_phase <= 0;
                                 end
                                 if (reference_phase && speed_select != 0) id_slot <= 0;
