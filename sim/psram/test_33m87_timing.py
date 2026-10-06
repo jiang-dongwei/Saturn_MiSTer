@@ -42,11 +42,19 @@ class TimingGateTests(unittest.TestCase):
     def test_incomplete_or_invalid_reports_are_rejected(self):
         for report in ("", REPORT.split("; Hold Summary ;")[0],
                        REPORT.replace("; 0.353 ;", "; NaN ;"),
+                       REPORT.replace("; 0.353 ; 0.000 ;", "; 0.353 ; NaN ;"),
                        REPORT.replace("33.87 MHz", "67.74 MHz"),
                        REPORT.replace("67.74 MHz", "33.87 MHz"),
                        REPORT.replace("PSRAM_33M87_CLK_EXT", "Missing_clock")):
             with self.subTest(report=report):
                 self.assertFalse(check_report(report)["passed"])
+
+    def test_rounded_negative_slack_and_tns_are_rejected(self):
+        self.assertTrue(check_report(REPORT.replace("; 0.353 ;", "; 0.000 ;"))["passed"])
+        for row in ("; -0.000 ; 0.000 ;", "; 0.000 ; -0.001 ;",
+                    "; 0.000 ; -0.000 ;"):
+            with self.subTest(row=row):
+                self.assertFalse(check_report(REPORT.replace("; 0.353 ; 0.000 ;", row))["passed"])
 
     def test_missing_dq_delays_or_ignored_constraints_are_rejected(self):
         for warning in (

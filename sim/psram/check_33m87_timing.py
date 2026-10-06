@@ -29,12 +29,18 @@ def check_report(report):
                 slack = float(columns[1])
             except ValueError:
                 continue
-            if not math.isfinite(slack):
-                errors.append(f"Invalid slack in {name}: {columns[1]}")
+            try:
+                tns = float(columns[2])
+            except (ValueError, IndexError):
+                errors.append(f"Missing or invalid end point TNS in {name}: {columns[0]}")
+                continue
+            if not math.isfinite(slack) or not math.isfinite(tns):
+                errors.append(f"Invalid slack/TNS in {name}: {columns[0]}")
                 continue
             rows.append((columns[0], slack))
-            if slack < 0:
-                violations.append({"check": name, "clock": columns[0], "slack_ns": slack})
+            if slack < 0 or columns[1].startswith("-") or tns < 0 or columns[2].startswith("-"):
+                violations.append({"check": name, "clock": columns[0], "slack_ns": slack,
+                                   "end_point_tns_ns": tns})
         if not rows:
             errors.append(f"Missing numeric {name}")
             continue
