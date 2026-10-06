@@ -46,6 +46,8 @@ jobs:
         with:
           name: QPI_33M87_Regression-${{ github.run_number }}
           path: .ci/*log
+          include-hidden-files: true
+          if-no-files-found: error
 
   quartus:
     name: GitHub-only Quartus 17.0.2 build
@@ -115,6 +117,7 @@ jobs:
         with:
           name: Saturn_PSRAM_33M87_Build_Evidence-${{ github.run_number }}
           if-no-files-found: warn
+          include-hidden-files: true
           retention-days: 30
           path: |
             .ci/Saturn_PSRAM_33M87-build.log
