@@ -1,6 +1,9 @@
 `timescale 1ns/1ps
 module tb_ramh_aps6408;
     reg clk=0, clk_phy=0, clk_sample=0, src_clk=0;
+    reg clk_fast=0;
+    initial begin #1.84525;clk_fast=1;forever #4.920666667 clk_fast=~clk_fast;end
+    wire engine_clk=speed_select==3 ? clk_fast : clk;
     reg [1:0] phase=0;
     real src_half=4.365;
     always #1.84525 clk_sample=~clk_sample;
@@ -29,7 +32,7 @@ module tb_ramh_aps6408;
     assign dq=mem_oe ? mem_dq : 8'hzz;
     assign dqs=mem_oe ? mem_dqs : 1'bz;
     ramh_aps6408_adapter #(.POWERUP_CYCLES(8),.RESET_RECOVERY_CYCLES(8)) dut (
-        .clk(src_clk),.reset(reset),.engine_clk(clk),.engine_reset(reset),.clk_phy(clk_phy),
+        .clk(src_clk),.reset(reset),.engine_clk(engine_clk),.engine_reset(reset),.clk_phy(clk_phy),
         .speed_select(speed_select),
         .addr(addr),.din(din),.wr(wr),.rd(rd),.burst(1'b1),.rfs(1'b0),
         .dout(dout),.busy(busy),.init_done(init_done),.init_error(init_error),
@@ -68,8 +71,10 @@ module tb_ramh_aps6408;
         if (dut.engine.dm_oe && $realtime-dm_time<3.0) $fatal(1,"DM setup violation");
         edge_number=edge_number+1;
         if (edge_number>0) begin
-            expected_half=transaction_speed==0 ? 59.048 : transaction_speed==1 ? 29.524 : 14.762;
+            expected_half=transaction_speed==0 ? 59.048 : transaction_speed==1 ? 29.524 : transaction_speed==3 ? 9.841333334 : 14.762;
+            if (speed_select==3 && transaction_speed==0) expected_half=59.048;
             if (edge_number==6 && transaction_speed==2 && instruction!=8'hFF) expected_half=29.524;
+            if (edge_number==6 && transaction_speed==3 && instruction!=8'hFF) expected_half=19.682666668;
             if ($realtime-edge_time<expected_half-0.01 || $realtime-edge_time>expected_half+0.01)
                 $fatal(1,"unexpected clock width");
         end
@@ -161,6 +166,7 @@ module tb_ramh_aps6408;
         if ($test$plusargs("src_slow")) src_half=7.1;
         if ($test$plusargs("speed8")) speed_select=0;
         if ($test$plusargs("speed16")) speed_select=1;
+        if ($test$plusargs("speed50")) speed_select=3;
         if ($test$plusargs("refresh")) refresh_extra=10;
         drop_config=$test$plusargs("drop_config");
         if ($value$plusargs("dq_delay=%f",dq_delay)) begin end

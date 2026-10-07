@@ -1,6 +1,6 @@
 module ramh_aps6408_adapter #(
     parameter integer POWERUP_CYCLES = 135476,
-    parameter integer RESET_RECOVERY_CYCLES = 136
+    parameter integer RESET_RECOVERY_CYCLES = 204
 ) (
     input clk, reset,
     input engine_clk, engine_reset, clk_phy,
@@ -165,6 +165,7 @@ module ramh_aps6408_adapter #(
     ) engine (
         .clk(engine_clk), .clk_phy(clk_phy), .reset(engine_reset),
         .speed_select(speed_select), .test_mode(2'd0), .d1_mode(2'd0), .drive_half(1'b1),
+        .control_fast(speed_select==3),
         .request_valid(runtime_valid), .request_ready(runtime_ready),
         .request_write(source_write), .request_address(half_address),
         .request_write_data(half_data), .request_write_mask(half_mask),

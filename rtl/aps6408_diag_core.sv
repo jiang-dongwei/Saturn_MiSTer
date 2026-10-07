@@ -13,6 +13,7 @@ module aps6408_diag_core #(
     input [1:0] test_mode,
     input [1:0] d1_mode,
     input drive_half,
+    input control_fast,
     input request_valid,
     input request_write,
     input [23:0] request_address,
@@ -161,7 +162,9 @@ module aps6408_diag_core #(
     wire [1:0] active_speed = drive_config_phase || retry_slow || (id_phase && reference_phase) ? 2'd0 :
                               id_phase || read_phase ? read_speed : write_speed;
     wire use_reference_taps = retry_slow || (!id_phase && read_phase && read_speed == 0);
-    wire [2:0] half_period = active_speed == 0 ? 3'd4 : active_speed == 1 ? 3'd2 : 3'd1;
+    wire fast_control = RUNTIME_API != 0 && control_fast;
+    wire [2:0] half_period = active_speed == 0 ? (fast_control ? 3'd6 : 3'd4) :
+                             active_speed == 1 ? (fast_control ? 3'd3 : 3'd2) : 3'd1;
     wire tick = (div_count == half_period-1'b1);
     wire rx_arm = (state == S_TURN || state == S_READ);
     function [15:0] tap_word;
@@ -191,9 +194,9 @@ module aps6408_diag_core #(
         input [1:0] index;
         begin
             case (index)
-                0: second_tap_order = 2;
-                1: second_tap_order = 3;
-                2: second_tap_order = 1;
+                0: second_tap_order = fast_control ? 3 : 2;
+                1: second_tap_order = fast_control ? 1 : 3;
+                2: second_tap_order = fast_control ? 2 : 1;
                 default: second_tap_order = 0;
             endcase
         end

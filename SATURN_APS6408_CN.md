@@ -3,8 +3,12 @@
 独立 revision `Saturn_APS6408` 运行 Saturn 主机逻辑；第一片 SDRAM及其他存储后端
 沿用现有单 SDRAM版本，只将1MiB High Work RAM接到八线APS6408。
 保持 `RAMH_SLOW=1`，PSRAM默认33.8688MHz、50Ω内部驱动、Fixed接收模式。
-OSD增加 `PSRAM clock`，可选33.87、16.93、8.47MHz；切换时复位Saturn并
+OSD增加 `PSRAM clock`，可选33.87、16.93、8.47MHz及实验档50.80MHz；切换时复位Saturn并
 重新核对寄存器、训练采样档位。频率选项不改变Saturn处理器和音视频时钟。
+实验档将控制域切换到101.6064MHz，PSRAM为50.8032MHz；低速MR参考仍保持
+8.4672MHz，接收DDIO时钟仍为135.4752MHz。使用专用ALTCLKCTRL无毛刺切换，
+独立运行时PLL保留原诊断PLL。实验档D1优先匹配完整MR参考的CENTER档位；
+不使用内存预期值选档。50MHz未经板测和时序验证前不能称为已支持的稳定速度。
 板上串联电阻保持0Ω；八线引脚沿用已实测的MiSTER Pi扩展口映射。
 
 启动时独立8MHz读取完整MR参考，写MR0=08并读回验证，然后训练33MHz。

@@ -316,10 +316,10 @@ module emu
 		"S1,SAV,Mount Backup RAM;",
 		"D0R[25],Save Backup RAM;",
 `endif
-		"D0O[26],Autosave,Off,On;", 
+		"D0O[26],Autosave,Off,On;",
 		"-;",
 `ifdef SATURN_APS6408
-		"O[83:82],PSRAM clock,33.87 MHz,16.93 MHz,8.47 MHz;",
+		"O[83:82],PSRAM clock,33.87 MHz,16.93 MHz,8.47 MHz,50.80 MHz EXP;",
 		"-;",
 `endif
 
@@ -1686,13 +1686,14 @@ module emu
 
 `ifdef SATURN_APS6408
 	wire psram_engine_clk, psram_phy_clk, psram_pll_locked;
+	wire psram_control_clk, psram_fast_clk;
 	wire psram_clk_33_unused;
 	reg [2:0] psram_reset_pipe = 3'b111;
 	(* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
 	reg [1:0] psram_mode_meta = 0, psram_mode_sync = 0;
 	reg [1:0] psram_clock_mode = 0;
 	reg psram_mode_restart = 0;
-	always @(posedge psram_engine_clk) begin
+	always @(posedge CLK_50M) begin
 		psram_mode_meta <= status[83:82];
 		psram_mode_sync <= psram_mode_meta;
 		psram_mode_restart <= 0;
@@ -1701,10 +1702,17 @@ module emu
 			psram_mode_restart <= 1;
 		end
 	end
-	wire [1:0] psram_selected_speed = psram_clock_mode == 2 ? 2'd0 : psram_clock_mode == 1 ? 2'd1 : 2'd2;
-	aps6408_diag_pll psram_speed_pll (
+	wire [1:0] psram_selected_speed = psram_clock_mode == 2 ? 2'd0 : psram_clock_mode == 1 ? 2'd1 : psram_clock_mode == 3 ? 2'd3 : 2'd2;
+	aps6408_runtime_pll psram_speed_pll (
 		.refclk(CLK_50M), .rst(1'b0), .outclk_0(psram_clk_33_unused),
-		.outclk_1(psram_engine_clk), .outclk_2(psram_phy_clk), .locked(psram_pll_locked)
+		.outclk_1(psram_control_clk), .outclk_2(psram_phy_clk), .outclk_3(psram_fast_clk), .locked(psram_pll_locked)
+	);
+	altclkctrl #(
+		.clock_type("Global Clock"), .intended_device_family("Cyclone V"),
+		.number_of_clocks(4), .use_glitch_free_switch_over_implementation("ON")
+	) psram_clock_control (
+		.inclk({2'b00,psram_fast_clk,psram_control_clk}),
+		.clkselect({1'b0,psram_clock_mode==3}), .ena(1'b1), .outclk(psram_engine_clk)
 	);
 	wire psram_reset_request = reset || rst_ram || !psram_pll_locked || psram_mode_restart || psram_clock_mode != psram_mode_sync;
 	always @(posedge psram_engine_clk) begin
