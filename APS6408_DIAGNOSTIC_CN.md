@@ -334,3 +334,27 @@ Quartus固定17.0.2、全部HDL仿真仅GitHub Runner；40项仿真通过、27 D
 待COM13接回后恢复shell、检查并清理本次专用传输残留、重新上传核验，再运行九次交叉矩阵。
 4图样×256分散地址；尚无完整8MiB、冷启动、Saturn/RAMH游戏或PVT验收。
 ```
+
+## 2026-10-07 串口上传容错及控制台重试
+
+2026-10-07 开发补记（未重新编译 FPGA）：
+新增 scripts/aps6408_serial_upload.py，默认COM13/115200 8N1。
+接收使用180秒超时并恢复原终端属性；恢复后只接收本次release token，防止迟到的二进制字节进入命令执行。
+每次传输使用独立临时文件，核对解压长度/SHA256后才改成最终文件名；拒绝覆盖现有目标及使用Saturn生产文件名。
+登录失败或串口断开时关闭端口；日志保留本次临时路径和接收release token。
+7项主机故障测试通过：命令回显、错误板端/已有目标、接收超时、完整性失败、串口断开、成功校验顺序、生产文件保护。
+这些是Python主机测试，不是新的HDL仿真或板端验收，FPGA位流仍为3125dc8。
+硬件重试：COM13的CH9101已重新枚举。普通连接超时；补满已知700315字节接收预算的空白恢复仍没有字符。
+用户确认重新上电后，再连接并监听25秒收到0字节，无启动/login/root输出。当前不能加载新版、无交叉板测结果。
+等待确认Linux控制台的COM口及TX/RX/GND连接。DQ7根因未确认。
+
+上传脚本需要 Python 3 和 pyserial，密码可通过 `APS6408_SERIAL_PASSWORD` 环境变量或 `--password` 提供。
+
+```powershell
+python scripts/aps6408_serial_upload.py <本地RBF路径> /media/fat/_Console/APS6408_CROSS_3125dc8.rbf --port COM13 --log <日志路径>
+python scripts/test_aps6408_serial_upload.py
+```
+
+断线后等接收超时，再使用日志中的 `Receiver release token`：给同一次重试增加 `--release-receiver <token>`。
+此选项只适用于本脚本的接收握手；旧上传程序没有这个握手，不能套用。失败临时文件留作证据；确认属本次传输后才清理。
+当前尚未在板端验证新脚本的超时/恢复行为。未改动PSRAM时钟、接收档位或原生产RBF。
