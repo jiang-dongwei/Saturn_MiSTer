@@ -358,3 +358,7 @@ python scripts/test_aps6408_serial_upload.py
 断线后等接收超时，再使用日志中的 `Receiver release token`：给同一次重试增加 `--release-receiver <token>`。
 此选项只适用于本脚本的接收握手；旧上传程序没有这个握手，不能套用。失败临时文件留作证据；确认属本次传输后才清理。
 当前尚未在板端验证新脚本的超时/恢复行为。未改动PSRAM时钟、接收档位或原生产RBF。
+
+## 2026-10-07 完整启动日志与系统异常
+
+2026-10-07完整启动复测：用户断电上电后确认菜单出现。COM13连续180秒保存181428字节；zImage_dtb读取7361361字节并Starting kernel，MiSTer识别MENU。Linux启动中缺/dev/pts、/dev/shm目录，sync、sleep、mkdir、cat等命令反复Segmentation fault。随后25秒登录探测保存171772字节、2934次Segmentation fault；收到login/Password并发送授权凭据，未得到root Shell。现阶段证实系统命令异常，尚不能确认SD文件损坏、版本兼容或运行内存异常；与APS DQ7错误分开调查。新版3125dc8未上传/加载，九次交叉测试未执行；等待板子IP以尝试网络登录，或断电后SD接读卡器做只读校验。COM13已关闭释放。
