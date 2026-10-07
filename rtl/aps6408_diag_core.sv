@@ -11,6 +11,7 @@ module aps6408_diag_core #(
     input [1:0] speed_select,
     input [1:0] test_mode,
     input [1:0] d1_mode,
+    input drive_half,
     output reg [1:0] result_code,
     output reg [7:0] stage_code,
     output reg [23:0] failure_address,
@@ -56,6 +57,10 @@ module aps6408_diag_core #(
     reg [1:0] pattern_pass;
     reg id_phase;
     reg reference_phase;
+    reg drive_config_pending;
+    reg drive_config_phase;
+    reg drive_verify;
+    reg [7:0] drive_target;
     reg [15:0] clk_previous_pair;
     reg [1:0] reference_tap_first, reference_tap_second;
     reg [1:0] id_slot;
@@ -129,11 +134,11 @@ module aps6408_diag_core #(
         end
     endfunction
 
-    wire [23:0] address = id_phase ? {22'd0,id_slot} : address_for(cell_index);
+    wire [23:0] address = drive_config_phase ? 24'd0 : id_phase ? {22'd0,id_slot} : address_for(cell_index);
     wire [15:0] pattern = pattern_for(cell_index, pattern_pass);
     wire [1:0] write_speed = test_mode == 1 ? 2'd0 : speed_select;
     wire [1:0] read_speed = test_mode == 2 ? 2'd0 : speed_select;
-    wire [1:0] active_speed = retry_slow || (id_phase && reference_phase) ? 2'd0 :
+    wire [1:0] active_speed = drive_config_phase || retry_slow || (id_phase && reference_phase) ? 2'd0 :
                               id_phase || read_phase ? read_speed : write_speed;
     wire use_reference_taps = retry_slow || (!id_phase && read_phase && read_speed == 0);
     wire [2:0] half_period = active_speed == 0 ? 3'd4 : active_speed == 1 ? 3'd2 : 3'd1;
@@ -252,6 +257,10 @@ module aps6408_diag_core #(
             pattern_pass <= 0;
             id_phase <= 1;
             reference_phase <= 1;
+            drive_config_pending <= 1;
+            drive_config_phase <= 0;
+            drive_verify <= 0;
+            drive_target <= 0;
             reference_mr0 <= 0;
             reference_mr1 <= 0;
             reference_tap_first <= 1;
@@ -348,7 +357,7 @@ module aps6408_diag_core #(
                     PSRAM_CLK <= 0;
                     psram_clock_monitor <= 0;
                     tx_oe <= 1;
-                    tx_data <= id_phase ? 8'h40 : (read_phase ? 8'h20 : 8'hA0);
+                    tx_data <= drive_config_phase ? 8'hC0 : id_phase ? 8'h40 : (read_phase ? 8'h20 : 8'hA0);
                     tx_dm_oe <= 0;
                     div_count <= 0;
                     edge_index <= 0;
@@ -364,7 +373,7 @@ module aps6408_diag_core #(
                         sample_late <= 0;
                         retry_read_valid <= 0;
                     end
-                    stage_code <= id_phase ? 8'h08 : (read_phase ? 8'h20 : 8'h10);
+                    stage_code <= drive_config_phase ? 8'h03 : id_phase ? 8'h08 : (read_phase ? 8'h20 : 8'h10);
                     state <= S_CMD;
                 end
 
@@ -379,7 +388,11 @@ module aps6408_diag_core #(
                         4: tx_data <= address[7:0];
                     endcase
                     if (edge_index == 5) begin
-                        state <= S_TURN;
+                        if (drive_config_phase) begin
+                            // MR writes capture one byte at the next rising edge (LC=1).
+                            tx_data <= drive_target;
+                            state <= S_WRITE;
+                        end else state <= S_TURN;
                         edge_index <= 0;
                     end
                 end
@@ -410,7 +423,7 @@ module aps6408_diag_core #(
                     psram_clock_monitor <= ~PSRAM_CLK;
                     if (data_index == 0) begin
                         data_index <= 1;
-                        tx_data <= pattern[7:0];
+                        if (!drive_config_phase) tx_data <= pattern[7:0];
                     end else begin
                         state <= S_END;
                     end
@@ -462,7 +475,10 @@ module aps6408_diag_core #(
                 end
 
                 S_ADVANCE: begin
-                    if (retry_slow) begin
+                    if (drive_config_phase) begin
+                        drive_config_phase <= 0;
+                        state <= S_START;
+                    end else if (retry_slow) begin
                         retry_read_data <= read_word;
                         retry_read_valid <= 1;
                         retry_slow <= 0;
@@ -495,16 +511,31 @@ module aps6408_diag_core #(
                                 mr_pair0 <= trained_first;
                                 mr_pair1 <= trained_second;
                                 id_word <= trained_second;
-                                if (reference_phase) begin
-                                    reference_mr0 <= clk_previous_pair;
-                                    reference_mr1 <= clk_read_word;
-                                    reference_tap_first <= trained_tap;
-                                    reference_tap_second <= trained_tap_second;
-                                    reference_phase <= 0;
+                                if (reference_phase && drive_config_pending) begin
+                                    drive_target <= (clk_previous_pair[15:8] & 8'h3C) | (drive_half ? 8'h00 : 8'h01);
+                                    drive_config_pending <= 0;
+                                    drive_config_phase <= 1;
+                                    drive_verify <= 1;
+                                    id_slot <= 0;
+                                    state <= S_START;
+                                end else if (reference_phase && drive_verify && trained_first[15:8] != drive_target) begin
+                                    expected_data <= {drive_target, trained_first[7:0]};
+                                    actual_data <= trained_first;
+                                    stage_code <= 8'hE7;
+                                    state <= S_FAIL;
+                                end else begin
+                                    if (reference_phase) begin
+                                        reference_mr0 <= clk_previous_pair;
+                                        reference_mr1 <= clk_read_word;
+                                        reference_tap_first <= trained_tap;
+                                        reference_tap_second <= trained_tap_second;
+                                        reference_phase <= 0;
+                                        drive_verify <= 0;
+                                    end
+                                    if (reference_phase && read_speed != 0) id_slot <= 0;
+                                    else id_phase <= 0;
+                                    state <= S_START;
                                 end
-                                if (reference_phase && read_speed != 0) id_slot <= 0;
-                                else id_phase <= 0;
-                                state <= S_START;
                             end else begin
                                 stage_code <= 8'hE6;
                                 failure_address <= 24'h000001;

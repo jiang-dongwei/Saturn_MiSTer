@@ -14,6 +14,7 @@ module aps6408_diag_video
 	input       [2:0] speed_index,
 	input       [1:0] mode,
     input       [1:0] d1_mode,
+    input             drive_half,
     input      [15:0] mr_pair0, mr_pair1,
     input      [15:0] reference_mr0, reference_mr1,
 	input      [23:0] matrix_a,
@@ -267,7 +268,8 @@ function [7:0] screen_char;
                 if (column >= 5 && column < 9) value = hex_char(mr_pair0[15-((column-5)*4) -: 4]);
                 if (column >= 16 && column < 20) value = hex_char(mr_pair1[15-((column-16)*4) -: 4]);
             end
-			10: value = fixed_char(TXT_KGD, column);
+            10: value = fixed_char(drive_half ? {"PSRAM DRIVE: 50 OHM", {29{8'h20}}} :
+                                              {"PSRAM DRIVE: 100 OHM", {28{8'h20}}}, column);
             11: begin
                 value = fixed_char({"REF0:       REF1:", {31{8'h20}}}, column);
                 if (column >= 6 && column < 10) value = hex_char(reference_mr0[15-((column-6)*4) -: 4]);

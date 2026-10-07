@@ -94,6 +94,7 @@ parameter CONF_STR = {
     "O34,PSRAM clock,8.47 MHz,16.93 MHz,33.87 MHz;",
     "O78,Test mode,Same speed,8 MHz write,8 MHz read;",
     "O9A,D1 timing,Fixed,Earlier 3.69 ns,Later 3.69 ns,DQS falling;",
+    "OB,PSRAM drive,Default 100 ohm,Half 50 ohm;",
     "T6,Restart test;",
     "R0,Reset;",
     "-;",
@@ -139,28 +140,30 @@ aps6408_diag_pll pll
 );
 
 (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
-reg [10:0] status_meta = 11'd0;
+reg [11:0] status_meta = 12'd0;
 (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
-reg [10:0] status_sync = 11'd0;
+reg [11:0] status_sync = 12'd0;
 reg [1:0] selected_speed = 2'd0;
 reg [1:0] selected_test_mode = 2'd0;
 reg [1:0] selected_d1_mode = 2'd0;
+reg selected_drive_half = 1'b0;
 reg       mode_restart = 1'b0;
 always @(posedge clk_67) begin
-	status_meta <= status[10:0];
+	status_meta <= status[11:0];
 	status_sync <= status_meta;
 	mode_restart <= 1'b0;
-	if (selected_speed != status_sync[4:3] || selected_test_mode != status_sync[8:7] || selected_d1_mode != status_sync[10:9]) begin
+	if (selected_speed != status_sync[4:3] || selected_test_mode != status_sync[8:7] || selected_d1_mode != status_sync[10:9] || selected_drive_half != status_sync[11]) begin
 		selected_speed <= status_sync[4:3];
 		selected_test_mode <= status_sync[8:7];
 		selected_d1_mode <= status_sync[10:9];
+        selected_drive_half <= status_sync[11];
 		mode_restart <= 1'b1;
 	end
 end
 
 wire diagnostic_reset_request = RESET | buttons[1] | status_sync[0] |
 	                              status_sync[6] | mode_restart |
-	                              (selected_speed != status_sync[4:3] || selected_test_mode != status_sync[8:7] || selected_d1_mode != status_sync[10:9]) | !pll_locked;
+	                              (selected_speed != status_sync[4:3] || selected_test_mode != status_sync[8:7] || selected_d1_mode != status_sync[10:9] || selected_drive_half != status_sync[11]) | !pll_locked;
 
 // Synchronous assertion stretching and release keep the diagnostic free of
 // the asynchronous recovery violation seen in Stage 53.
@@ -212,6 +215,7 @@ aps6408_diag_core diagnostic
     .speed_select(selected_speed),
     .test_mode(selected_test_mode),
     .d1_mode(selected_d1_mode),
+    .drive_half(selected_drive_half),
     .result_code(result_code),
     .stage_code(stage_code),
     .failure_address(failure_address),
@@ -253,6 +257,7 @@ aps6408_diag_video video
 	.speed_index(speed_index),
 	.mode(selected_test_mode),
     .d1_mode(selected_d1_mode),
+    .drive_half(selected_drive_half),
     .mr_pair0(mr_pair0), .mr_pair1(mr_pair1),
     .reference_mr0(reference_mr0), .reference_mr1(reference_mr1),
 	.matrix_a(matrix_a),
