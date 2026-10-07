@@ -311,3 +311,26 @@ vvp /tmp/aps6408_diag.vvp +early_dqs
 ```
 
 仿真中的存储器是针对命令、地址、默认写延迟、DQS 和数据返回的功能模型；它不能代替器件电气时序或 FPGA 实物测试。
+
+## 2026-10-07 交叉速度版本 3125dc8（待板测）
+
+```text
+APS6408 交叉速度版本 3125dc8，2026-10-07 更新
+Runner https://github.com/jiang-dongwei/Saturn_MiSTer/actions/runs/37445940689 编译成功。
+Quartus固定17.0.2、全部HDL仿真仅GitHub Runner；40项仿真通过、27 DDIO输入寄存器。
+本地RBF 2487612 bytes，SHA256 42efd17a4a7052f0e4e926a0160dff9b5849ac3eb1162ddd44a10cb30aa1afe8。
+内部四工况 setup/hold 1.065/0.15 ns，内部检查通过。
+全局 setup/hold -36.177/-8.228 ns，外部接口/PVT尚未通过。
+新增同速、8MHz写/目标速读、目标速写/8MHz读；OSD status[8:7]选择0/1/2。
+训练按读取速度选择：先8MHz完整CLK/MR参考，读速非零时再做目标速MR训练。
+失败复读改为独立校准的8MHz，屏幕R8字段；首次FAIL保留。内存预期值不参与挑样。
+新增16个定向故障场景，确认高速读错在8MHz复读恢复，已写入错误仍被检出。
+
+板测：未完成、未加载新版。串口上传在80%后ClearCommError/拒绝访问，随后COM13消失。
+设备清单确认COM13为CH9101 VID1A86/PID55D8；当前COM11是另一台CH343，不可替代。
+上传只有PREFLIGHT:0；没有RECEIVED、VERIFY:0、FINAL:0，不能声称板上长度/哈希验证成功。
+远端目标/media/fat/_Console/APS6408_CROSS_3125dc8.rbf不应视为有效位流；可能只留下本次.upload.gz.part。
+没有新版截图或交叉实测，DQ7根因仍未确认。上一版8MHz PASS、16/33MHz FAIL不能记为本版结果。
+待COM13接回后恢复shell、检查并清理本次专用传输残留、重新上传核验，再运行九次交叉矩阵。
+4图样×256分散地址；尚无完整8MiB、冷启动、Saturn/RAMH游戏或PVT验收。
+```
