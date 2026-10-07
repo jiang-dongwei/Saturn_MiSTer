@@ -30,7 +30,7 @@ set_input_delay -clock $aps_external_clock -min 0.000 -add_delay \
 set_false_path -to [get_registers {*|ramh_psram|req_meta *|ramh_psram|ack_meta *|ramh_psram|init_meta *|ramh_psram|error_meta}]
 # Bundled payloads remain held until the synchronized acknowledgement.
 set aps_request_sources [get_registers {*|ramh_psram|source_*}]
-set aps_request_targets [get_registers {*|ramh_psram|engine|runtime_* *|ramh_psram|engine|read_phase}]
+set aps_request_targets [get_registers {*|ramh_psram|engine|runtime_* *|ramh_psram|engine|read_phase *|ramh_psram|engine_state *|ramh_psram|runtime_valid}]
 set aps_response_sources [get_registers {*|ramh_psram|response_*}]
 set aps_response_targets [get_registers {*|ramh_psram|cache_* *|ramh_psram|adapter_error}]
 set_max_delay 9.841 -from $aps_request_sources -to $aps_request_targets
