@@ -1686,7 +1686,7 @@ module emu
 
 `ifdef SATURN_APS6408
 	wire psram_engine_clk, psram_phy_clk, psram_pll_locked;
-	wire psram_control_clk, psram_fast_clk;
+	wire psram_control_clk, psram_fast_clk, psram_reference_clk;
 	wire psram_clk_33_unused;
 	reg [2:0] psram_reset_pipe = 3'b111;
 	(* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
@@ -1703,15 +1703,22 @@ module emu
 		end
 	end
 	wire [1:0] psram_selected_speed = psram_clock_mode == 2 ? 2'd0 : psram_clock_mode == 1 ? 2'd1 : psram_clock_mode == 3 ? 2'd3 : 2'd2;
+	altclkctrl #(
+		.clock_type("Global Clock"), .intended_device_family("Cyclone V"),
+		.number_of_clocks(1), .ena_register_mode("falling edge")
+	) psram_reference_control (
+		.inclk({3'b000,CLK_50M}), .clkselect(2'b00), .ena(1'b1), .outclk(psram_reference_clk)
+	);
 	aps6408_runtime_pll psram_speed_pll (
-		.refclk(CLK_50M), .rst(1'b0), .outclk_0(psram_clk_33_unused),
+		.refclk(psram_reference_clk), .rst(1'b0), .outclk_0(psram_clk_33_unused),
 		.outclk_1(psram_control_clk), .outclk_2(psram_phy_clk), .outclk_3(psram_fast_clk), .locked(psram_pll_locked)
 	);
 	altclkctrl #(
 		.clock_type("Global Clock"), .intended_device_family("Cyclone V"),
-		.number_of_clocks(4), .use_glitch_free_switch_over_implementation("ON")
+		.number_of_clocks(4), .ena_register_mode("falling edge"),
+		.use_glitch_free_switch_over_implementation("ON")
 	) psram_clock_control (
-		.inclk({psram_fast_clk,psram_control_clk,2'b00}),
+		.inclk({psram_fast_clk,psram_control_clk,1'b0,CLK_50M}),
 		.clkselect({1'b1,psram_clock_mode==3}), .ena(1'b1), .outclk(psram_engine_clk)
 	);
 	wire psram_reset_request = reset || rst_ram || !psram_pll_locked || psram_mode_restart || psram_clock_mode != psram_mode_sync;
