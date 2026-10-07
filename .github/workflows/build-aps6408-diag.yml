@@ -1,6 +1,11 @@
 name: Build APS6408 diagnostic
 
 on:
+  workflow_call:
+    inputs:
+      simulation_only:
+        type: boolean
+        default: true
   workflow_dispatch:
     inputs:
       simulation_only:

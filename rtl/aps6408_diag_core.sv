@@ -3,7 +3,8 @@
 // switchable bring-up diagnostic, not a Saturn RAMH backend.
 module aps6408_diag_core #(
     parameter integer POWERUP_CYCLES = 135476, // 2 ms at 67.7376 MHz
-    parameter integer RESET_RECOVERY_CYCLES = 136 // at least 2 us
+    parameter integer RESET_RECOVERY_CYCLES = 136, // at least 2 us
+    parameter integer RUNTIME_API = 0
 ) (
     input clk,
     input clk_phy,
@@ -12,6 +13,17 @@ module aps6408_diag_core #(
     input [1:0] test_mode,
     input [1:0] d1_mode,
     input drive_half,
+    input request_valid,
+    input request_write,
+    input [23:0] request_address,
+    input [15:0] request_write_data,
+    input [1:0] request_write_mask,
+    output request_ready,
+    output reg request_done,
+    output reg request_error,
+    output reg [15:0] request_read_data,
+    output reg init_done,
+    output reg init_error,
     output reg [1:0] result_code,
     output reg [7:0] stage_code,
     output reg [23:0] failure_address,
@@ -69,6 +81,12 @@ module aps6408_diag_core #(
     reg [7:0] dq_out;
     reg dq_oe;
     reg dm_oe;
+    reg dm_out;
+    reg tx_dm_data;
+    reg [23:0] runtime_address;
+    reg [15:0] runtime_data;
+    reg [1:0] runtime_mask;
+    reg runtime_pending;
     reg [15:0] read_word;
     reg [15:0] mr0_early;
     reg [15:0] mr0_mid;
@@ -92,7 +110,8 @@ module aps6408_diag_core #(
     reg [15:0] clk_read_word;
 
     assign PSRAM_DQ = dq_oe ? dq_out : 8'hzz;
-    assign PSRAM_DQS = dm_oe ? 1'b0 : 1'bz; // DM=0 enables both write bytes
+    assign PSRAM_DQS = dm_oe ? dm_out : 1'bz;
+    assign request_ready = RUNTIME_API != 0 && init_done && !init_error && state == S_PASS;
     assign activity = (state != S_PASS) && (state != S_FAIL);
 
     function valid_training_pair;
@@ -134,8 +153,9 @@ module aps6408_diag_core #(
         end
     endfunction
 
-    wire [23:0] address = drive_config_phase ? 24'd0 : id_phase ? {22'd0,id_slot} : address_for(cell_index);
-    wire [15:0] pattern = pattern_for(cell_index, pattern_pass);
+    wire [23:0] address = drive_config_phase ? 24'd0 : id_phase ? {22'd0,id_slot} :
+                          RUNTIME_API != 0 ? runtime_address : address_for(cell_index);
+    wire [15:0] pattern = RUNTIME_API != 0 ? runtime_data : pattern_for(cell_index, pattern_pass);
     wire [1:0] write_speed = test_mode == 1 ? 2'd0 : speed_select;
     wire [1:0] read_speed = test_mode == 2 ? 2'd0 : speed_select;
     wire [1:0] active_speed = drive_config_phase || retry_slow || (id_phase && reference_phase) ? 2'd0 :
@@ -228,9 +248,11 @@ module aps6408_diag_core #(
         dq_out <= tx_data;
         dq_oe <= tx_oe && state != S_TURN;
         dm_oe <= tx_dm_oe;
+        dm_out <= tx_dm_data;
     end
 
     always @(posedge clk) begin
+        request_done <= 0;
         rx_done_meta <= rx_done;
         rx_done_sync <= rx_done_meta;
         rx_clock_done_meta <= rx_clock_done;
@@ -272,6 +294,16 @@ module aps6408_diag_core #(
             tx_data <= 0;
             tx_oe <= 0;
             tx_dm_oe <= 0;
+            tx_dm_data <= 0;
+            runtime_address <= 0;
+            runtime_data <= 0;
+            runtime_mask <= 0;
+            runtime_pending <= 0;
+            request_done <= 0;
+            request_error <= 0;
+            request_read_data <= 0;
+            init_done <= 0;
+            init_error <= 0;
             PSRAM_CLK <= 0;
             psram_clock_monitor <= 0;
             PSRAM_CE_N <= 1;
@@ -414,6 +446,7 @@ module aps6408_diag_core #(
                         data_index <= 0;
                         tx_oe <= 1;
                         tx_dm_oe <= 1;
+                        tx_dm_data <= RUNTIME_API != 0 && !runtime_mask[1];
                         tx_data <= pattern[15:8];
                     end
                 end
@@ -423,7 +456,10 @@ module aps6408_diag_core #(
                     psram_clock_monitor <= ~PSRAM_CLK;
                     if (data_index == 0) begin
                         data_index <= 1;
-                        if (!drive_config_phase) tx_data <= pattern[7:0];
+                        if (!drive_config_phase) begin
+                            tx_data <= pattern[7:0];
+                            tx_dm_data <= RUNTIME_API != 0 && !runtime_mask[0];
+                        end
                     end else begin
                         state <= S_END;
                     end
@@ -471,7 +507,7 @@ module aps6408_diag_core #(
 
                 S_GAP: if (tick) begin
                     gap_count <= gap_count + 1'b1;
-                    if (gap_count == 8'd31) state <= S_ADVANCE;
+                    if (gap_count == (RUNTIME_API != 0 && !id_phase && !drive_config_phase ? 8'd3 : 8'd31)) state <= S_ADVANCE;
                 end
 
                 S_ADVANCE: begin
@@ -534,7 +570,10 @@ module aps6408_diag_core #(
                                     end
                                     if (reference_phase && read_speed != 0) id_slot <= 0;
                                     else id_phase <= 0;
-                                    state <= S_START;
+                                    if (RUNTIME_API != 0 && !(reference_phase && read_speed != 0)) begin
+                                        init_done <= 1;
+                                        state <= S_PASS;
+                                    end else state <= S_START;
                                 end
                             end else begin
                                 stage_code <= 8'hE6;
@@ -546,6 +585,11 @@ module aps6408_diag_core #(
                         end else begin
                             state <= S_FAIL;
                         end
+                    end else if (RUNTIME_API != 0) begin
+                        request_read_data <= read_word;
+                        request_done <= 1;
+                        runtime_pending <= 0;
+                        state <= S_PASS;
                     end else if (read_phase && read_word != pattern) begin
                         stage_code <= 8'hE2;
                         failure_address <= address;
@@ -577,11 +621,35 @@ module aps6408_diag_core #(
                 end
 
                 S_PASS: begin
-                    result_code <= 1;
-                    stage_code <= 8'hFF;
-                    diagnostic_leds <= 8'h40;
+                    if (RUNTIME_API != 0) begin
+                        if (request_valid && request_ready) begin
+                            runtime_address <= request_address;
+                            runtime_data <= request_write_data;
+                            runtime_mask <= request_write_mask;
+                            read_phase <= !request_write;
+                            request_error <= 0;
+                            runtime_pending <= 1;
+                            if (request_address[0] || request_address[23] ||
+                                (request_write && request_write_mask == 0)) begin
+                                stage_code <= 8'hE8;
+                                state <= S_FAIL;
+                            end else state <= S_START;
+                        end
+                    end else begin
+                        result_code <= 1;
+                        stage_code <= 8'hFF;
+                        diagnostic_leds <= 8'h40;
+                    end
                 end
                 S_FAIL: begin
+                    if (RUNTIME_API != 0) begin
+                        if (!init_done) init_error <= 1;
+                        if (runtime_pending) begin
+                            request_done <= 1;
+                            request_error <= 1;
+                            runtime_pending <= 0;
+                        end
+                    end
                     result_code <= 2;
                     diagnostic_leds <= 8'h80;
                     PSRAM_CE_N <= 1;
