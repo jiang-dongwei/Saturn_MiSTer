@@ -1,5 +1,16 @@
 name: Build Saturn APS6408 octal DDR
 on:
+  push:
+    branches: [codex/qpi-33m87-validation]
+    paths:
+      - .github/workflows/build-saturn-aps6408.yml
+      - Saturn.sv
+      - Saturn_APS6408.*
+      - files_aps6408_runtime.qip
+      - rtl/ramh_aps6408_adapter.sv
+      - rtl/aps6408_diag_core.sv
+      - sim/psram/tb_ramh_aps6408.sv
+      - sim/psram/report_saturn_aps6408_timing.tcl
   workflow_dispatch:
     inputs:
       build_quartus:
@@ -42,7 +53,7 @@ jobs:
           include-hidden-files: true
   quartus:
     needs: [diagnostic, runtime]
-    if: inputs.build_quartus
+    if: github.event_name == 'push' || inputs.build_quartus
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
