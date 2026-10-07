@@ -77,6 +77,7 @@ def upload(console, data, destination, receiver_timeout=180):
         'rx_result=$?; stty "$saved_tty"; trap - EXIT HUP INT TERM; '
         f"printf '\\n{received}:%s\\n' \"$rx_result\"; "
         f'while IFS= read -r ack; do [ "$ack" = "{continue_token}" ] && break; done; '
+        f'[ "$ack" = "{continue_token}" ] || exit 1; '
         f"printf '\\n{continued}\\n' )"
     )
     console.port.write(receive.encode() + b'\r')
