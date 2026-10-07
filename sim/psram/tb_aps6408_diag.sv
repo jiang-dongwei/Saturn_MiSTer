@@ -15,6 +15,7 @@ module tb_aps6408_diag;
     reg reset=1;
     reg [1:0] speed_select=0;
     reg [1:0] test_mode=0;
+    reg [1:0] d1_mode=0;
     wire [1:0] result_code;
     wire [7:0] stage_code;
     wire [23:0] failure_address;
@@ -40,6 +41,7 @@ module tb_aps6408_diag;
 
     aps6408_diag_core #(.POWERUP_CYCLES(8)) dut (
         .clk(clk), .clk_phy(clk_phy), .reset(reset), .speed_select(speed_select), .test_mode(test_mode), .result_code(result_code),
+        .d1_mode(d1_mode),
         .stage_code(stage_code), .failure_address(failure_address),
         .id_word(id_word),
         .expected_data(expected_data), .actual_data(actual_data),
@@ -78,6 +80,7 @@ module tb_aps6408_diag;
     integer dq_lags_dqs=0;
     integer late_memory_fall=0;
     integer high_write_fault=0, high_read_fault=0;
+    integer burst_tail=0;
     integer expect_fault=0;
     reg [1:0] transaction_speed;
     realtime transaction_edge_time;
@@ -229,6 +232,15 @@ module tb_aps6408_diag;
                         end
                     end
                 end
+                default: if (burst_tail && edge_number >= 16 &&
+                             (instruction == 8'h40 || instruction == 8'h20) &&
+                             !no_dqs && !(missing_slot1 && address==1)) begin
+                    if (late_memory_fall && instruction == 8'h20)
+                        mem_dq <= #(dqs_delay_ns+dq_skew_ns) edge_number[0] ? 8'h3C : 8'hC3;
+                    else return_byte(instruction == 8'h40 ?
+                        ((address == 0 && edge_number == 16) ? 8'h93 : 8'h00) :
+                        (edge_number[0] ? 8'h3C : 8'hC3), !edge_number[0]);
+                end
             endcase
         end
     end
@@ -251,11 +263,16 @@ module tb_aps6408_diag;
         if ($test$plusargs("speed33")) speed_select=2;
         if ($test$plusargs("low_write")) test_mode=1;
         if ($test$plusargs("low_read")) test_mode=2;
+        if ($test$plusargs("d1early")) d1_mode=1;
+        if ($test$plusargs("d1late")) d1_mode=2;
+        if ($test$plusargs("d1fall")) d1_mode=3;
+        burst_tail=$test$plusargs("burst_tail");
         high_write_fault=$test$plusargs("high_write_fault");
         high_read_fault=$test$plusargs("high_read_fault");
         expect_fault=corrupt || alias_bit12 ||
                      (high_write_fault && speed_select != 0 && test_mode != 1) ||
-                     (high_read_fault && speed_select != 0 && test_mode != 2);
+                     (high_read_fault && speed_select != 0 && test_mode != 2) ||
+                     (late_memory_fall && d1_mode == 3 && burst_tail && speed_select != 0 && test_mode != 2);
         repeat (4) @(posedge clk);
         reset=0;
         wait(result_code != 0);
@@ -287,7 +304,8 @@ module tb_aps6408_diag;
               (dq_lags_dqs && read_capture_tap !== 2'd2) ||
               ((dqs_delay_ns == 10.0) &&
                (dqs_edge_pair1[15:8] < 8'd9 || dqs_edge_pair1[15:8] > 8'd11 ||
-                (!late_memory_fall && dqs_edge_pair1[7:0] != dqs_edge_pair1[15:8]+1'b1))) ||
+                (!late_memory_fall && dqs_edge_pair1[7:0] != dqs_edge_pair1[15:8]+1'b1 &&
+                 !(dut.read_speed != 0 && (d1_mode == 1 || d1_mode == 2) && dqs_edge_pair1[7:0] == 0)))) ||
               dut.reference_mr0 !== 16'hA00D || dut.reference_mr1 !== 16'h0D93 ||
               id_reads != (dut.read_speed == 0 ? 2 : 4) || writes != 1024 || reads != 1024)))
             $fatal(1,"diagnostic failed: result=%d stage=%h addr=%h exp=%h got=%h clk=%h dqs=%h writes=%d reads=%d",
@@ -298,8 +316,11 @@ module tb_aps6408_diag;
         if (high_write_fault && !corrupt && test_mode != 1 && speed_select != 0 && dut.read_speed != 0 &&
             (!retry_read_valid || retry_read_data === expected_data))
             $fatal(1,"stored write fault must survive calibrated 8 MHz reread");
-        $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d DQS=%0.2fns skew=%0.2fns tap=%0d/%0d mode=%0d W=%0d R=%0d",
-                 result_code,stage_code,writes,reads,dqs_delay_ns,dq_skew_ns,read_capture_tap,read_capture_tap_second,test_mode,dut.write_speed,dut.read_speed);
+        if (late_memory_fall && d1_mode == 3 && burst_tail && test_mode != 2 && speed_select != 0 &&
+            (!retry_read_valid || retry_read_data !== expected_data))
+            $fatal(1,"delayed DQS fall must not corrupt the independent 8 MHz reread");
+        $display("APS6408 diagnostic scenario PASS: result=%0d stage=%h writes=%0d reads=%0d DQS=%0.2fns skew=%0.2fns tap=%0d/%0d mode=%0d W=%0d R=%0d D1=%0d tail=%0d",
+                 result_code,stage_code,writes,reads,dqs_delay_ns,dq_skew_ns,read_capture_tap,read_capture_tap_second,test_mode,dut.write_speed,dut.read_speed,d1_mode,burst_tail);
         if (!no_dqs && !missing_slot1 && !bad_id && !early_dqs && !expect_fault) begin
             reset=1;
             repeat (4) @(posedge clk);

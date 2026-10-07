@@ -73,6 +73,17 @@ jobs:
             done
           done
 
+          for speed in speed16 speed33; do
+            vvp .ci/aps6408_diag.vvp "+$speed" +burst_tail
+            for phase in d1early d1late d1fall; do
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$phase" +burst_tail
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$phase" +burst_tail +low_write
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$phase" +burst_tail +low_write +high_read_fault
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$phase" +burst_tail +low_read +high_read_fault
+            done
+            vvp .ci/aps6408_diag.vvp "+$speed" +d1fall +burst_tail +low_write +late_memory_fall
+          done
+
       - name: Free runner disk space
         if: ${{ !inputs.simulation_only }}
         shell: bash

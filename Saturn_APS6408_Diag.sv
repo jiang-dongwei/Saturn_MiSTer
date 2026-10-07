@@ -93,6 +93,7 @@ parameter CONF_STR = {
     "APS6408L DDR DIAG;;",
     "O34,PSRAM clock,8.47 MHz,16.93 MHz,33.87 MHz;",
     "O78,Test mode,Same speed,8 MHz write,8 MHz read;",
+    "O9A,D1 timing,Fixed,Earlier 3.69 ns,Later 3.69 ns,DQS falling;",
     "T6,Restart test;",
     "R0,Reset;",
     "-;",
@@ -138,26 +139,28 @@ aps6408_diag_pll pll
 );
 
 (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
-reg [8:0] status_meta = 9'd0;
+reg [10:0] status_meta = 11'd0;
 (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
-reg [8:0] status_sync = 9'd0;
+reg [10:0] status_sync = 11'd0;
 reg [1:0] selected_speed = 2'd0;
 reg [1:0] selected_test_mode = 2'd0;
+reg [1:0] selected_d1_mode = 2'd0;
 reg       mode_restart = 1'b0;
 always @(posedge clk_67) begin
-	status_meta <= status[8:0];
+	status_meta <= status[10:0];
 	status_sync <= status_meta;
 	mode_restart <= 1'b0;
-	if (selected_speed != status_sync[4:3] || selected_test_mode != status_sync[8:7]) begin
+	if (selected_speed != status_sync[4:3] || selected_test_mode != status_sync[8:7] || selected_d1_mode != status_sync[10:9]) begin
 		selected_speed <= status_sync[4:3];
 		selected_test_mode <= status_sync[8:7];
+		selected_d1_mode <= status_sync[10:9];
 		mode_restart <= 1'b1;
 	end
 end
 
 wire diagnostic_reset_request = RESET | buttons[1] | status_sync[0] |
 	                              status_sync[6] | mode_restart |
-	                              (selected_speed != status_sync[4:3] || selected_test_mode != status_sync[8:7]) | !pll_locked;
+	                              (selected_speed != status_sync[4:3] || selected_test_mode != status_sync[8:7] || selected_d1_mode != status_sync[10:9]) | !pll_locked;
 
 // Synchronous assertion stretching and release keep the diagnostic free of
 // the asynchronous recovery violation seen in Stage 53.
@@ -190,6 +193,7 @@ wire [15:0] mr_pair1;
 wire [15:0] mr_pair2;
 wire [15:0] dqs_edge_pair1;
 wire [15:0] clk_pair1;
+wire [15:0] reference_mr0, reference_mr1;
 wire [2:0] speed_index = {1'b0, selected_speed};
 wire [7:0] diagnostic_leds;
 wire diagnostic_activity;
@@ -207,6 +211,7 @@ aps6408_diag_core diagnostic
     .reset(diagnostic_reset),
     .speed_select(selected_speed),
     .test_mode(selected_test_mode),
+    .d1_mode(selected_d1_mode),
     .result_code(result_code),
     .stage_code(stage_code),
     .failure_address(failure_address),
@@ -226,6 +231,7 @@ aps6408_diag_core diagnostic
     .mr_pair2(mr_pair2),
     .dqs_edge_pair1(dqs_edge_pair1),
     .clk_pair1(clk_pair1),
+    .reference_mr0(reference_mr0), .reference_mr1(reference_mr1),
     .diagnostic_leds(diagnostic_leds),
     .activity(diagnostic_activity),
     .PSRAM_CLK(PSRAM_CLK),
@@ -246,6 +252,9 @@ aps6408_diag_video video
 	.actual_data(actual_data),
 	.speed_index(speed_index),
 	.mode(selected_test_mode),
+    .d1_mode(selected_d1_mode),
+    .mr_pair0(mr_pair0), .mr_pair1(mr_pair1),
+    .reference_mr0(reference_mr0), .reference_mr1(reference_mr1),
 	.matrix_a(matrix_a),
 	.matrix_b(matrix_b),
 	.matrix_c(matrix_c),

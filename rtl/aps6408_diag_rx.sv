@@ -3,6 +3,7 @@ module aps6408_diag_rx (
     input reset,
     input arm,
     input [1:0] speed,
+    input [1:0] d1_mode,
     input psram_clk,
     input [7:0] dq,
     input dqs,
@@ -28,10 +29,11 @@ module aps6408_diag_rx (
     reg arm_sync = 0;
     reg armed = 0;
     reg [1:0] active_speed = 0;
+    reg [1:0] active_d1_mode = 0;
     reg [6:0] edge_count = 0;
     reg [1:0] byte_count = 0;
-    reg [1:0] second_delay = 0;
-    reg data_phase = 0;
+    reg [2:0] second_delay = 0;
+    reg second_phase = 0;
     reg [1:0] rise_event, fall_event, clock_event;
     reg [6:0] edge_low, edge_high;
     (* preserve *) reg [31:0] data_low, data_high;
@@ -42,10 +44,12 @@ module aps6408_diag_rx (
     wire clock_change_low = previous_clock_low != older_clock_high;
     wire clock_change_high = previous_clock_high != previous_clock_low;
     wire first_capture = byte_count == 0 && (|rise_event);
+    wire fixed_second = active_speed != 0 && active_d1_mode != 3;
+    wire [2:0] nominal_second_delay = active_speed == 1 ? 3'd3 : 3'd1;
     wire second_capture = byte_count == 1 &&
-        (active_speed != 0 ? second_delay == 0 : (|fall_event));
+        (fixed_second ? second_delay == 0 : (|fall_event));
     wire capture_phase = byte_count == 0 ? rise_event[1] :
-                         active_speed != 0 ? data_phase : fall_event[1];
+                         fixed_second ? second_phase : fall_event[1];
     wire [31:0] capture_data = capture_phase ? data_high : data_low;
 
     always @(negedge clk) clock_negative <= psram_clk;
@@ -85,6 +89,7 @@ module aps6408_diag_rx (
         end else if (!armed) begin
             armed <= 1;
             active_speed <= speed;
+            active_d1_mode <= speed == 0 ? 2'd0 : d1_mode;
             early_word <= 0;
             mid_word <= 0;
             center_word <= 0;
@@ -128,14 +133,22 @@ module aps6408_diag_rx (
                         center_word[15:8] <= capture_data[15:8];
                         late_word[15:8] <= capture_data[7:0];
                         edge_word[15:8] <= {1'b0, capture_phase ? edge_high : edge_low};
-                        data_phase <= capture_phase;
-                        second_delay <= active_speed == 1 ? 3 : 1;
+                        second_phase <= capture_phase;
+                        second_delay <= nominal_second_delay;
+                        // Adjacent DDIO phases are separated by one 3.69 ns sample.
+                        if (active_d1_mode == 1) begin
+                            second_phase <= !capture_phase;
+                            second_delay <= nominal_second_delay - !capture_phase;
+                        end else if (active_d1_mode == 2) begin
+                            second_phase <= !capture_phase;
+                            second_delay <= nominal_second_delay + capture_phase;
+                        end
                     end else begin
                         early_word[7:0] <= capture_data[31:24];
                         mid_word[7:0] <= capture_data[23:16];
                         center_word[7:0] <= capture_data[15:8];
                         late_word[7:0] <= capture_data[7:0];
-                        if (active_speed == 0) edge_word[7:0] <= {1'b0, capture_phase ? edge_high : edge_low};
+                        if (!fixed_second) edge_word[7:0] <= {1'b0, capture_phase ? edge_high : edge_low};
                         done <= 1;
                     end
                     byte_count <= byte_count + 1'b1;

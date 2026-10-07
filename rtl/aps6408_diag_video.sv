@@ -13,6 +13,9 @@ module aps6408_diag_video
 	input      [15:0] actual_data,
 	input       [2:0] speed_index,
 	input       [1:0] mode,
+    input       [1:0] d1_mode,
+    input      [15:0] mr_pair0, mr_pair1,
+    input      [15:0] reference_mr0, reference_mr1,
 	input      [23:0] matrix_a,
 	input      [23:0] matrix_b,
 	input      [23:0] matrix_c,
@@ -238,6 +241,10 @@ function [7:0] screen_char;
 				if ((column >= 8) && (column < 15))
 					value = result_char(column - 8);
 			end
+            5: value = fixed_char(d1_mode == 1 ? {"D1 TIMING: EARLIER", {30{8'h20}}} :
+                                  d1_mode == 2 ? {"D1 TIMING: LATER", {32{8'h20}}} :
+                                  d1_mode == 3 ? {"D1 TIMING: DQS FALL", {29{8'h20}}} :
+                                  {"D1 TIMING: FIXED", {32{8'h20}}}, column);
 			6: begin
 				value = fixed_char(TXT_STAGE, column);
 				if (column == 8) value = hex_char(stage_code[7:4]);
@@ -255,7 +262,17 @@ function [7:0] screen_char;
 						value = hex_char(id_value[15-((column-10)*4) -: 4]);
 				end
 			end
+            9: begin
+                value = fixed_char({"MR0:       MR1:", {33{8'h20}}}, column);
+                if (column >= 5 && column < 9) value = hex_char(mr_pair0[15-((column-5)*4) -: 4]);
+                if (column >= 16 && column < 20) value = hex_char(mr_pair1[15-((column-16)*4) -: 4]);
+            end
 			10: value = fixed_char(TXT_KGD, column);
+            11: begin
+                value = fixed_char({"REF0:       REF1:", {31{8'h20}}}, column);
+                if (column >= 6 && column < 10) value = hex_char(reference_mr0[15-((column-6)*4) -: 4]);
+                if (column >= 18 && column < 22) value = hex_char(reference_mr1[15-((column-18)*4) -: 4]);
+            end
 			12: value = fixed_char(speed_index == 3'd0 ? TXT_SPEED8 :
 			                       speed_index == 3'd1 ? TXT_SPEED16 : TXT_SPEED33, column);
 			14: begin

@@ -10,6 +10,7 @@ module aps6408_diag_core #(
     input reset,
     input [1:0] speed_select,
     input [1:0] test_mode,
+    input [1:0] d1_mode,
     output reg [1:0] result_code,
     output reg [7:0] stage_code,
     output reg [23:0] failure_address,
@@ -29,6 +30,8 @@ module aps6408_diag_core #(
     output reg [15:0] mr_pair2,
     output reg [15:0] dqs_edge_pair1,
     output reg [15:0] clk_pair1,
+    output reg [15:0] reference_mr0,
+    output reg [15:0] reference_mr1,
     output reg [7:0] diagnostic_leds,
     output activity,
     output reg PSRAM_CLK,
@@ -53,7 +56,7 @@ module aps6408_diag_core #(
     reg [1:0] pattern_pass;
     reg id_phase;
     reg reference_phase;
-    reg [15:0] reference_mr0, reference_mr1, clk_previous_pair;
+    reg [15:0] clk_previous_pair;
     reg [1:0] reference_tap_first, reference_tap_second;
     reg [1:0] id_slot;
     reg read_phase;
@@ -209,6 +212,7 @@ module aps6408_diag_core #(
 
     aps6408_diag_rx rx (
         .clk(clk_phy), .reset(reset), .arm(rx_arm), .speed(active_speed),
+        .d1_mode(d1_mode),
         .psram_clk(psram_clock_monitor), .dq(PSRAM_DQ), .dqs(PSRAM_DQS),
         .done(rx_done), .early_word(rx_early), .mid_word(rx_mid),
         .late_word(rx_late), .center_word(rx_center), .edge_word(rx_edges), .clock_word(rx_clock),
