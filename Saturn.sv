@@ -1711,8 +1711,8 @@ module emu
 		.clock_type("Global Clock"), .intended_device_family("Cyclone V"),
 		.number_of_clocks(4), .use_glitch_free_switch_over_implementation("ON")
 	) psram_clock_control (
-		.inclk({2'b00,psram_fast_clk,psram_control_clk}),
-		.clkselect({1'b0,psram_clock_mode==3}), .ena(1'b1), .outclk(psram_engine_clk)
+		.inclk({psram_fast_clk,psram_control_clk,2'b00}),
+		.clkselect({1'b1,psram_clock_mode==3}), .ena(1'b1), .outclk(psram_engine_clk)
 	);
 	wire psram_reset_request = reset || rst_ram || !psram_pll_locked || psram_mode_restart || psram_clock_mode != psram_mode_sync;
 	always @(posedge psram_engine_clk) begin
