@@ -115,16 +115,6 @@ module aps6408_diag_core #(
     assign request_ready = RUNTIME_API != 0 && init_done && !init_error && state == S_PASS;
     assign activity = (state != S_PASS) && (state != S_FAIL);
 
-    function valid_training_pair;
-        input [15:0] first_pair;
-        input [15:0] second_pair;
-        begin
-            valid_training_pair = (first_pair[7:0] == second_pair[15:8]) &&
-                ((second_pair[15:8] & 8'h1F) == 8'h0D) &&
-                ((second_pair[7:0] & 8'h1F) == 8'h13);
-        end
-    endfunction
-
     function [23:0] address_for;
         input [7:0] index;
         reg [7:0] spread;
@@ -201,32 +191,39 @@ module aps6408_diag_core #(
             endcase
         end
     endfunction
-    wire [15:0] valid_tap_pairs;
-    genvar first_index, second_index;
-    generate for (first_index=0; first_index<4; first_index=first_index+1) begin : first_training
-        for (second_index=0; second_index<4; second_index=second_index+1) begin : second_training
-            wire [1:0] first_tap = first_tap_order(first_index);
-            wire [1:0] second_tap = second_tap_order(second_index);
-            wire [15:0] previous_first = tap_word(first_tap, mr0_early, mr0_mid, mr0_late, mr0_center);
-            wire [15:0] previous_second = tap_word(second_tap, mr0_early, mr0_mid, mr0_late, mr0_center);
-            wire [15:0] current_first = tap_word(first_tap, sample_early, sample_mid, sample_late, sample_center);
-            wire [15:0] current_second = tap_word(second_tap, sample_early, sample_mid, sample_late, sample_center);
-            wire [15:0] previous_pair = {previous_first[15:8], previous_second[7:0]};
-            wire [15:0] current_pair = {current_first[15:8], current_second[7:0]};
-            assign valid_tap_pairs[first_index*4+second_index] =
-                valid_training_pair(previous_pair, current_pair) &&
-                (reference_phase ? previous_pair == clk_previous_pair && current_pair == clk_read_word :
-                                   previous_pair == reference_mr0 && current_pair == reference_mr1);
-        end
+    wire [15:0] training_previous = reference_phase ? clk_previous_pair : reference_mr0;
+    wire [15:0] training_current = reference_phase ? clk_read_word : reference_mr1;
+    wire [3:0] valid_first_taps, valid_second_taps;
+    genvar tap_index;
+    generate for (tap_index=0; tap_index<4; tap_index=tap_index+1) begin : training
+        wire [1:0] first_tap = first_tap_order(tap_index);
+        wire [1:0] second_tap = second_tap_order(tap_index);
+        wire [15:0] previous_first = tap_word(first_tap, mr0_early, mr0_mid, mr0_late, mr0_center);
+        wire [15:0] previous_second = tap_word(second_tap, mr0_early, mr0_mid, mr0_late, mr0_center);
+        wire [15:0] current_first = tap_word(first_tap, sample_early, sample_mid, sample_late, sample_center);
+        wire [15:0] current_second = tap_word(second_tap, sample_early, sample_mid, sample_late, sample_center);
+        assign valid_first_taps[tap_index] =
+            previous_first[15:8] == training_previous[15:8] &&
+            current_first[15:8] == training_current[15:8] &&
+            (current_first[15:8] & 8'h1F) == 8'h0D;
+        assign valid_second_taps[tap_index] =
+            previous_second[7:0] == training_previous[7:0] &&
+            current_second[7:0] == training_current[7:0] &&
+            (current_second[7:0] & 8'h1F) == 8'h13;
     end endgenerate
+    wire training_valid = (training_previous[7:0] == training_current[15:8]) &&
+                          (|valid_first_taps) && (|valid_second_taps);
     reg [3:0] trained_pair;
     integer pair_index;
     always @* begin
         trained_pair = 0;
-        for (pair_index=15; pair_index>=0; pair_index=pair_index-1)
-            if (valid_tap_pairs[pair_index]) trained_pair = pair_index;
+        if (training_valid) begin
+            for (pair_index=3; pair_index>=0; pair_index=pair_index-1) begin
+                if (valid_first_taps[pair_index]) trained_pair[3:2] = pair_index;
+                if (valid_second_taps[pair_index]) trained_pair[1:0] = pair_index;
+            end
+        end
     end
-    wire training_valid = |valid_tap_pairs;
     wire [1:0] trained_tap = first_tap_order(trained_pair[3:2]);
     wire [1:0] trained_tap_second = second_tap_order(trained_pair[1:0]);
     wire [15:0] trained_previous_hi = tap_word(trained_tap, mr0_early, mr0_mid, mr0_late, mr0_center);
