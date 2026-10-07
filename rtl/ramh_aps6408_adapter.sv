@@ -4,6 +4,7 @@ module ramh_aps6408_adapter #(
 ) (
     input clk, reset,
     input engine_clk, engine_reset, clk_phy,
+    input [1:0] speed_select,
     input [19:2] addr,
     input [31:0] din,
     input [3:0] wr,
@@ -163,7 +164,7 @@ module ramh_aps6408_adapter #(
         .RESET_RECOVERY_CYCLES(RESET_RECOVERY_CYCLES), .RUNTIME_API(1)
     ) engine (
         .clk(engine_clk), .clk_phy(clk_phy), .reset(engine_reset),
-        .speed_select(2'd2), .test_mode(2'd0), .d1_mode(2'd0), .drive_half(1'b1),
+        .speed_select(speed_select), .test_mode(2'd0), .d1_mode(2'd0), .drive_half(1'b1),
         .request_valid(runtime_valid), .request_ready(runtime_ready),
         .request_write(source_write), .request_address(half_address),
         .request_write_data(half_data), .request_write_mask(half_mask),

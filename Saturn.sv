@@ -318,6 +318,10 @@ module emu
 `endif
 		"D0O[26],Autosave,Off,On;", 
 		"-;",
+`ifdef SATURN_APS6408
+		"O[83:82],PSRAM clock,33.87 MHz,16.93 MHz,8.47 MHz;",
+		"-;",
+`endif
 
 		"P1,Audio & Video;",
 		"P1-;",
@@ -1684,11 +1688,25 @@ module emu
 	wire psram_engine_clk, psram_phy_clk, psram_pll_locked;
 	wire psram_clk_33_unused;
 	reg [2:0] psram_reset_pipe = 3'b111;
+	(* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+	reg [1:0] psram_mode_meta = 0, psram_mode_sync = 0;
+	reg [1:0] psram_clock_mode = 0;
+	reg psram_mode_restart = 0;
+	always @(posedge psram_engine_clk) begin
+		psram_mode_meta <= status[83:82];
+		psram_mode_sync <= psram_mode_meta;
+		psram_mode_restart <= 0;
+		if (psram_clock_mode != psram_mode_sync) begin
+			psram_clock_mode <= psram_mode_sync;
+			psram_mode_restart <= 1;
+		end
+	end
+	wire [1:0] psram_selected_speed = psram_clock_mode == 2 ? 2'd0 : psram_clock_mode == 1 ? 2'd1 : 2'd2;
 	aps6408_diag_pll psram_speed_pll (
 		.refclk(CLK_50M), .rst(1'b0), .outclk_0(psram_clk_33_unused),
 		.outclk_1(psram_engine_clk), .outclk_2(psram_phy_clk), .locked(psram_pll_locked)
 	);
-	wire psram_reset_request = reset || rst_ram || !psram_pll_locked;
+	wire psram_reset_request = reset || rst_ram || !psram_pll_locked || psram_mode_restart || psram_clock_mode != psram_mode_sync;
 	always @(posedge psram_engine_clk) begin
 		if (psram_reset_request) psram_reset_pipe <= 3'b111;
 		else psram_reset_pipe <= {psram_reset_pipe[1:0],1'b0};
@@ -1697,6 +1715,7 @@ module emu
 	ramh_aps6408_adapter ramh_psram (
 		.clk(clk_ram), .reset(psram_reset_request), .engine_clk(psram_engine_clk),
 		.engine_reset(psram_reset_pipe[2]), .clk_phy(psram_phy_clk),
+		.speed_select(psram_selected_speed),
 		.addr(MEM_A[19:2]), .din(ramh_din), .wr(ramh_wr),
 		.rd(~RAMH_CS_N & ~MEM_RD_N), .burst(RAMH_BURST), .rfs(~RAMH_CS_N & RAMH_RFS),
 		.dout(psram_ramh_do), .busy(psram_ramh_busy),

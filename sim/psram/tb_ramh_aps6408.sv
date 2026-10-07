@@ -12,6 +12,7 @@ module tb_ramh_aps6408;
     end
     always #(src_half) src_clk=~src_clk;
     reg reset=1;
+    reg [1:0] speed_select=2;
     reg [19:2] addr=0;
     reg [31:0] din=0;
     reg [3:0] wr=0;
@@ -29,6 +30,7 @@ module tb_ramh_aps6408;
     assign dqs=mem_oe ? mem_dqs : 1'bz;
     ramh_aps6408_adapter #(.POWERUP_CYCLES(8),.RESET_RECOVERY_CYCLES(8)) dut (
         .clk(src_clk),.reset(reset),.engine_clk(clk),.engine_reset(reset),.clk_phy(clk_phy),
+        .speed_select(speed_select),
         .addr(addr),.din(din),.wr(wr),.rd(rd),.burst(1'b1),.rfs(1'b0),
         .dout(dout),.busy(busy),.init_done(init_done),.init_error(init_error),
         .adapter_error(adapter_error),.device_id(device_id),.stage_code(stage_code),
@@ -66,7 +68,7 @@ module tb_ramh_aps6408;
         if (dut.engine.dm_oe && $realtime-dm_time<3.0) $fatal(1,"DM setup violation");
         edge_number=edge_number+1;
         if (edge_number>0) begin
-            expected_half=transaction_speed==0 ? 59.048 : 14.762;
+            expected_half=transaction_speed==0 ? 59.048 : transaction_speed==1 ? 29.524 : 14.762;
             if (edge_number==6 && transaction_speed==2 && instruction!=8'hFF) expected_half=29.524;
             if ($realtime-edge_time<expected_half-0.01 || $realtime-edge_time>expected_half+0.01)
                 $fatal(1,"unexpected clock width");
@@ -80,8 +82,8 @@ module tb_ramh_aps6408;
                     $fatal(1,"bad command %h",dq);
                 if ((dq==8'hC0 || dq==8'h40 && dut.engine.reference_phase) && transaction_speed!=0)
                     $fatal(1,"reference/config must run at 8MHz");
-                if ((dq==8'hA0 || dq==8'h20) && transaction_speed!=2)
-                    $fatal(1,"RAMH must run at 33MHz");
+                if ((dq==8'hA0 || dq==8'h20) && transaction_speed!=speed_select)
+                    $fatal(1,"RAMH used wrong selected speed");
             end
             2: byte_address[31:24]=dq;
             3: byte_address[23:16]=dq;
@@ -157,6 +159,8 @@ module tb_ramh_aps6408;
     initial begin
         if ($test$plusargs("src_fast")) src_half=3.125;
         if ($test$plusargs("src_slow")) src_half=7.1;
+        if ($test$plusargs("speed8")) speed_select=0;
+        if ($test$plusargs("speed16")) speed_select=1;
         if ($test$plusargs("refresh")) refresh_extra=10;
         drop_config=$test$plusargs("drop_config");
         if ($value$plusargs("dq_delay=%f",dq_delay)) begin end
@@ -187,11 +191,16 @@ module tb_ramh_aps6408;
         wait(init_done || init_error);
         read_word(18'h3FFFF,32'h12345678);rd=0;
         if(reset_count!=1 || register_writes!=2) $fatal(1,"bad soft restart init");
+        @(negedge src_clk);reset=1;speed_select=(speed_select==2) ? 0 : 2;
+        repeat(6) @(negedge src_clk);reset=0;
+        wait(init_done || init_error);
+        read_word(18'h3FFFF,32'h12345678);rd=0;
+        if(reset_count!=1 || register_writes!=3) $fatal(1,"speed change failed to retrain/preserve RAM");
         missing_memory_dqs=1;
         @(negedge src_clk);addr=18'h23456;rd=1;
         wait(adapter_error);repeat(4) @(negedge src_clk);
         if(!busy || stage_code!==8'hE1) $fatal(1,"timeout must fail closed");
-        $display("RAMH APS6408 PASS: masks, held bursts, address ends, cache, CDC, reset and timeout reads=%0d writes=%0d",reads,writes);
+        $display("RAMH APS6408 PASS: masks, held bursts, address ends, cache, CDC, reset, speed change and timeout reads=%0d writes=%0d",reads,writes);
         $finish;
     end
     initial begin #20000000; $fatal(1,"global timeout"); end
