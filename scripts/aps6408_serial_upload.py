@@ -28,15 +28,15 @@ class Console:
 
     def login(self, password):
         self.port.write(b'\r')
-        match = self.read_until(rb'(# |login:|Password:)', 15)
+        match = self.read_until(rb'((?:^|[\r\n])[^\r\n#]*# |login:|Password:)', 15)
         if match[1] == b'login:':
             self.port.write(b'root\r')
-            match = self.read_until(rb'(# |Password:)', 15)
+            match = self.read_until(rb'((?:^|[\r\n])[^\r\n#]*# |Password:)', 15)
         if match[1] == b'Password:':
             if password is None:
                 raise ValueError('Set APS6408_SERIAL_PASSWORD or pass --password')
             self.port.write(password.encode() + b'\r')
-            self.read_until(rb'# ', 15)
+            self.read_until(rb'(?:^|[\r\n])[^\r\n#]*# ', 15)
 
     def command(self, command, timeout=30):
         token = 'APS_' + uuid.uuid4().hex

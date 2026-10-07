@@ -44,6 +44,12 @@ class FakeConsole:
 class UploadTests(unittest.TestCase):
     destination = '/media/fat/_Console/APS6408_CROSS_test.rbf'
 
+    def test_uboot_info_is_not_a_linux_prompt(self):
+        port = FakePort()
+        port.responses = [b'\r\n## Info: input data size = 1005\r\n', b'\r\n/root# ']
+        Console(port, lambda message: None).login(None)
+        self.assertEqual(port.responses, [])
+
     def test_command_echo_cannot_complete_command(self):
         port = FakePort()
         port.responses = [b"printf '\\nAPS_nonce:%s\\n'\r\n", b'\r\nAPS_nonce:0\r\n']
