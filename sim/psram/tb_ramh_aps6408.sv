@@ -88,6 +88,8 @@ module tb_ramh_aps6408;
     integer edge_number=-1, writes=0, reads=0, reset_count=0, register_writes=0;
     integer byte_number, first_data_edge, refresh_extra=0;
     integer drop_config=0, missing_memory_dqs=0, bad_training=0, drop_training_dqs=0;
+    integer held_mode=0;
+    reg [1:0] held_speed;
     wire memory_read_blocked = missing_memory_dqs || (drop_training_dqs && dut.engine.memory_training);
     real dq_delay=10.0;
     reg device_ready=0;
@@ -131,7 +133,7 @@ module tb_ramh_aps6408;
                     $fatal(1,"bad command %h",dq);
                 if ((dq==8'hC0 || dq==8'h40 && dut.engine.reference_phase) && transaction_speed!=0)
                     $fatal(1,"reference/config must run at 8MHz");
-                if ((dq==8'hA0 || dq==8'h20) && transaction_speed!=speed_select)
+                if ((dq==8'hA0 || dq==8'h20) && transaction_speed!=(held_mode ? held_speed : speed_select))
                     $fatal(1,"RAMH used wrong selected speed");
             end
             2: byte_address[31:24]=dq;
@@ -217,6 +219,8 @@ module tb_ramh_aps6408;
         drop_config=$test$plusargs("drop_config");
         bad_training=$test$plusargs("bad_training");
         drop_training_dqs=$test$plusargs("drop_training_dqs");
+        held_mode=$test$plusargs("held_mode");
+        held_speed=speed_select;
         if ($value$plusargs("dq_delay=%f",dq_delay)) begin end
         repeat(6) @(negedge src_clk);reset=0;
         wait(init_done || init_error);
@@ -240,6 +244,17 @@ module tb_ramh_aps6408;
                 $fatal(1,"training did not use the reserved guard words");
             $display("MEMORY TRAINING INIT PASS: four scratch writes and two calibrated reads");
         end
+        if (held_mode) begin
+            if (!MEMORY_TRAINING || held_speed==3) $fatal(1,"held mode test requires a normal runtime clock");
+            speed_select=(held_speed==2) ? 0 : 2;
+            write_word(18'h11111,32'hA55A8041,4'hF);
+            read_word(18'h11111,32'hA55A8041);rd=0;
+            speed_select=1;
+            write_word(18'h11111,32'h5AA57FBE,4'hF);
+            read_word(18'h11111,32'h5AA57FBE);rd=0;
+            speed_select=held_speed;
+            $display("HELD MODE PASS: input changes preserve initialized memory clock and transfers");
+        end
         for (mask=1;mask<16;mask=mask+1) begin
             write_word(18'h12345,32'hA55A8041,4'hF);
             value=32'h369C7FE2 ^ (mask*32'h01010101);expected=32'hA55A8041;
@@ -259,6 +274,7 @@ module tb_ramh_aps6408;
         read_word(18'h3FFFF,32'h12345678);rd=0;
         if(reset_count!=1 || register_writes!=2) $fatal(1,"bad soft restart init");
         @(negedge src_clk);reset=1;speed_select=(speed_select==2) ? 0 : 2;
+        held_speed=speed_select;
         repeat(6) @(negedge src_clk);reset=0;
         wait(init_done || init_error);
         read_word(18'h3FFFF,32'h12345678);rd=0;

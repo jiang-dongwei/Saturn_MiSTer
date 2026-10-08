@@ -46,6 +46,14 @@ set_input_delay -clock $aps_external_clock -min 0.000 -add_delay \
 }
 
 set_false_path -to [get_registers {*|ramh_psram|req_meta *|ramh_psram|ack_meta *|ramh_psram|init_meta *|ramh_psram|error_meta}]
+# The selected mode stays fixed before the three-cycle engine reset release.
+set aps_mode_sources [get_registers {*|psram_clock_mode[*]}]
+set aps_mode_targets [get_registers {*|ramh_psram|engine_speed[*]}]
+if {[get_collection_size $aps_mode_sources] != 2 || [get_collection_size $aps_mode_targets] != 2} {
+    error "Expected two held mode bits and two engine mode captures"
+}
+set_max_delay 9.841 -from $aps_mode_sources -to $aps_mode_targets
+set_false_path -hold -from $aps_mode_sources -to $aps_mode_targets
 # Bundled payloads remain held until the synchronized acknowledgement.
 set aps_request_sources [get_registers {*|ramh_psram|source_addr* *|ramh_psram|source_data* *|ramh_psram|source_mask* *|ramh_psram|source_write}]
 set aps_control_targets [get_registers {*|ramh_psram|engine_request_*}]

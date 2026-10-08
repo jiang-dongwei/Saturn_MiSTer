@@ -101,6 +101,7 @@ module ramh_aps6408_adapter #(
     reg req_seen, half_select;
     (* preserve *) reg [3:0] engine_request_mask;
     (* preserve *) reg engine_request_write;
+    (* preserve *) reg [1:0] engine_speed;
     reg [1:0] engine_state;
     reg runtime_valid;
     wire runtime_ready, runtime_done, runtime_error;
@@ -113,6 +114,7 @@ module ramh_aps6408_adapter #(
     always @(posedge engine_clk) begin
         runtime_valid <= 0;
         if (engine_reset) begin
+            engine_speed <= speed_select;
             req_meta <= 0;
             req_sync <= 0;
             req_seen <= 0;
@@ -172,8 +174,8 @@ module ramh_aps6408_adapter #(
         .MEMORY_TRAINING_ENABLE(MEMORY_TRAINING_ENABLE)
     ) engine (
         .clk(engine_clk), .clk_phy(clk_phy), .reset(engine_reset),
-        .speed_select(speed_select), .test_mode(2'd0), .d1_mode(2'd0), .drive_half(1'b1),
-        .control_fast(speed_select==3),
+        .speed_select(engine_speed), .test_mode(2'd0), .d1_mode(2'd0), .drive_half(1'b1),
+        .control_fast(engine_speed==3),
         .request_valid(runtime_valid), .request_ready(runtime_ready),
         .request_write(engine_request_write), .request_address(half_address),
         .request_write_data(half_data), .request_write_mask(half_mask),

@@ -2,6 +2,7 @@ project_open Saturn_APS6408 -revision Saturn_APS6408
 create_timing_netlist
 read_sdc
 update_timing_netlist
+puts "APS6408 MODE CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine_speed[*]}]]"
 puts "APS6408 REQUEST CONTROL CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine_request_*}]]"
 puts "APS6408 REQUEST ADDRESS CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine|runtime_address*}]]"
 puts "APS6408 REQUEST DATA CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine|runtime_data*}]]"
