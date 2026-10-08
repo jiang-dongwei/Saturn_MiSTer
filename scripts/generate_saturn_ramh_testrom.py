@@ -74,11 +74,13 @@ class Program:
         return bytes(rom), pool_start
 
 
-def build(video_only=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False):
+def build(video_only=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041):
     assert 1 <= ram_words <= 262144
     assert 0 <= failure_rereads <= 2
     assert not failure_rereads or (failure_bars and ram_words == 1 and not cache_read and not video_only)
     assert not failure_cache_read or (failure_bars and ram_words == 1 and not cache_read and not video_only)
+    assert 0 <= first_seed <= 0xFFFFFFFF
+    assert not video_only or first_seed == 0xA55A8041
     p = Program()
     p.literal(1, 0xFFFFFE92)
     p.emit(0xE000)
@@ -91,7 +93,7 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
     p.emit(0x2101)  # enable VDP2 display
     if not video_only:
         p.literal(3, 0x01010101)
-        for number, seed in enumerate((0xA55A8041, 0x5AA57FBE, 0xFFFFFFFF, 0)):
+        for number, seed in enumerate((first_seed, 0x5AA57FBE, 0xFFFFFFFF, 0)):
             p.literal(1, 0x26000000)
             p.literal(2, ram_words)
             p.literal(0, seed)
@@ -201,13 +203,15 @@ if __name__ == '__main__':
     parser.add_argument('--ram-words', type=int, default=262144)
     parser.add_argument('--failure-rereads', type=int, default=0, choices=(0, 1, 2))
     parser.add_argument('--failure-cache-read', action='store_true')
+    parser.add_argument('--first-seed', type=lambda value: int(value, 0), default=0xA55A8041)
     args = parser.parse_args()
-    program, image, pool_start = build(args.video_only, not args.uncached_only, args.failure_bars, args.ram_words, args.failure_rereads, args.failure_cache_read)
+    program, image, pool_start = build(args.video_only, not args.uncached_only, args.failure_bars, args.ram_words, args.failure_rereads, args.failure_cache_read, args.first_seed)
     args.output.write_bytes(image)
     metadata = {'bytes': len(image), 'sha256': hashlib.sha256(image).hexdigest(),
                 'labels': program.labels, 'literal_pool': pool_start,
                 'uncached_ram_start': '0x26000000', 'ram_bytes': 0 if args.video_only else 4 * args.ram_words,
                 'passes': 0 if args.video_only else 4,
+                'first_seed': f'{args.first_seed:08X}' if not args.video_only else None,
                 'partial_write_cases': 0 if args.video_only else 6,
                 'cached_read_words': 0 if args.video_only or args.uncached_only else args.ram_words,
                 'colors': {'blue': 'startup/video-only', 'green': 'complete', 'red': 'compare failure', 'magenta': 'exception'},
