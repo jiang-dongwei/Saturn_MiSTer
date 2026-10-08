@@ -110,16 +110,17 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
     raise AssertionError('ROM did not reach a verdict')
 
 
-print('Video:', check(video_only=True))
-print('RAMH:', check())
-print('RAMH uncached only:', check(cache_read=False))
-print('Injected DQ7 error:', check(inject_error=True))
-print('Injected DQ7 failure bars:', check(inject_error=True, failure_bars=True))
-print('One-word immediate verification:', check(cache_read=False, failure_bars=True, ram_words=1))
-print('Injected error with cache-displacing rereads:', check(cache_read=False, failure_bars=True, ram_words=1, failure_rereads=2, inject_error=True))
-print('Injected error with adapter-cache and physical rereads:', check(cache_read=False, failure_bars=True, ram_words=1, failure_rereads=2, failure_cache_read=True, inject_error=True))
-for seed in (0x5AA57FBE, 0, 0xFFFFFFFF):
-    print(f'First seed {seed:08X}:', check(ram_words=1, first_seed=seed))
-    print(f'Injected first seed {seed:08X}:', check(cache_read=False, failure_bars=True, ram_words=1,
-          failure_rereads=2, failure_cache_read=True, first_seed=seed, inject_error=True))
-print('This checks generated SH-2 program semantics, not FPGA timing or HDL simulation.')
+if __name__ == '__main__':
+    print('Video:', check(video_only=True))
+    print('RAMH:', check())
+    print('RAMH uncached only:', check(cache_read=False))
+    print('Injected DQ7 error:', check(inject_error=True))
+    print('Injected DQ7 failure bars:', check(inject_error=True, failure_bars=True))
+    print('One-word immediate verification:', check(cache_read=False, failure_bars=True, ram_words=1))
+    print('Injected error with cache-displacing rereads:', check(cache_read=False, failure_bars=True, ram_words=1, failure_rereads=2, inject_error=True))
+    print('Injected error with adapter-cache and physical rereads:', check(cache_read=False, failure_bars=True, ram_words=1, failure_rereads=2, failure_cache_read=True, inject_error=True))
+    for seed in (0x5AA57FBE, 0, 0xFFFFFFFF):
+        print(f'First seed {seed:08X}:', check(ram_words=1, first_seed=seed))
+        print(f'Injected first seed {seed:08X}:', check(cache_read=False, failure_bars=True, ram_words=1,
+              failure_rereads=2, failure_cache_read=True, first_seed=seed, inject_error=True))
+    print('This checks generated SH-2 program semantics, not FPGA timing or HDL simulation.')
