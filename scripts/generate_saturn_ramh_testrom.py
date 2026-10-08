@@ -74,8 +74,10 @@ class Program:
         return bytes(rom), pool_start
 
 
-def build(video_only=False, cache_read=True, failure_bars=False, ram_words=262144):
+def build(video_only=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0):
     assert 1 <= ram_words <= 262144
+    assert 0 <= failure_rereads <= 2
+    assert not failure_rereads or (failure_bars and ram_words == 1 and not cache_read and not video_only)
     p = Program()
     p.literal(1, 0xFFFFFE92)
     p.emit(0xE000)
@@ -149,6 +151,11 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
     if failure_bars:
         for instruction in (0x6603, 0x6743, 0x6813, 0x6923, 0x6BC3):
             p.emit(instruction)
+        for index in range(failure_rereads):
+            p.literal(1, 0x26000004)
+            p.emit(0x6412)
+            p.literal(1, 0x26000000)
+            p.emit(0x6012 | (13 + index) << 8)
         p.literal(1, 0x25F800AC)
         p.literal(0, 0x8000)
         p.emit(0x2101)
@@ -160,7 +167,7 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
             p.literal(0, color)
             p.emit(0x2A01)
             p.emit(0x7A02)
-        for register in (6, 7, 8, 9, 11):
+        for register in (6, 7, 8, 9, 11) + tuple(range(13, 13 + failure_rereads)):
             p.emit(0x6503 | register << 4)
             p.emit(0xE308)
             p.label(f'bar_{register}')
@@ -188,8 +195,9 @@ if __name__ == '__main__':
     parser.add_argument('--uncached-only', action='store_true')
     parser.add_argument('--failure-bars', action='store_true')
     parser.add_argument('--ram-words', type=int, default=262144)
+    parser.add_argument('--failure-rereads', type=int, default=0, choices=(0, 1, 2))
     args = parser.parse_args()
-    program, image, pool_start = build(args.video_only, not args.uncached_only, args.failure_bars, args.ram_words)
+    program, image, pool_start = build(args.video_only, not args.uncached_only, args.failure_bars, args.ram_words, args.failure_rereads)
     args.output.write_bytes(image)
     metadata = {'bytes': len(image), 'sha256': hashlib.sha256(image).hexdigest(),
                 'labels': program.labels, 'literal_pool': pool_start,
@@ -202,9 +210,11 @@ if __name__ == '__main__':
     if args.failure_bars:
         metadata['colors']['red'] = 'barcode header; comparison failure uses scanline barcode'
         metadata['failure_bars'] = {'header_rgb555': ['7c1f', '03e0', '001f', '7c00'],
-            'values': ['expected', 'actual', 'address_register', 'remaining_words', 'stage'],
+            'values': ['expected', 'actual', 'address_register', 'remaining_words', 'stage'] + [f'reread_{i + 1}' for i in range(args.failure_rereads)],
             'encoding': '8 scanlines per value, low nibble first, red-channel RGB555 bits[3:0]',
             'stages': '0x100..103 uncached passes; 0x200 cached pass; 0x310..313 byte writes; 0x320/322 half-word writes',
             'address_note': 'Subtract 4 from address_register for stage 0x100..103 and 0x200; partial reads do not post-increment.'}
+        if args.failure_rereads:
+            metadata['failure_bars']['rereads'] = 'Read 0x26000004 to replace adapter one-word cache, then reread 0x26000000 without writes; repeated as requested.'
     args.output.with_suffix('.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(metadata))

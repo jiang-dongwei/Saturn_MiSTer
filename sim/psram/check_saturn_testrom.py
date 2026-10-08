@@ -7,8 +7,9 @@ spec.loader.exec_module(generator)
 build = generator.build
 
 
-def check(video_only=False, inject_error=False, cache_read=True, failure_bars=False, ram_words=262144):
-    program, rom, _ = build(video_only, cache_read, failure_bars, ram_words)
+def check(video_only=False, inject_error=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0):
+    program, rom, _ = build(video_only, cache_read, failure_bars, ram_words, failure_rereads)
+    error_offset = 0 if ram_words == 1 else 0xC0E4
     ram = bytearray(1048576)
     registers = [0] * 16
     pc = int.from_bytes(rom[:4], 'big')
@@ -23,7 +24,7 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
             offset = (address & ~0x20000000) - 0x06000000
             value = int.from_bytes(ram[offset:offset + width], 'big')
             reads += 1
-            if inject_error and offset == 0xC0E4:
+            if inject_error and offset == error_offset:
                 value ^= 0x00800000
             return value
         assert address + width <= len(rom), hex(address)
@@ -50,12 +51,12 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
     for step in range(16000000):
         if failure_bars and pc == program.labels['fail_halt']:
             assert inject_error
-            words = [vram[0x25E00000 + 2 * i] for i in range(44)]
+            words = [vram[0x25E00000 + 2 * i] for i in range(44 + 8 * failure_rereads)]
             assert words[:4] == [0x7C1F, 0x03E0, 0x001F, 0x7C00]
-            values = [sum(words[4 + 8 * i + j] << (4 * j) for j in range(8)) for i in range(5)]
-            index = 0xC0E4 // 4
+            values = [sum(words[4 + 8 * i + j] << (4 * j) for j in range(8)) for i in range(5 + failure_rereads)]
+            index = error_offset // 4
             expected = (0xA55A8041 + index * 0x01010101) & 0xFFFFFFFF
-            assert values == [expected, expected ^ 0x00800000, 0x2600C0E8, 0x40000 - index, 0x100], values
+            assert values == [expected, expected ^ 0x00800000, 0x26000000 + error_offset + 4, ram_words - index, 0x100] + [expected ^ 0x00800000] * failure_rereads, values
             return {'result': 'EXPECTED_FAILURE_BARS', 'values': [hex(v) for v in values], 'instructions': step}
         if pc == program.labels['pass']:
             if video_only:
@@ -114,4 +115,5 @@ print('RAMH uncached only:', check(cache_read=False))
 print('Injected DQ7 error:', check(inject_error=True))
 print('Injected DQ7 failure bars:', check(inject_error=True, failure_bars=True))
 print('One-word immediate verification:', check(cache_read=False, failure_bars=True, ram_words=1))
+print('Injected error with cache-displacing rereads:', check(cache_read=False, failure_bars=True, ram_words=1, failure_rereads=2, inject_error=True))
 print('This checks generated SH-2 program semantics, not FPGA timing or HDL simulation.')
