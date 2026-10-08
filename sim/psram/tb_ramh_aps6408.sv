@@ -49,7 +49,7 @@ module tb_ramh_aps6408;
     real control_period;
     integer receive_handoffs = 0;
     always @(dut.engine.rx_early or dut.engine.rx_mid or
-             dut.engine.rx_center or dut.engine.rx_late)
+             dut.engine.rx_center or dut.engine.rx_late or dut.engine.rx_edges)
         receive_changed_at = $realtime;
     always @(dut.engine.rx_clock) reference_changed_at = $realtime;
     always @(posedge engine_clk) begin
@@ -59,9 +59,9 @@ module tb_ramh_aps6408;
             if ($realtime - receive_changed_at < 2 * control_period - 0.01)
                 $fatal(1,"Receive payload was not held for two control periods");
             if ({dut.engine.rx_early_hold, dut.engine.rx_mid_hold,
-                 dut.engine.rx_center_hold, dut.engine.rx_late_hold} !==
+                 dut.engine.rx_center_hold, dut.engine.rx_late_hold, dut.engine.rx_edges_hold} !==
                 {dut.engine.rx_early, dut.engine.rx_mid,
-                 dut.engine.rx_center, dut.engine.rx_late})
+                 dut.engine.rx_center, dut.engine.rx_late, dut.engine.rx_edges})
                 $fatal(1,"Completed receive snapshots differ from held PHY data");
             if (dut.engine.id_phase) begin
                 if ($realtime - reference_changed_at < 2 * control_period - 0.01)
