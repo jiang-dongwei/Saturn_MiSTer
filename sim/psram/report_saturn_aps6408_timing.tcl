@@ -5,6 +5,7 @@ update_timing_netlist
 puts "APS6408 REQUEST CONTROL CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine_request_*}]]"
 puts "APS6408 REQUEST ADDRESS CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine|runtime_address*}]]"
 puts "APS6408 REQUEST DATA CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine|runtime_data*}]]"
+puts "APS6408 MODE CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine_speed[*]}]]"
 foreach clock_name {APS6408_ENGINE_33 APS6408_ENGINE_50 APS6408_CLK_EXT_33 APS6408_CLK_EXT_50} {
     set clocks [get_clocks $clock_name]
     if {[get_collection_size $clocks] != 1} { error "Missing fitted clock $clock_name" }
