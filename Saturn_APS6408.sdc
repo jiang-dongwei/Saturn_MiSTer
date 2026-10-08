@@ -48,8 +48,15 @@ set_input_delay -clock $aps_external_clock -min 0.000 -add_delay \
 set_false_path -to [get_registers {*|ramh_psram|req_meta *|ramh_psram|ack_meta *|ramh_psram|init_meta *|ramh_psram|error_meta}]
 # Bundled payloads remain held until the synchronized acknowledgement.
 set aps_request_sources [get_registers {*|ramh_psram|source_addr* *|ramh_psram|source_data* *|ramh_psram|source_mask* *|ramh_psram|source_write}]
-set aps_request_targets [get_registers {*|ramh_psram|engine_request_*}]
-if {[get_collection_size $aps_request_targets] != 55} { error "Expected all 55 request payload capture registers" }
+set aps_control_targets [get_registers {*|ramh_psram|engine_request_*}]
+if {[get_collection_size $aps_control_targets] != 5} { error "Expected all five request control capture registers" }
+set aps_address_targets [get_registers {*|ramh_psram|engine|runtime_address*}]
+set aps_data_targets [get_registers {*|ramh_psram|engine|runtime_data*}]
+if {[get_collection_size $aps_address_targets] < 18 || [get_collection_size $aps_address_targets] > 19} {
+    error "Missing runtime address capture registers"
+}
+if {[get_collection_size $aps_data_targets] != 16} { error "Expected 16 runtime data capture registers" }
+set aps_request_targets [get_registers {*|ramh_psram|engine_request_* *|ramh_psram|engine|runtime_address* *|ramh_psram|engine|runtime_data*}]
 set aps_response_sources [get_registers {*|ramh_psram|response_*}]
 set aps_response_targets [get_registers {*|ramh_psram|cache_* *|ramh_psram|adapter_error}]
 foreach aps_endpoint_set {aps_request_sources aps_request_targets aps_response_sources aps_response_targets} {

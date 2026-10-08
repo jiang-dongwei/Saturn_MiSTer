@@ -2,8 +2,9 @@ project_open Saturn_APS6408 -revision Saturn_APS6408
 create_timing_netlist
 read_sdc
 update_timing_netlist
-puts "APS6408 REQUEST CDC SOURCES [get_collection_size $aps_request_sources] TARGETS [get_collection_size $aps_request_targets]"
-puts "APS6408 RESPONSE CDC SOURCES [get_collection_size $aps_response_sources] TARGETS [get_collection_size $aps_response_targets]"
+puts "APS6408 REQUEST CONTROL CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine_request_*}]]"
+puts "APS6408 REQUEST ADDRESS CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine|runtime_address*}]]"
+puts "APS6408 REQUEST DATA CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine|runtime_data*}]]"
 foreach clock_name {APS6408_ENGINE_33 APS6408_ENGINE_50 APS6408_CLK_EXT_33 APS6408_CLK_EXT_50} {
     set clocks [get_clocks $clock_name]
     if {[get_collection_size $clocks] != 1} { error "Missing fitted clock $clock_name" }
