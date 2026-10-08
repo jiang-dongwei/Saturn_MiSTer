@@ -1,6 +1,7 @@
 `timescale 1ns/1ps
 module tb_aps6408_training;
     reg fast, phase;
+    reg memory_phase=0;
     reg [15:0] previous_reference, current_reference, clock_previous, clock_current;
     reg [15:0] pe, pm, pl, pc, ce, cm, cl, cc;
     wire [7:0] dq;
@@ -24,6 +25,7 @@ module tb_aps6408_training;
     endfunction
     initial begin
         force dut.reference_phase = phase;
+        force dut.memory_training = memory_phase;
         force dut.reference_mr0 = previous_reference;
         force dut.reference_mr1 = current_reference;
         force dut.clk_previous_pair = clock_previous;
@@ -74,6 +76,39 @@ module tb_aps6408_training;
             cases=cases+1;
         end
         $display("PASS training equivalence: %0d cases",cases);
+        memory_phase=1;
+        cases=0;
+        for (flags=0; flags<2; flags=flags+1)
+        for (fmask=0; fmask<16; fmask=fmask+1)
+        for (smask=0; smask<16; smask=smask+1) begin
+            fast=flags!=0;
+            phase=0;
+            previous_reference=16'hFFFF;
+            current_reference=0;
+            ref_previous=16'hA55A;
+            ref_current=16'h5AA5;
+            for (t=0; t<4; t=t+1) begin
+                previous[t]={8'hA5,8'h5A ^ ((smask & (1<<t))?8'h00:8'h01)};
+                current[t]={8'h5A ^ ((fmask & (1<<t))?8'h00:8'h01),8'hA5};
+            end
+            pe=previous[0];pm=previous[1];pl=previous[2];pc=previous[3];
+            ce=current[0];cm=current[1];cl=current[2];cc=current[3];
+            old_valid=0;old_pair=0;
+            for (f=0; f<4; f=f+1)
+            for (s=0; s<4; s=s+1) begin
+                ft=first_order(f);st=second_order(s,fast);
+                old_valid[f*4+s]=({previous[ft][15:8],previous[st][7:0]}==ref_previous) &&
+                               ({current[ft][15:8],current[st][7:0]}==ref_current);
+            end
+            for (i=15; i>=0; i=i-1) if(old_valid[i]) old_pair=i;
+            #1;
+            if(dut.training_valid !== (|old_valid) || dut.trained_pair !== old_pair)
+                $fatal(1,"Memory training masks=%0d/%0d fast=%0d",fmask,smask,fast);
+            if(dut.training_valid && (dut.trained_first !== ref_previous || dut.trained_second !== ref_current))
+                $fatal(1,"Memory training must match both complete patterns");
+            cases=cases+1;
+        end
+        $display("PASS memory training equivalence: %0d cases",cases);
         $finish;
     end
 endmodule

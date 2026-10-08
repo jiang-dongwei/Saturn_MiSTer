@@ -1,6 +1,7 @@
 module ramh_aps6408_adapter #(
     parameter integer POWERUP_CYCLES = 135476,
-    parameter integer RESET_RECOVERY_CYCLES = 204
+    parameter integer RESET_RECOVERY_CYCLES = 204,
+    parameter integer MEMORY_TRAINING_ENABLE = 1
 ) (
     input clk, reset,
     input engine_clk, engine_reset, clk_phy,
@@ -167,7 +168,8 @@ module ramh_aps6408_adapter #(
 
     aps6408_diag_core #(
         .POWERUP_CYCLES(POWERUP_CYCLES),
-        .RESET_RECOVERY_CYCLES(RESET_RECOVERY_CYCLES), .RUNTIME_API(1)
+        .RESET_RECOVERY_CYCLES(RESET_RECOVERY_CYCLES), .RUNTIME_API(1),
+        .MEMORY_TRAINING_ENABLE(MEMORY_TRAINING_ENABLE)
     ) engine (
         .clk(engine_clk), .clk_phy(clk_phy), .reset(engine_reset),
         .speed_select(speed_select), .test_mode(2'd0), .d1_mode(2'd0), .drive_half(1'b1),

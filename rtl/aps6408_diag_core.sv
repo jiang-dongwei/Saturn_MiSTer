@@ -4,7 +4,8 @@
 module aps6408_diag_core #(
     parameter integer POWERUP_CYCLES = 135476, // 2 ms at 67.7376 MHz
     parameter integer RESET_RECOVERY_CYCLES = 136, // at least 2 us
-    parameter integer RUNTIME_API = 0
+    parameter integer RUNTIME_API = 0,
+    parameter integer MEMORY_TRAINING_ENABLE = 0
 ) (
     input clk,
     input clk_phy,
@@ -68,6 +69,7 @@ module aps6408_diag_core #(
     reg [7:0] cell_index;
     reg [1:0] pattern_pass;
     reg id_phase;
+    reg memory_training = 0;
     reg reference_phase;
     reg drive_config_pending;
     reg drive_config_phase;
@@ -151,8 +153,10 @@ module aps6408_diag_core #(
     endfunction
 
     wire [23:0] address = drive_config_phase ? 24'd0 : id_phase ? {22'd0,id_slot} :
+                          memory_training ? {21'h020000,id_slot,1'b0} :
                           RUNTIME_API != 0 ? runtime_address : address_for(cell_index);
-    wire [15:0] pattern = RUNTIME_API != 0 ? runtime_data : pattern_for(cell_index, pattern_pass);
+    wire [15:0] pattern = memory_training ? (id_slot[1] ? 16'h5AA5 : 16'hA55A) :
+                          RUNTIME_API != 0 ? runtime_data : pattern_for(cell_index, pattern_pass);
     wire [1:0] write_speed = test_mode == 1 ? 2'd0 : speed_select;
     wire [1:0] read_speed = test_mode == 2 ? 2'd0 : speed_select;
     wire [1:0] active_speed = drive_config_phase || retry_slow || (id_phase && reference_phase) ? 2'd0 :
@@ -198,8 +202,8 @@ module aps6408_diag_core #(
             endcase
         end
     endfunction
-    wire [15:0] training_previous = reference_phase ? clk_previous_pair : reference_mr0;
-    wire [15:0] training_current = reference_phase ? clk_read_word : reference_mr1;
+    wire [15:0] training_previous = memory_training ? 16'hA55A : reference_phase ? clk_previous_pair : reference_mr0;
+    wire [15:0] training_current = memory_training ? 16'h5AA5 : reference_phase ? clk_read_word : reference_mr1;
     wire [3:0] valid_first_taps, valid_second_taps;
     genvar tap_index;
     generate for (tap_index=0; tap_index<4; tap_index=tap_index+1) begin : training
@@ -212,11 +216,11 @@ module aps6408_diag_core #(
         assign valid_first_taps[tap_index] =
             previous_first[15:8] == training_previous[15:8] &&
             current_first[15:8] == training_current[15:8] &&
-            (current_first[15:8] & 8'h1F) == 8'h0D;
+            (memory_training || (current_first[15:8] & 8'h1F) == 8'h0D);
         assign valid_second_taps[tap_index] =
             previous_second[7:0] == training_previous[7:0] &&
             current_second[7:0] == training_current[7:0] &&
-            (current_second[7:0] & 8'h1F) == 8'h13;
+            (memory_training || (current_second[7:0] & 8'h1F) == 8'h13);
     end endgenerate
     wire training_valid = (training_previous[7:0] == training_current[15:8]) &&
                           (|valid_first_taps) && (|valid_second_taps);
@@ -284,6 +288,7 @@ module aps6408_diag_core #(
             cell_index <= 0;
             pattern_pass <= 0;
             id_phase <= 1;
+            memory_training <= 0;
             reference_phase <= 1;
             drive_config_pending <= 1;
             drive_config_phase <= 0;
@@ -452,7 +457,7 @@ module aps6408_diag_core #(
                         data_index <= 0;
                         tx_oe <= 1;
                         tx_dm_oe <= 1;
-                        tx_dm_data <= RUNTIME_API != 0 && !runtime_mask[1];
+                        tx_dm_data <= RUNTIME_API != 0 && !memory_training && !runtime_mask[1];
                         tx_data <= pattern[15:8];
                     end
                 end
@@ -464,7 +469,7 @@ module aps6408_diag_core #(
                         data_index <= 1;
                         if (!drive_config_phase) begin
                             tx_data <= pattern[7:0];
-                            tx_dm_data <= RUNTIME_API != 0 && !runtime_mask[0];
+                            tx_dm_data <= RUNTIME_API != 0 && !memory_training && !runtime_mask[0];
                         end
                     end else begin
                         state <= S_END;
@@ -577,8 +582,15 @@ module aps6408_diag_core #(
                                     if (reference_phase && read_speed != 0) id_slot <= 0;
                                     else id_phase <= 0;
                                     if (RUNTIME_API != 0 && !(reference_phase && read_speed != 0)) begin
-                                        init_done <= 1;
-                                        state <= S_PASS;
+                                        if (MEMORY_TRAINING_ENABLE != 0) begin
+                                            memory_training <= 1;
+                                            id_slot <= 0;
+                                            read_phase <= 0;
+                                            state <= S_START;
+                                        end else begin
+                                            init_done <= 1;
+                                            state <= S_PASS;
+                                        end
                                     end else state <= S_START;
                                 end
                             end else begin
@@ -589,6 +601,35 @@ module aps6408_diag_core #(
                                 state <= S_FAIL;
                             end
                         end else begin
+                            state <= S_FAIL;
+                        end
+                    end else if (memory_training) begin
+                        if (!read_phase) begin
+                            if (id_slot == 3) begin
+                                id_slot <= 0;
+                                read_phase <= 1;
+                            end else id_slot <= id_slot + 1'b1;
+                            state <= S_START;
+                        end else if (id_slot == 0) begin
+                            mr0_early <= sample_early;
+                            mr0_mid <= sample_mid;
+                            mr0_center <= sample_center;
+                            mr0_late <= sample_late;
+                            id_slot <= 2;
+                            state <= S_START;
+                        end else if (training_valid) begin
+                            read_capture_tap <= trained_tap;
+                            read_capture_tap_second <= trained_tap_second;
+                            if (read_speed == 0) begin
+                                reference_tap_first <= trained_tap;
+                                reference_tap_second <= trained_tap_second;
+                            end
+                            memory_training <= 0;
+                            init_done <= 1;
+                            stage_code <= 8'h09;
+                            state <= S_PASS;
+                        end else begin
+                            stage_code <= 8'hE9;
                             state <= S_FAIL;
                         end
                     end else if (RUNTIME_API != 0) begin
