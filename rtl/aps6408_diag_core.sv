@@ -31,10 +31,10 @@ module aps6408_diag_core #(
     output reg [15:0] id_word,
     output reg [15:0] expected_data,
     output reg [15:0] actual_data,
-    output reg [15:0] sample_early,
-    output reg [15:0] sample_mid,
-    output reg [15:0] sample_center,
-    output reg [15:0] sample_late,
+    output [15:0] sample_early,
+    output [15:0] sample_mid,
+    output [15:0] sample_center,
+    output [15:0] sample_late,
     output reg [15:0] retry_read_data,
     output reg retry_read_valid,
     output reg [1:0] read_capture_tap,
@@ -108,6 +108,13 @@ module aps6408_diag_core #(
     reg [15:0] rx_center_hold;
     reg [15:0] rx_clock_hold;
     reg [15:0] clk_read_word;
+    reg [15:0] diagnostic_sample_early, diagnostic_sample_mid;
+    reg [15:0] diagnostic_sample_center, diagnostic_sample_late;
+
+    assign sample_early = RUNTIME_API != 0 ? rx_early_hold : diagnostic_sample_early;
+    assign sample_mid = RUNTIME_API != 0 ? rx_mid_hold : diagnostic_sample_mid;
+    assign sample_center = RUNTIME_API != 0 ? rx_center_hold : diagnostic_sample_center;
+    assign sample_late = RUNTIME_API != 0 ? rx_late_hold : diagnostic_sample_late;
 
     assign PSRAM_DQ = dq_oe ? dq_out : 8'hzz;
     assign PSRAM_DQS = dm_oe ? dm_out : 1'bz;
@@ -321,10 +328,10 @@ module aps6408_diag_core #(
             id_word <= 0;
             expected_data <= 0;
             actual_data <= 0;
-            sample_early <= 0;
-            sample_mid <= 0;
-            sample_center <= 0;
-            sample_late <= 0;
+            diagnostic_sample_early <= 0;
+            diagnostic_sample_mid <= 0;
+            diagnostic_sample_center <= 0;
+            diagnostic_sample_late <= 0;
             retry_read_data <= 0;
             retry_read_valid <= 0;
             mr_pair0 <= 0;
@@ -398,10 +405,10 @@ module aps6408_diag_core #(
                     clk_read_word <= 0;
                     read_word <= 0;
                     if (!retry_slow) begin
-                        sample_early <= 0;
-                        sample_mid <= 0;
-                        sample_center <= 0;
-                        sample_late <= 0;
+                        diagnostic_sample_early <= 0;
+                        diagnostic_sample_mid <= 0;
+                        diagnostic_sample_center <= 0;
+                        diagnostic_sample_late <= 0;
                         retry_read_valid <= 0;
                     end
                     stage_code <= drive_config_phase ? 8'h03 : id_phase ? 8'h08 : (read_phase ? 8'h20 : 8'h10);
@@ -485,10 +492,10 @@ module aps6408_diag_core #(
                         dqs_edge_word <= rx_edges_hold;
                         clk_read_word <= rx_clock_hold;
                         if (!retry_slow) begin
-                            sample_early <= rx_early_hold;
-                            sample_mid <= rx_mid_hold;
-                            sample_center <= rx_center_hold;
-                            sample_late <= rx_late_hold;
+                            diagnostic_sample_early <= rx_early_hold;
+                            diagnostic_sample_mid <= rx_mid_hold;
+                            diagnostic_sample_center <= rx_center_hold;
+                            diagnostic_sample_late <= rx_late_hold;
                         end
                         state <= S_END;
                     end
