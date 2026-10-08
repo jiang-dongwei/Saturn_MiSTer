@@ -59,19 +59,41 @@ foreach profile {33 50} {
     if {$master == ""} { error "Missing runtime master clock for $profile" }
     set name [get_clock_info -name $master]
     set source [get_clock_info -targets $master]
+    set probe_master($profile) $name
     if {$profile == 33} {
         create_generated_clock -name APS_PROBE_ENGINE_33 -master_clock $name -source $source -divide_by 1 $mux_net
     } else {
         create_generated_clock -name APS_PROBE_ENGINE_50 -master_clock $name -source $source -divide_by 1 -add $mux_net
     }
 }
-set_clock_groups -logically_exclusive -group {APS_PROBE_ENGINE_33} -group {APS_PROBE_ENGINE_50}
+set external_source [get_pins -no_duplicates {*|ramh_psram|engine|PSRAM_CLK|clk}]
+set external_target [get_pins -no_duplicates {*|ramh_psram|engine|PSRAM_CLK|q}]
+if {[get_collection_size $external_source] != 1 || [get_collection_size $external_target] != 1} {
+    error "Missing unique PSRAM external-clock source/target"
+}
+create_generated_clock -name APS6408_CLK_EXT_33 -master_clock APS_PROBE_ENGINE_33 \
+    -source $external_source -divide_by 2 $external_target
+create_generated_clock -name APS6408_CLK_EXT_50 -master_clock APS_PROBE_ENGINE_50 \
+    -source $external_source -divide_by 2 -add $external_target
+set_clock_groups -logically_exclusive \
+    -group [list $probe_master(33) APS_PROBE_ENGINE_33 APS6408_CLK_EXT_33] \
+    -group [list $probe_master(50) APS_PROBE_ENGINE_50 APS6408_CLK_EXT_50]
 update_timing_netlist
 if {[get_collection_size [get_clocks {APS_PROBE_ENGINE_*}]] != 2} { error "Local mux clocks were not created" }
 foreach_in_collection clock [get_clocks {APS_PROBE_ENGINE_*}] {
     set count [get_clock_info -nreg_pos $clock]
     puts "LOCAL CLOCK [get_clock_info -name $clock] PERIOD [get_clock_info -period $clock] REGISTERS $count"
     if {$count == 0} { error "Local mux clock does not reach any positive-edge register" }
+}
+foreach profile {33 50} {
+    set external [get_clocks APS6408_CLK_EXT_$profile]
+    if {[get_collection_size $external] != 1} { error "External clock missing for $profile" }
+    foreach_in_collection clock $external {
+        set expected [expr {$profile == 33 ? 29.525 : 19.684}]
+        set actual [get_clock_info -period $clock]
+        puts "EXTERNAL CLOCK [get_clock_info -name $clock] PERIOD $actual"
+        if {abs($actual - $expected) > 0.01} { error "Wrong external period for $profile" }
+    }
 }
 set engine_regs [get_registers {*|ramh_psram|engine|*}]
 foreach check {setup hold} {
