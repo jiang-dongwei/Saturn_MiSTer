@@ -74,7 +74,10 @@ class Program:
         return bytes(rom), pool_start
 
 
-def build(video_only=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041):
+def build(video_only=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041, operation='both'):
+    assert operation in ('both', 'write', 'read')
+    assert operation == 'both' or (not video_only and not cache_read)
+    assert operation != 'write' or not (failure_rereads or failure_cache_read)
     assert 1 <= ram_words <= 262144
     assert 0 <= failure_rereads <= 2
     assert not failure_rereads or (failure_bars and not cache_read and not video_only)
@@ -94,14 +97,18 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
     p.emit(0x2101)  # enable VDP2 display
     if not video_only:
         p.literal(3, 0x01010101)
-        for number, seed in enumerate((first_seed, 0x5AA57FBE, 0xFFFFFFFF, 0)):
-            p.literal(1, 0x26000000)
-            p.literal(2, ram_words)
-            p.literal(0, seed)
-            p.label(f'write_{number}')
-            for word in (0x2102, 0x7104, 0x303C, 0x4210):
-                p.emit(word)
-            p.branch(f'write_{number}', 'false')
+        seeds = (first_seed, 0x5AA57FBE, 0xFFFFFFFF, 0) if operation == 'both' else (first_seed,)
+        for number, seed in enumerate(seeds):
+            if operation != 'read':
+                p.literal(1, 0x26000000)
+                p.literal(2, ram_words)
+                p.literal(0, seed)
+                p.label(f'write_{number}')
+                for word in (0x2102, 0x7104, 0x303C, 0x4210):
+                    p.emit(word)
+                p.branch(f'write_{number}', 'false')
+            if operation == 'write':
+                continue
             p.literal(1, 0x26000000)
             p.literal(2, ram_words)
             p.literal(0, seed)
@@ -133,7 +140,7 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
             p.literal(1, 0xFFFFFE92)
             p.emit(0xE000)
             p.emit(0x2100)
-        masks = [(lane, 1, 0xA5) for lane in range(4)] + [(lane, 2, 0x5AA5) for lane in (0, 2)]
+        masks = ([(lane, 1, 0xA5) for lane in range(4)] + [(lane, 2, 0x5AA5) for lane in (0, 2)]) if operation == 'both' else []
         for lane, width, value in masks:
             if failure_bars:
                 p.literal(12, 0x300 + width * 16 + lane)
@@ -220,18 +227,22 @@ if __name__ == '__main__':
     parser.add_argument('--failure-rereads', type=int, default=0, choices=(0, 1, 2))
     parser.add_argument('--failure-cache-read', action='store_true')
     parser.add_argument('--first-seed', type=lambda value: int(value, 0), default=0xA55A8041)
+    parser.add_argument('--operation', choices=('both', 'write', 'read'), default='both')
     args = parser.parse_args()
-    program, image, pool_start = build(args.video_only, not args.uncached_only, args.failure_bars, args.ram_words, args.failure_rereads, args.failure_cache_read, args.first_seed)
+    program, image, pool_start = build(args.video_only, not args.uncached_only, args.failure_bars, args.ram_words, args.failure_rereads, args.failure_cache_read, args.first_seed, args.operation)
     args.output.write_bytes(image)
     metadata = {'bytes': len(image), 'sha256': hashlib.sha256(image).hexdigest(),
                 'labels': program.labels, 'literal_pool': pool_start,
                 'uncached_ram_start': '0x26000000', 'ram_bytes': 0 if args.video_only else 4 * args.ram_words,
-                'passes': 0 if args.video_only else 4,
+                'operation': args.operation,
+                'passes': 0 if args.video_only else (4 if args.operation == 'both' else 1),
                 'first_seed': f'{args.first_seed:08X}' if not args.video_only else None,
-                'partial_write_cases': 0 if args.video_only else 6,
+                'partial_write_cases': 6 if not args.video_only and args.operation == 'both' else 0,
                 'cached_read_words': 0 if args.video_only or args.uncached_only else args.ram_words,
                 'colors': {'blue': 'startup/video-only', 'green': 'complete', 'red': 'compare failure', 'magenta': 'exception'},
                 'verified_on_hardware': False}
+    if args.operation != 'both':
+        metadata['colors']['green'] = 'writes issued; data not verified' if args.operation == 'write' else 'existing data verified; no RAMH writes'
     if args.failure_bars:
         metadata['colors']['red'] = 'barcode header; comparison failure uses scanline barcode'
         metadata['failure_bars'] = {'header_rgb555': ['7c1f', '03e0', '001f', '7800' if args.failure_cache_read else '7c00'],

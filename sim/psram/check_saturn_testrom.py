@@ -7,12 +7,16 @@ spec.loader.exec_module(generator)
 build = generator.build
 
 
-def check(video_only=False, inject_error=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041, inject_offset=None, error_read_limit=None, error_stage=None):
-    program, rom, _ = build(video_only, cache_read, failure_bars, ram_words, failure_rereads, failure_cache_read, first_seed)
+def check(video_only=False, inject_error=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041, inject_offset=None, error_read_limit=None, error_stage=None, operation='both'):
+    program, rom, _ = build(video_only, cache_read, failure_bars, ram_words, failure_rereads, failure_cache_read, first_seed, operation)
+    assert not inject_error or operation != 'write'
     error_offset = min(0xC0E4, 4 * (ram_words - 1)) if inject_offset is None else inject_offset
     assert error_offset % 4 == 0 and 0 <= error_offset < 4 * ram_words
     assert error_read_limit is None or error_read_limit >= 1
     ram = bytearray(1048576)
+    expected_pattern = b''.join(((first_seed + i * 0x01010101) & 0xFFFFFFFF).to_bytes(4, 'big') for i in range(ram_words))
+    if operation == 'read':
+        ram[:4 * ram_words] = expected_pattern
     registers = [0] * 16
     pc = int.from_bytes(rom[:4], 'big')
     condition = False
@@ -95,7 +99,13 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
                 assert colors == [0x7C00] and reads == writes == partial == 0
             else:
                 assert colors == [0x7C00, 0x03E0]
-                assert reads == 4 * ram_words + 6 + (ram_words if cache_read else 0) and writes == 4 * ram_words + 6 and partial == 6
+                if operation == 'both':
+                    assert reads == 4 * ram_words + 6 + (ram_words if cache_read else 0) and writes == 4 * ram_words + 6 and partial == 6
+                else:
+                    assert reads == (ram_words if operation == 'read' else 0)
+                    assert writes == (ram_words if operation == 'write' else 0) and partial == 0
+                    assert ram[:4 * ram_words] == expected_pattern
+                    assert ram[4 * ram_words:] == bytes(1048576 - 4 * ram_words)
             return {'result': 'PASS', 'instructions': step, 'reads32': reads, 'writes32': writes, 'partial_writes': partial}
         instruction = int.from_bytes(rom[pc:pc + 2], 'big')
         n = instruction >> 8 & 15
@@ -166,3 +176,8 @@ if __name__ == '__main__':
           failure_rereads=2, failure_cache_read=True, inject_error=True, inject_offset=0,
           error_read_limit=1, error_stage=0x311))
     print('This checks generated SH-2 program semantics, not FPGA timing or HDL simulation.')
+    for operation in ('write', 'read'):
+        print(f'64KiB {operation} only:', check(cache_read=False, failure_bars=True, ram_words=16384, operation=operation))
+    print('Read-only injected transient:', check(cache_read=False, failure_bars=True, ram_words=16384,
+          failure_rereads=2, failure_cache_read=True, operation='read', inject_error=True,
+          inject_offset=0x5B84, error_read_limit=1))
