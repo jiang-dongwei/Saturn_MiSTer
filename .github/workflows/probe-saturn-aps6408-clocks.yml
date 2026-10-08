@@ -30,7 +30,7 @@ jobs:
           mkdir -p .ci
           docker run --rm -v "$GITHUB_WORKSPACE:/project" -w /project \
             theypsilon/quartus-lite-c5:17.0.2 \
-            bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_APS6408.qsf; quartus_map Saturn_APS6408 --rev=Saturn_APS6408 2>&1 | tee .ci/aps-clock-map.log; quartus_sta -t sim/psram/probe_saturn_aps6408_clocks.tcl 2>&1 | tee .ci/aps-clock-probe.log'
+            bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_APS6408.qsf; quartus_sh -t sys/build_id.tcl quartus_map Saturn_APS6408 Saturn_APS6408 2>&1 | tee .ci/aps-clock-prepare.log; quartus_map Saturn_APS6408 --rev=Saturn_APS6408 2>&1 | tee .ci/aps-clock-map.log; quartus_sta -t sim/psram/probe_saturn_aps6408_clocks.tcl 2>&1 | tee .ci/aps-clock-probe.log'
       - name: Preserve mapped database for clock investigation
         if: always()
         run: |
