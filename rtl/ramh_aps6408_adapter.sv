@@ -98,15 +98,19 @@ module ramh_aps6408_adapter #(
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
     reg req_meta, req_sync;
     reg req_seen, half_select;
+    (* preserve *) reg [19:2] engine_request_addr;
+    (* preserve *) reg [31:0] engine_request_data;
+    (* preserve *) reg [3:0] engine_request_mask;
+    (* preserve *) reg engine_request_write;
     reg [1:0] engine_state;
     reg runtime_valid;
     wire runtime_ready, runtime_done, runtime_error;
     wire [15:0] runtime_read;
     wire engine_init_done, engine_init_error;
     localparam E_IDLE=0, E_ISSUE=1, E_WAIT=2, E_ACK=3;
-    wire [1:0] half_mask = half_select ? source_mask[1:0] : source_mask[3:2];
-    wire [15:0] half_data = half_select ? source_data[15:0] : source_data[31:16];
-    wire [23:0] half_address = {4'd0,source_addr,half_select,1'b0};
+    wire [1:0] half_mask = half_select ? engine_request_mask[1:0] : engine_request_mask[3:2];
+    wire [15:0] half_data = half_select ? engine_request_data[15:0] : engine_request_data[31:16];
+    wire [23:0] half_address = {4'd0,engine_request_addr,half_select,1'b0};
     always @(posedge engine_clk) begin
         runtime_valid <= 0;
         if (engine_reset) begin
@@ -117,6 +121,10 @@ module ramh_aps6408_adapter #(
             response_error <= 0;
             response_data <= 0;
             half_select <= 0;
+            engine_request_addr <= 0;
+            engine_request_data <= 0;
+            engine_request_mask <= 0;
+            engine_request_write <= 0;
             engine_state <= E_IDLE;
         end else begin
             req_meta <= request_toggle;
@@ -124,12 +132,16 @@ module ramh_aps6408_adapter #(
             case (engine_state)
                 E_IDLE: if (req_sync != req_seen) begin
                     req_seen <= req_sync;
+                    engine_request_addr <= source_addr;
+                    engine_request_data <= source_data;
+                    engine_request_mask <= source_mask;
+                    engine_request_write <= source_write;
                     half_select <= 0;
                     response_error <= 0;
                     engine_state <= E_ISSUE;
                 end
                 E_ISSUE: begin
-                    if (source_write && half_mask == 0) begin
+                    if (engine_request_write && half_mask == 0) begin
                         if (half_select) engine_state <= E_ACK;
                         else half_select <= 1;
                     end else if (runtime_ready) begin
@@ -167,7 +179,7 @@ module ramh_aps6408_adapter #(
         .speed_select(speed_select), .test_mode(2'd0), .d1_mode(2'd0), .drive_half(1'b1),
         .control_fast(speed_select==3),
         .request_valid(runtime_valid), .request_ready(runtime_ready),
-        .request_write(source_write), .request_address(half_address),
+        .request_write(engine_request_write), .request_address(half_address),
         .request_write_data(half_data), .request_write_mask(half_mask),
         .request_done(runtime_done), .request_error(runtime_error),
         .request_read_data(runtime_read), .init_done(engine_init_done), .init_error(engine_init_error),

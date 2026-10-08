@@ -47,10 +47,14 @@ set_input_delay -clock $aps_external_clock -min 0.000 -add_delay \
 
 set_false_path -to [get_registers {*|ramh_psram|req_meta *|ramh_psram|ack_meta *|ramh_psram|init_meta *|ramh_psram|error_meta}]
 # Bundled payloads remain held until the synchronized acknowledgement.
-set aps_request_sources [get_registers {*|ramh_psram|source_*}]
-set aps_request_targets [get_registers {*|ramh_psram|engine|runtime_* *|ramh_psram|engine|read_phase *|ramh_psram|engine_state *|ramh_psram|runtime_valid}]
+set aps_request_sources [get_registers {*|ramh_psram|source_addr* *|ramh_psram|source_data* *|ramh_psram|source_mask* *|ramh_psram|source_write}]
+set aps_request_targets [get_registers {*|ramh_psram|engine_request_*}]
+if {[get_collection_size $aps_request_targets] != 55} { error "Expected all 55 request payload capture registers" }
 set aps_response_sources [get_registers {*|ramh_psram|response_*}]
 set aps_response_targets [get_registers {*|ramh_psram|cache_* *|ramh_psram|adapter_error}]
+foreach aps_endpoint_set {aps_request_sources aps_request_targets aps_response_sources aps_response_targets} {
+    if {[get_collection_size [set $aps_endpoint_set]] == 0} { error "Missing bundled CDC endpoints: $aps_endpoint_set" }
+}
 set_max_delay 9.841 -from $aps_request_sources -to $aps_request_targets
 set_max_delay 14.762 -from $aps_response_sources -to $aps_response_targets
 set_false_path -hold -from $aps_request_sources -to $aps_request_targets
