@@ -1,0 +1,47 @@
+name: Probe Saturn APS6408 clock constraints
+on:
+  push:
+    branches: [codex/qpi-33m87-validation]
+    paths:
+      - .github/workflows/probe-saturn-aps6408-clocks.yml
+      - sim/psram/probe_saturn_aps6408_clocks.tcl
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: saturn-aps6408-clock-probe-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free runner disk
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune --all --force
+      - name: Pull fixed Quartus
+        run: docker pull theypsilon/quartus-lite-c5:17.0.2
+      - name: Inspect post-map clock model with Quartus 17
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          docker run --rm -v "$GITHUB_WORKSPACE:/project" -w /project \
+            theypsilon/quartus-lite-c5:17.0.2 \
+            bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_APS6408.qsf; quartus_map Saturn_APS6408 --rev=Saturn_APS6408 2>&1 | tee .ci/aps-clock-map.log; quartus_sta -t sim/psram/probe_saturn_aps6408_clocks.tcl 2>&1 | tee .ci/aps-clock-probe.log'
+      - name: Preserve mapped database for clock investigation
+        if: always()
+        run: |
+          if test -d db; then tar -czf .ci/aps-clock-map-db.tar.gz db Saturn_APS6408.qsf; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Saturn_APS6408_Clock_Probe
+          include-hidden-files: true
+          retention-days: 7
+          path: |
+            .ci/aps-clock-*.log
+            .ci/aps-clock-map-db.tar.gz
+            output_files_aps6408/*.map.rpt
