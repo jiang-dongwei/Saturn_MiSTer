@@ -46,6 +46,37 @@ foreach_in_collection reg $registers {
         if {[catch {get_edge_info -src $clocks} source]} { puts "CLOCK SOURCE QUERY ERROR: $source" } else { puts "CLOCK SOURCE [get_node_info -name $source]" }
     }
 }
+puts "=== EXPERIMENTAL LOCAL MUX CLOCK MODEL ==="
+set mux_net [get_nets -no_duplicates {*|psram_clock_control|auto_generated|outclk}]
+if {[get_collection_size $mux_net] != 1} { error "Missing unique mapped clock mux output net" }
+foreach profile {33 50} {
+    set master ""
+    foreach_in_collection clock [get_clocks {*psram_speed_pll*}] {
+        set period [get_clock_info -period $clock]
+        if {($profile == 33 && $period > 14.7 && $period < 14.8) ||
+            ($profile == 50 && $period > 9.8 && $period < 9.9)} { set master $clock }
+    }
+    if {$master == ""} { error "Missing runtime master clock for $profile" }
+    set name [get_clock_info -name $master]
+    set source [get_clock_info -targets $master]
+    if {$profile == 33} {
+        create_generated_clock -name APS_PROBE_ENGINE_33 -master_clock $name -source $source -divide_by 1 $mux_net
+    } else {
+        create_generated_clock -name APS_PROBE_ENGINE_50 -master_clock $name -source $source -divide_by 1 -add $mux_net
+    }
+}
+set_clock_groups -logically_exclusive -group {APS_PROBE_ENGINE_33} -group {APS_PROBE_ENGINE_50}
+update_timing_netlist
+if {[get_collection_size [get_clocks {APS_PROBE_ENGINE_*}]] != 2} { error "Local mux clocks were not created" }
+foreach_in_collection clock [get_clocks {APS_PROBE_ENGINE_*}] {
+    set count [get_clock_info -nreg_pos $clock]
+    puts "LOCAL CLOCK [get_clock_info -name $clock] PERIOD [get_clock_info -period $clock] REGISTERS $count"
+    if {$count == 0} { error "Local mux clock does not reach any positive-edge register" }
+}
+set engine_regs [get_registers {*|ramh_psram|engine|*}]
+foreach check {setup hold} {
+    report_timing -$check -from $engine_regs -to $engine_regs -npaths 8 -detail full_path -file .ci/aps-clock-local-$check.rpt
+}
 puts "APS6408 CLOCK PROBE COMPLETE: post-map inspection only; no fitted timing or hardware verdict"
 delete_timing_netlist
 project_close

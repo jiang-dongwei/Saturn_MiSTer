@@ -58,5 +58,6 @@ jobs:
           retention-days: 7
           path: |
             .ci/aps-clock-*.log
+            .ci/aps-clock-*.rpt
             .ci/aps-clock-map-db.tar.gz
             output_files_aps6408/*.map.rpt
