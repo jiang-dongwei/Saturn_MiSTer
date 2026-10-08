@@ -169,4 +169,12 @@ Runner37735366521通过88诊断、16旧波形、19训练开启运行时及8192+5
 交叉测试进一步扩大到完整1MiB：8MHz写后33MHz只读两轮失败，分别为26005788的bit25/29及26006000的bit30/DQ6。缓存同错、两次物理重读恢复；每轮随后8MHz完整1MiB只读正确，读取之间不写RAMH或重启Linux。有一轮写程序无截图而中止，单独保留。新增证据不支持只定位DQ7；仍不能计33MHz通过。
 反向33MHz写入→8MHz完整1MiB只读一轮正确；随后33MHz只读加载无截图，无33MHz结论。这轮独立核验了高速写入内容，但不等于所有图样或PVT通过。结束已按SHA清理ROM/CFG并核实MENU。
 
-独立候选31b65d9只在APS6408 revision关闭两个VDP1帧缓冲共12块spram的JTAG在线编辑。共用VHDL新增参数默认YES，其他revision保持原设置；RAM功能端口、大小、读写参数及SDC不变。新鲜映射37755277556/完整构建37755283112进行中。接收消费保持两控制周期及快照一致性检查已通过39场景/2276次读取。
+独立候选31b65d9只在APS6408 revision关闭两个VDP1帧缓冲共12块spram的JTAG在线编辑。共用VHDL新增参数默认YES，其他revision保持原设置；RAM功能端口、大小、读写参数及SDC不变。新鲜映射37755277556成功：40831寄存器、39787 ALM估算，较90cd702减少826寄存器和947 ALM估算；12块内存功能参数比对一致。完整构建37755283112进行中。接收消费保持两控制周期及快照一致性检查已通过39场景/2276次读取。
+
+新增VDP1帧缓冲自编ROM，用来核查内存编辑接口优化后的实际功能：
+
+```powershell
+python scripts/generate_saturn_ramh_testrom.py vdp1fb.bin --target vdp1fb --uncached-only --failure-bars --failure-rereads 2
+```
+
+该ROM覆盖两个CPU选中缓冲各256KiB地址窗口，每缓冲四轮图样写读及六种部分写，随后用不同标记核对三次手动切换的数据保持。包含片上帧缓冲及现有实现的SDRAM扩展区域；不访问RAMH。失败截图用`decode_saturn_failure_bars.py --target vdp1fb --rereads 2`解码。程序检查器抽象帧切换完成，实际切换必须由上板标记检查确认；缓冲别名注错应在0x350阶段失败。默认RAMH ROM及已有交叉测试ROM保持逐字节一致。
