@@ -181,3 +181,9 @@ if __name__ == '__main__':
     print('Read-only injected transient:', check(cache_read=False, failure_bars=True, ram_words=16384,
           failure_rereads=2, failure_cache_read=True, operation='read', inject_error=True,
           inject_offset=0x5B84, error_read_limit=1))
+    print('Full1MiB write only:', check(cache_read=False, failure_bars=True, operation='write'))
+    print('Full1MiB read only:', check(cache_read=False, failure_bars=True, operation='read',
+          failure_rereads=2, failure_cache_read=True))
+    print('Full1MiB last-word transient:', check(cache_read=False, failure_bars=True, operation='read',
+          failure_rereads=2, failure_cache_read=True, inject_error=True,
+          inject_offset=0xFFFFC, error_read_limit=1))
