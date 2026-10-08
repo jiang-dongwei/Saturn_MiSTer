@@ -77,11 +77,12 @@ class Program:
 def build(video_only=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041):
     assert 1 <= ram_words <= 262144
     assert 0 <= failure_rereads <= 2
-    assert not failure_rereads or (failure_bars and ram_words == 1 and not cache_read and not video_only)
-    assert not failure_cache_read or (failure_bars and ram_words == 1 and not cache_read and not video_only)
+    assert not failure_rereads or (failure_bars and not cache_read and not video_only)
+    assert not failure_cache_read or (failure_bars and not cache_read and not video_only)
     assert 0 <= first_seed <= 0xFFFFFFFF
     assert not video_only or first_seed == 0xA55A8041
     p = Program()
+    dynamic_failure_address = ram_words != 1 and (failure_rereads or failure_cache_read)
     p.literal(1, 0xFFFFFE92)
     p.emit(0xE000)
     p.emit(0x2100)  # MOV.B R0,@R1: disable SH-2 cache
@@ -107,6 +108,8 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
             if failure_bars:
                 p.literal(12, 0x100 + number)
             p.label(f'read_{number}')
+            if dynamic_failure_address:
+                p.emit(0x6513)  # preserve the address before post-increment
             p.emit(0x6416)  # MOV.L @R1+,R4
             p.compare()
             p.emit(0x303C)
@@ -141,6 +144,8 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
             p.literal(0, value)
             p.emit(0x2100 if width == 1 else 0x2101)
             p.literal(1, 0x26000000)
+            if dynamic_failure_address:
+                p.emit(0x6513)
             p.emit(0x6412)
             expected = bytearray.fromhex('11223344')
             expected[lane:lane + width] = value.to_bytes(width, 'big')
@@ -155,12 +160,23 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
         for instruction in (0x6603, 0x6743, 0x6813, 0x6923, 0x6BC3):
             p.emit(instruction)
         if failure_cache_read:
-            p.literal(1, 0x26000000)
+            if dynamic_failure_address:
+                p.emit(0x6153)
+            else:
+                p.literal(1, 0x26000000)
             p.emit(0x6212)
         for index in range(failure_rereads):
-            p.literal(1, 0x26000004)
+            if dynamic_failure_address:
+                p.emit(0x6153)
+                p.emit(0xE304)
+                p.emit(0x213A)  # XOR R3,R1: choose a different valid RAMH word
+            else:
+                p.literal(1, 0x26000004)
             p.emit(0x6412)
-            p.literal(1, 0x26000000)
+            if dynamic_failure_address:
+                p.emit(0x6153)
+            else:
+                p.literal(1, 0x26000000)
             p.emit(0x6012 | (13 + index) << 8)
         p.literal(1, 0x25F800AC)
         p.literal(0, 0x8000)
@@ -224,8 +240,8 @@ if __name__ == '__main__':
             'stages': '0x100..103 uncached passes; 0x200 cached pass; 0x310..313 byte writes; 0x320/322 half-word writes',
             'address_note': 'Subtract 4 from address_register for stage 0x100..103 and 0x200; partial reads do not post-increment.'}
         if args.failure_rereads:
-            metadata['failure_bars']['rereads'] = 'Read 0x26000004 to replace adapter one-word cache, then reread 0x26000000 without writes; repeated as requested.'
+            metadata['failure_bars']['rereads'] = 'Read failed-address XOR 4 to replace the adapter cache, then reread the failed address without writes; repeated as requested.'
         if args.failure_cache_read:
-            metadata['failure_bars']['adapter_cache_read'] = 'Immediately reread 0x26000000 before any other RAMH access; SH-2 cache is disabled, adapter one-word cache stays valid.'
+            metadata['failure_bars']['adapter_cache_read'] = 'Immediately reread the failed address before any other RAMH access; SH-2 cache is disabled, adapter one-word cache stays valid.'
     args.output.with_suffix('.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(metadata))

@@ -7,9 +7,11 @@ spec.loader.exec_module(generator)
 build = generator.build
 
 
-def check(video_only=False, inject_error=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041):
+def check(video_only=False, inject_error=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041, inject_offset=None, error_read_limit=None, error_stage=None):
     program, rom, _ = build(video_only, cache_read, failure_bars, ram_words, failure_rereads, failure_cache_read, first_seed)
-    error_offset = 0 if ram_words == 1 else 0xC0E4
+    error_offset = min(0xC0E4, 4 * (ram_words - 1)) if inject_offset is None else inject_offset
+    assert error_offset % 4 == 0 and 0 <= error_offset < 4 * ram_words
+    assert error_read_limit is None or error_read_limit >= 1
     ram = bytearray(1048576)
     registers = [0] * 16
     pc = int.from_bytes(rom[:4], 'big')
@@ -17,24 +19,36 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
     colors = []
     reads = writes = partial = 0
     vram = {}
+    read_offsets = []
+    error_reads = 0
+    adapter_cache = None
 
     def read(address, width):
-        nonlocal reads
+        nonlocal reads, error_reads, adapter_cache
         if 0x26000000 <= address < 0x26100000 or 0x06000000 <= address < 0x06100000:
             offset = (address & ~0x20000000) - 0x06000000
             value = int.from_bytes(ram[offset:offset + width], 'big')
             reads += 1
-            if inject_error and offset == error_offset:
-                value ^= 0x00800000
+            read_offsets.append(offset)
+            if failure_cache_read and adapter_cache is not None and adapter_cache[0] == offset:
+                return adapter_cache[1]
+            if inject_error and offset == error_offset and (error_stage is None or registers[12] == error_stage):
+                error_reads += 1
+                if error_read_limit is None or error_reads <= error_read_limit:
+                    value ^= 0x00800000
+            if failure_cache_read:
+                adapter_cache = (offset, value)
             return value
         assert address + width <= len(rom), hex(address)
         return int.from_bytes(rom[address:address + width], 'big')
 
     def write(address, value, width):
-        nonlocal writes, partial
+        nonlocal writes, partial, adapter_cache
         if 0x26000000 <= address < 0x26100000:
             offset = address - 0x26000000
             ram[offset:offset + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(width, 'big')
+            if adapter_cache is not None and offset // 4 == adapter_cache[0] // 4:
+                adapter_cache = None
             writes += width == 4
             partial += width != 4
         elif 0x25E00000 <= address < 0x25E00100:
@@ -56,8 +70,25 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
             assert words[:4] == [0x7C1F, 0x03E0, 0x001F, 0x7800 if failure_cache_read else 0x7C00]
             values = [sum(words[4 + 8 * i + j] << (4 * j) for j in range(8)) for i in range(5 + extra_values)]
             index = error_offset // 4
-            expected = (first_seed + index * 0x01010101) & 0xFFFFFFFF
-            assert values == [expected, expected ^ 0x00800000, 0x26000000 + error_offset + 4, ram_words - index, 0x100] + [expected ^ 0x00800000] * extra_values, values
+            if error_stage is None or error_stage == 0x100:
+                expected = (first_seed + index * 0x01010101) & 0xFFFFFFFF
+                expected_base = [expected, expected ^ 0x00800000, 0x26000000 + error_offset + 4, ram_words - index, 0x100]
+            else:
+                assert error_offset == 0 and error_stage in (*range(0x310, 0x314), 0x320, 0x322)
+                expected_bytes = bytearray.fromhex('11223344')
+                width = 1 if error_stage < 0x320 else 2
+                lane = error_stage & 15
+                expected_bytes[lane:lane + width] = (0xA5 if width == 1 else 0x5AA5).to_bytes(width, 'big')
+                expected = int.from_bytes(expected_bytes, 'big')
+                expected_base = [expected, expected ^ 0x00800000, 0x26000000, 0, error_stage]
+            expected_extra = [expected ^ 0x00800000] if failure_cache_read else []
+            expected_offsets = [error_offset] if failure_cache_read else []
+            for reread in range(failure_rereads):
+                expected_extra.append(expected ^ (0x00800000 if error_read_limit is None or reread + 2 <= error_read_limit else 0))
+                expected_offsets += [error_offset ^ 4, error_offset]
+            assert values == expected_base + expected_extra, values
+            if expected_offsets:
+                assert read_offsets[-len(expected_offsets):] == expected_offsets, read_offsets[-len(expected_offsets):]
             return {'result': 'EXPECTED_FAILURE_BARS', 'values': [hex(v) for v in values], 'instructions': step}
         if pc == program.labels['pass']:
             if video_only:
@@ -79,6 +110,8 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
             if not failure_bars and colors[-1:] == [0x001F]:
                 assert inject_error
                 return {'result': 'EXPECTED_RED', 'instructions': step, 'reads32': reads}
+        elif instruction & 0xF00F == 0x200A:
+            registers[n] ^= registers[m]
         elif instruction & 0xF00F in (0x6002, 0x6006):
             registers[n] = read(registers[m], 4)
             if instruction & 15 == 6:
@@ -123,4 +156,13 @@ if __name__ == '__main__':
         print(f'First seed {seed:08X}:', check(ram_words=1, first_seed=seed))
         print(f'Injected first seed {seed:08X}:', check(cache_read=False, failure_bars=True, ram_words=1,
               failure_rereads=2, failure_cache_read=True, first_seed=seed, inject_error=True))
+    print('64KiB failed-address probe:', check(cache_read=False, failure_bars=True, ram_words=16384,
+          failure_rereads=2, failure_cache_read=True))
+    for offset, limit in ((0x5F88, None), (0x5788, 1), (0xFFFC, 1)):
+        print(f'64KiB injected at {offset:04X}, limit={limit}:', check(cache_read=False, failure_bars=True,
+              ram_words=16384, failure_rereads=2, failure_cache_read=True, inject_error=True,
+              inject_offset=offset, error_read_limit=limit))
+    print('Partial-write failed-address probe:', check(cache_read=False, failure_bars=True, ram_words=16,
+          failure_rereads=2, failure_cache_read=True, inject_error=True, inject_offset=0,
+          error_read_limit=1, error_stage=0x311))
     print('This checks generated SH-2 program semantics, not FPGA timing or HDL simulation.')
