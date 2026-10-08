@@ -45,6 +45,34 @@ module tb_ramh_aps6408;
         .adapter_error(adapter_error),.device_id(device_id),.stage_code(stage_code),
         .PSRAM_CLK(psram_clk),.PSRAM_CE_N(ce_n),.PSRAM_DQ(dq),.PSRAM_DQS(dqs)
     );
+    realtime receive_changed_at = -1e9, reference_changed_at = -1e9;
+    real control_period;
+    integer receive_handoffs = 0;
+    always @(dut.engine.rx_early or dut.engine.rx_mid or
+             dut.engine.rx_center or dut.engine.rx_late)
+        receive_changed_at = $realtime;
+    always @(dut.engine.rx_clock) reference_changed_at = $realtime;
+    always @(posedge engine_clk) begin
+        if (!reset && dut.engine.state == 5 && dut.engine.rx_done_sync &&
+            (!dut.engine.id_phase || dut.engine.rx_clock_done_sync)) begin
+            control_period = dut.engine.fast_control ? 9.841333334 : 14.762;
+            if ($realtime - receive_changed_at < 2 * control_period - 0.01)
+                $fatal(1,"Receive payload was not held for two control periods");
+            if ({dut.engine.rx_early_hold, dut.engine.rx_mid_hold,
+                 dut.engine.rx_center_hold, dut.engine.rx_late_hold} !==
+                {dut.engine.rx_early, dut.engine.rx_mid,
+                 dut.engine.rx_center, dut.engine.rx_late})
+                $fatal(1,"Completed receive snapshots differ from held PHY data");
+            if (dut.engine.id_phase) begin
+                if ($realtime - reference_changed_at < 2 * control_period - 0.01)
+                    $fatal(1,"Reference payload was not held for two control periods");
+                if (dut.engine.rx_clock_hold !== dut.engine.rx_clock)
+                    $fatal(1,"Completed reference snapshot differs from PHY data");
+            end
+            receive_handoffs = receive_handoffs + 1;
+        end
+    end
+    final $display("RECEIVE HANDOFF CHECKS: %0d completed reads", receive_handoffs);
 `ifdef APS_COUNTER_EQUIV
     tri [7:0] reference_dq;
     tri reference_dqs;
