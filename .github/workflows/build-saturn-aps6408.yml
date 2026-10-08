@@ -36,6 +36,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install HDL checker
         run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Check self-written SH-2 diagnostic programs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          python3 sim/psram/check_saturn_testrom.py | tee .ci/testrom-semantics.log
       - name: Verify complete RAMH protocol and CDC
         shell: bash
         run: |
@@ -55,7 +61,9 @@ jobs:
         if: always()
         with:
           name: Saturn_APS6408_Runtime_Regression
-          path: .ci/ramh-aps-regression.log
+          path: |
+            .ci/ramh-aps-regression.log
+            .ci/testrom-semantics.log
           include-hidden-files: true
   quartus:
     needs: [diagnostic, runtime]

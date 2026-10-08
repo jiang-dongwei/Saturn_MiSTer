@@ -2,6 +2,16 @@ project_open Saturn_APS6408 -revision Saturn_APS6408
 create_timing_netlist
 read_sdc
 update_timing_netlist
+foreach clock_name {APS6408_ENGINE_33 APS6408_ENGINE_50 APS6408_CLK_EXT_33 APS6408_CLK_EXT_50} {
+    set clocks [get_clocks $clock_name]
+    if {[get_collection_size $clocks] != 1} { error "Missing fitted clock $clock_name" }
+    foreach_in_collection clock $clocks {
+        puts "APS6408 FITTED CLOCK $clock_name PERIOD [get_clock_info -period $clock] REGISTERS [get_clock_info -nreg_pos $clock]"
+        if {[string match APS6408_ENGINE_* $clock_name] && [get_clock_info -nreg_pos $clock] == 0} {
+            error "Runtime clock $clock_name does not reach fitted registers"
+        }
+    }
+}
 
 set diagnostic_regs [get_registers {*|ramh_psram|*}]
 set dq_regs [get_registers {*|ramh_psram|engine|rx|input_capture|input_ddr|*}]

@@ -74,7 +74,8 @@ class Program:
         return bytes(rom), pool_start
 
 
-def build(video_only=False, cache_read=True):
+def build(video_only=False, cache_read=True, failure_bars=False, ram_words=262144):
+    assert 1 <= ram_words <= 262144
     p = Program()
     p.literal(1, 0xFFFFFE92)
     p.emit(0xE000)
@@ -89,15 +90,17 @@ def build(video_only=False, cache_read=True):
         p.literal(3, 0x01010101)
         for number, seed in enumerate((0xA55A8041, 0x5AA57FBE, 0xFFFFFFFF, 0)):
             p.literal(1, 0x26000000)
-            p.literal(2, 0x40000)
+            p.literal(2, ram_words)
             p.literal(0, seed)
             p.label(f'write_{number}')
             for word in (0x2102, 0x7104, 0x303C, 0x4210):
                 p.emit(word)
             p.branch(f'write_{number}', 'false')
             p.literal(1, 0x26000000)
-            p.literal(2, 0x40000)
+            p.literal(2, ram_words)
             p.literal(0, seed)
+            if failure_bars:
+                p.literal(12, 0x100 + number)
             p.label(f'read_{number}')
             p.emit(0x6416)  # MOV.L @R1+,R4
             p.compare()
@@ -109,8 +112,10 @@ def build(video_only=False, cache_read=True):
             p.emit(0xE011)
             p.emit(0x2100)  # purge and enable cache
             p.literal(1, 0x06000000)
-            p.literal(2, 0x40000)
+            p.literal(2, ram_words)
             p.emit(0xE000)
+            if failure_bars:
+                p.literal(12, 0x200)
             p.label('cached_read')
             p.emit(0x6416)
             p.compare()
@@ -122,6 +127,8 @@ def build(video_only=False, cache_read=True):
             p.emit(0x2100)
         masks = [(lane, 1, 0xA5) for lane in range(4)] + [(lane, 2, 0x5AA5) for lane in (0, 2)]
         for lane, width, value in masks:
+            if failure_bars:
+                p.literal(12, 0x300 + width * 16 + lane)
             p.literal(1, 0x26000000)
             p.literal(0, 0x11223344)
             p.emit(0x2102)
@@ -139,9 +146,33 @@ def build(video_only=False, cache_read=True):
     p.label('pass')
     p.branch('pass')
     p.label('fail')
-    p.literal(0, 0x001F)
-    p.emit(0x2A01)
-    p.branch('fail')
+    if failure_bars:
+        for instruction in (0x6603, 0x6743, 0x6813, 0x6923, 0x6BC3):
+            p.emit(instruction)
+        p.literal(1, 0x25F800AC)
+        p.literal(0, 0x8000)
+        p.emit(0x2101)
+        p.literal(1, 0x25F800AE)
+        p.emit(0xE000)
+        p.emit(0x2101)
+        p.literal(10, 0x25E00000)
+        for color in (0x7C1F, 0x03E0, 0x001F, 0x7C00):
+            p.literal(0, color)
+            p.emit(0x2A01)
+            p.emit(0x7A02)
+        for register in (6, 7, 8, 9, 11):
+            p.emit(0x6503 | register << 4)
+            p.emit(0xE308)
+            p.label(f'bar_{register}')
+            for instruction in (0x6053, 0xC90F, 0x2A01, 0x7A02, 0x4509, 0x4509, 0x4310):
+                p.emit(instruction)
+            p.branch(f'bar_{register}', 'false')
+        p.label('fail_halt')
+        p.branch('fail_halt')
+    else:
+        p.literal(0, 0x001F)
+        p.emit(0x2A01)
+        p.branch('fail')
     p.label('fault')
     p.literal(10, 0x25E00000)
     p.literal(0, 0x7C1F)
@@ -155,16 +186,25 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument('--video-only', action='store_true')
     parser.add_argument('--uncached-only', action='store_true')
+    parser.add_argument('--failure-bars', action='store_true')
+    parser.add_argument('--ram-words', type=int, default=262144)
     args = parser.parse_args()
-    program, image, pool_start = build(args.video_only, not args.uncached_only)
+    program, image, pool_start = build(args.video_only, not args.uncached_only, args.failure_bars, args.ram_words)
     args.output.write_bytes(image)
     metadata = {'bytes': len(image), 'sha256': hashlib.sha256(image).hexdigest(),
                 'labels': program.labels, 'literal_pool': pool_start,
-                'uncached_ram_start': '0x26000000', 'ram_bytes': 0 if args.video_only else 1048576,
+                'uncached_ram_start': '0x26000000', 'ram_bytes': 0 if args.video_only else 4 * args.ram_words,
                 'passes': 0 if args.video_only else 4,
                 'partial_write_cases': 0 if args.video_only else 6,
-                'cached_read_words': 0 if args.video_only or args.uncached_only else 262144,
+                'cached_read_words': 0 if args.video_only or args.uncached_only else args.ram_words,
                 'colors': {'blue': 'startup/video-only', 'green': 'complete', 'red': 'compare failure', 'magenta': 'exception'},
                 'verified_on_hardware': False}
+    if args.failure_bars:
+        metadata['colors']['red'] = 'barcode header; comparison failure uses scanline barcode'
+        metadata['failure_bars'] = {'header_rgb555': ['7c1f', '03e0', '001f', '7c00'],
+            'values': ['expected', 'actual', 'address_register', 'remaining_words', 'stage'],
+            'encoding': '8 scanlines per value, low nibble first, red-channel RGB555 bits[3:0]',
+            'stages': '0x100..103 uncached passes; 0x200 cached pass; 0x310..313 byte writes; 0x320/322 half-word writes',
+            'address_note': 'Subtract 4 from address_register for stage 0x100..103 and 0x200; partial reads do not post-increment.'}
     args.output.with_suffix('.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(metadata))
