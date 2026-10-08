@@ -155,7 +155,9 @@ module aps6408_diag_core #(
     wire [23:0] address = drive_config_phase ? 24'd0 : id_phase ? {22'd0,id_slot} :
                           memory_training ? {21'h020000,id_slot,1'b0} :
                           RUNTIME_API != 0 ? runtime_address : address_for(cell_index);
-    wire [15:0] pattern = memory_training ? (id_slot[1] ? 16'h5AA5 : 16'hA55A) :
+    wire [15:0] memory_pattern = (id_slot[1] ? 16'h5AA5 : 16'hA55A) ^
+                                (id_slot[0] ? 16'h99CC : 16'h0000);
+    wire [15:0] pattern = memory_training ? memory_pattern :
                           RUNTIME_API != 0 ? runtime_data : pattern_for(cell_index, pattern_pass);
     wire [1:0] write_speed = test_mode == 1 ? 2'd0 : speed_select;
     wire [1:0] read_speed = test_mode == 2 ? 2'd0 : speed_select;

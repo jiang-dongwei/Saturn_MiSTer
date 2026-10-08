@@ -63,7 +63,7 @@ jobs:
           iverilog -g2012 -DAPS6408_DIAG_SIM -s tb_ramh_aps6408 -o .ci/ramh-memory-training.vvp \
             rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv \
             rtl/ramh_aps6408_adapter.sv sim/psram/tb_ramh_aps6408.sv
-          for args in '' '+src_fast' '+src_slow' '+refresh' '+src_fast +refresh' '+src_slow +refresh' '+drop_config' '+dq_delay=7.0' '+speed8' '+speed16' '+speed8 +refresh' '+speed16 +refresh' '+speed50' '+speed50 +src_fast' '+speed50 +refresh' '+speed50 +dq_delay=7.0' '+bad_training' '+drop_training_dqs'; do
+          for args in '' '+src_fast' '+src_slow' '+refresh' '+src_fast +refresh' '+src_slow +refresh' '+drop_config' '+dq_delay=7.0' '+speed8' '+speed16' '+speed8 +refresh' '+speed16 +refresh' '+speed50' '+speed50 +src_fast' '+speed50 +refresh' '+speed50 +dq_delay=7.0' '+bad_training' '+drop_training_dqs' '+shift_training_word' '+speed8 +shift_training_word' '+speed16 +shift_training_word' '+speed50 +shift_training_word'; do
             printf 'SCENARIO memory training: %s\n' "$args" | tee -a .ci/ramh-aps-regression.log
             vvp .ci/ramh-memory-training.vvp $args | tee -a .ci/ramh-aps-regression.log
           done

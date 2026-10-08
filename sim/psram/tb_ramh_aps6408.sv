@@ -88,6 +88,7 @@ module tb_ramh_aps6408;
     integer edge_number=-1, writes=0, reads=0, reset_count=0, register_writes=0;
     integer byte_number, first_data_edge, refresh_extra=0;
     integer drop_config=0, missing_memory_dqs=0, bad_training=0, drop_training_dqs=0;
+    integer shift_training_word=0;
     wire memory_read_blocked = missing_memory_dqs || (drop_training_dqs && dut.engine.memory_training);
     real dq_delay=10.0;
     reg device_ready=0;
@@ -167,7 +168,8 @@ module tb_ramh_aps6408;
                     default: mem_dq <= #(dq_delay) 8'h93;
                 endcase
             end else begin
-                mem_dq <= #(dq_delay) memory[byte_address+byte_number] ^
+                mem_dq <= #(dq_delay) memory[byte_address+byte_number+
+                              ((shift_training_word && dut.engine.memory_training) ? 2 : 0)] ^
                                     ((bad_training && dut.engine.memory_training) ? 8'h80 : 8'h00);
                 if (byte_number==0) reads=reads+1;
             end
@@ -217,6 +219,7 @@ module tb_ramh_aps6408;
         drop_config=$test$plusargs("drop_config");
         bad_training=$test$plusargs("bad_training");
         drop_training_dqs=$test$plusargs("drop_training_dqs");
+        shift_training_word=$test$plusargs("shift_training_word");
         if ($value$plusargs("dq_delay=%f",dq_delay)) begin end
         repeat(6) @(negedge src_clk);reset=0;
         wait(init_done || init_error);
@@ -226,7 +229,7 @@ module tb_ramh_aps6408;
                 $fatal(1,"unverified configuration escaped init gate");
             $display("RAMH APS6408 PASS: rejected bad MR0 before memory access");$finish;
         end
-        if (bad_training || drop_training_dqs) begin
+        if (bad_training || drop_training_dqs || shift_training_word) begin
             repeat(5) @(negedge src_clk);
             if (!MEMORY_TRAINING || !init_error || init_done || stage_code!==(drop_training_dqs ? 8'hE1 : 8'hE9) ||
                 writes!=4 || reads!=(drop_training_dqs ? 0 : 2) || !busy)
@@ -236,7 +239,7 @@ module tb_ramh_aps6408;
         if (init_error || device_id!==16'h0D93 || mr0!==8'h08) $fatal(1,"init failed stage=%h",stage_code);
         if (MEMORY_TRAINING) begin
             if (writes!=4 || reads!=2 || {memory[1048576],memory[1048577],memory[1048578],memory[1048579],
-                memory[1048580],memory[1048581],memory[1048582],memory[1048583]} !== 64'hA55AA55A5AA55AA5)
+                memory[1048580],memory[1048581],memory[1048582],memory[1048583]} !== 64'hA55A3C965AA5C369)
                 $fatal(1,"training did not use the reserved guard words");
             $display("MEMORY TRAINING INIT PASS: four scratch writes and two calibrated reads");
         end
