@@ -1885,7 +1885,12 @@ module emu
 	);
 `else
 	//first 352x256x16 bit
-	vdp1_fb_352x256x16 vdp1_fb0
+`ifdef SATURN_APS6408
+	localparam VDP1_FB_RUNTIME_MOD = "NO";
+`else
+	localparam VDP1_FB_RUNTIME_MOD = "YES";
+`endif
+	vdp1_fb_352x256x16 #(.MEM_RUNTIME_MOD(VDP1_FB_RUNTIME_MOD)) vdp1_fb0
 	(
 		.clock(clk_sys),
 		.address(FB0_A),
@@ -1894,7 +1899,7 @@ module emu
 		.q(FB0_Q)
 	);
 
-	vdp1_fb_352x256x16 vdp1_fb1
+	vdp1_fb_352x256x16 #(.MEM_RUNTIME_MOD(VDP1_FB_RUNTIME_MOD)) vdp1_fb1
 	(
 		.clock(clk_sys),
 		.address(FB1_A),
