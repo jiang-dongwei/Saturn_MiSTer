@@ -48,9 +48,12 @@ set_input_delay -clock $aps_external_clock -min 0.000 -add_delay \
 set_false_path -to [get_registers {*|ramh_psram|req_meta *|ramh_psram|ack_meta *|ramh_psram|init_meta *|ramh_psram|error_meta}]
 set aps_mode_sources [get_registers {*|psram_clock_mode[*]}]
 set aps_mode_targets [get_registers {*|ramh_psram|engine_speed[*]}]
-if {[get_collection_size $aps_mode_sources] != 2 || [get_collection_size $aps_mode_targets] != 2} {
+set aps_mode_source_bits [get_registers -no_duplicates {*|psram_clock_mode[*]}]
+set aps_mode_target_bits [get_registers -no_duplicates {*|ramh_psram|engine_speed[*]}]
+if {[get_collection_size $aps_mode_source_bits] != 2 || [get_collection_size $aps_mode_target_bits] != 2} {
     error "Expected two held mode bits and two engine mode captures"
 }
+post_message -type info "APS6408 mode endpoints: logical [get_collection_size $aps_mode_source_bits]/[get_collection_size $aps_mode_target_bits], physical [get_collection_size $aps_mode_sources]/[get_collection_size $aps_mode_targets]"
 set_max_delay 9.841 -from $aps_mode_sources -to $aps_mode_targets
 set_false_path -hold -from $aps_mode_sources -to $aps_mode_targets
 # Bundled payloads remain held until the synchronized acknowledgement.

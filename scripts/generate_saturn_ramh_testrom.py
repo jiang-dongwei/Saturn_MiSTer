@@ -74,7 +74,11 @@ class Program:
         return bytes(rom), pool_start
 
 
-def build(video_only=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041, operation='both'):
+def build(video_only=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041, operation='both', target='ramh'):
+    assert target in ('ramh', 'vdp1fb')
+    framebuffer = target == 'vdp1fb'
+    assert not framebuffer or (not video_only and not cache_read and operation == 'both' and not failure_cache_read and ram_words <= 65536)
+    ram_base = 0x25C80000 if framebuffer else 0x26000000
     assert operation in ('both', 'write', 'read')
     assert operation == 'both' or (not video_only and not cache_read)
     assert operation != 'write' or not (failure_rereads or failure_cache_read)
@@ -95,12 +99,30 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
     p.literal(1, 0x25F80000)
     p.literal(0, 0x8000)
     p.emit(0x2101)  # enable VDP2 display
+    def flip_buffer(tag):
+        p.literal(1, 0x25D00002)
+        p.emit(0xE003)
+        p.emit(0x2101)
+        p.literal(13, 2000000)
+        p.label(f'frame_wait_{tag}')
+        p.emit(0x4D10)
+        p.branch(f'frame_wait_{tag}', 'false')
+
+    if framebuffer:
+        for address, value in ((0x25D00000, 0), (0x25D00004, 0), (0x25D00008, 0), (0x25D0000A, 0), (0x25D00002, 2)):
+            p.literal(1, address)
+            p.emit(0xE000 | value)
+            p.emit(0x2101)
+        p.emit(0xE702)
+        p.literal(6, 0x11223344)
+        p.literal(14, 0x100)
+        p.label('framebuffer_bank')
     if not video_only:
         p.literal(3, 0x01010101)
         seeds = (first_seed, 0x5AA57FBE, 0xFFFFFFFF, 0) if operation == 'both' else (first_seed,)
         for number, seed in enumerate(seeds):
             if operation != 'read':
-                p.literal(1, 0x26000000)
+                p.literal(1, ram_base)
                 p.literal(2, ram_words)
                 p.literal(0, seed)
                 p.label(f'write_{number}')
@@ -109,11 +131,15 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
                 p.branch(f'write_{number}', 'false')
             if operation == 'write':
                 continue
-            p.literal(1, 0x26000000)
+            p.literal(1, ram_base)
             p.literal(2, ram_words)
             p.literal(0, seed)
             if failure_bars:
-                p.literal(12, 0x100 + number)
+                if framebuffer:
+                    p.emit(0x6CE3)
+                    p.emit(0x7C00 | number)
+                else:
+                    p.literal(12, 0x100 + number)
             p.label(f'read_{number}')
             if dynamic_failure_address:
                 p.emit(0x6513)  # preserve the address before post-increment
@@ -144,13 +170,18 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
         for lane, width, value in masks:
             if failure_bars:
                 p.literal(12, 0x300 + width * 16 + lane)
-            p.literal(1, 0x26000000)
+                if framebuffer:
+                    p.emit(0x6DE3)
+                    p.literal(8, 0xFFFFFF00)
+                    p.emit(0x3D8C)
+                    p.emit(0x3CDC)
+            p.literal(1, ram_base)
             p.literal(0, 0x11223344)
             p.emit(0x2102)
-            p.literal(1, 0x26000000 + lane)
+            p.literal(1, ram_base + lane)
             p.literal(0, value)
             p.emit(0x2100 if width == 1 else 0x2101)
-            p.literal(1, 0x26000000)
+            p.literal(1, ram_base)
             if dynamic_failure_address:
                 p.emit(0x6513)
             p.emit(0x6412)
@@ -158,6 +189,34 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
             expected[lane:lane + width] = value.to_bytes(width, 'big')
             p.literal(0, int.from_bytes(expected, 'big'))
             p.compare()
+        if framebuffer:
+            p.literal(12, 0x340)
+            p.literal(1, ram_base)
+            p.emit(0x2162)
+            p.emit(0x6412)
+            p.emit(0x6063)
+            if dynamic_failure_address:
+                p.emit(0x6513)
+            p.compare()
+            p.emit(0x4710)
+            p.branch('framebuffer_banks_done', 'false')
+            p.branch('framebuffer_markers')
+            p.label('framebuffer_banks_done')
+            flip_buffer(0)
+            p.literal(6, 0x55667788)
+            p.literal(14, 0x200)
+            p.branch('framebuffer_bank')
+            p.label('framebuffer_markers')
+            for tag, marker in ((1, 0x11223344), (2, 0x55667788)):
+                flip_buffer(tag)
+                p.literal(12, 0x34F + tag)
+                p.literal(1, ram_base)
+                p.emit(0xE200)
+                if dynamic_failure_address:
+                    p.emit(0x6513)
+                p.emit(0x6412)
+                p.literal(0, marker)
+                p.compare()
         p.literal(0, 0x03E0)
         p.emit(0x2A01)
     p.label('pass')
@@ -170,7 +229,7 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
             if dynamic_failure_address:
                 p.emit(0x6153)
             else:
-                p.literal(1, 0x26000000)
+                p.literal(1, ram_base)
             p.emit(0x6212)
         for index in range(failure_rereads):
             if dynamic_failure_address:
@@ -178,12 +237,12 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
                 p.emit(0xE304)
                 p.emit(0x213A)  # XOR R3,R1: choose a different valid RAMH word
             else:
-                p.literal(1, 0x26000004)
+                p.literal(1, ram_base + 4)
             p.emit(0x6412)
             if dynamic_failure_address:
                 p.emit(0x6153)
             else:
-                p.literal(1, 0x26000000)
+                p.literal(1, ram_base)
             p.emit(0x6012 | (13 + index) << 8)
         p.literal(1, 0x25F800AC)
         p.literal(0, 0x8000)
@@ -223,13 +282,16 @@ if __name__ == '__main__':
     parser.add_argument('--video-only', action='store_true')
     parser.add_argument('--uncached-only', action='store_true')
     parser.add_argument('--failure-bars', action='store_true')
-    parser.add_argument('--ram-words', type=int, default=262144)
+    parser.add_argument('--ram-words', type=int)
+    parser.add_argument('--target', choices=('ramh', 'vdp1fb'), default='ramh')
     parser.add_argument('--failure-rereads', type=int, default=0, choices=(0, 1, 2))
     parser.add_argument('--failure-cache-read', action='store_true')
     parser.add_argument('--first-seed', type=lambda value: int(value, 0), default=0xA55A8041)
     parser.add_argument('--operation', choices=('both', 'write', 'read'), default='both')
     args = parser.parse_args()
-    program, image, pool_start = build(args.video_only, not args.uncached_only, args.failure_bars, args.ram_words, args.failure_rereads, args.failure_cache_read, args.first_seed, args.operation)
+    if args.ram_words is None:
+        args.ram_words = 65536 if args.target == 'vdp1fb' else 262144
+    program, image, pool_start = build(args.video_only, not args.uncached_only, args.failure_bars, args.ram_words, args.failure_rereads, args.failure_cache_read, args.first_seed, args.operation, args.target)
     args.output.write_bytes(image)
     metadata = {'bytes': len(image), 'sha256': hashlib.sha256(image).hexdigest(),
                 'labels': program.labels, 'literal_pool': pool_start,
@@ -254,5 +316,11 @@ if __name__ == '__main__':
             metadata['failure_bars']['rereads'] = 'Read failed-address XOR 4 to replace the adapter cache, then reread the failed address without writes; repeated as requested.'
         if args.failure_cache_read:
             metadata['failure_bars']['adapter_cache_read'] = 'Immediately reread the failed address before any other RAMH access; SH-2 cache is disabled, adapter one-word cache stays valid.'
+    if args.target == 'vdp1fb':
+        metadata.update(target='vdp1fb', uncached_ram_start='0x25C80000', framebuffer_banks=2, passes=8, partial_write_cases=12, flip_requests=3)
+        metadata['framebuffer_scope'] = 'CPU window in both selected buffers; distinct marker retention verifies switching. Frame timing requires hardware verification.'
+        if args.failure_bars:
+            metadata['failure_bars']['stages'] = '0x100..103 / 0x200..203 bank passes; 0x310..313,320,322 / 0x410..413,420,422 partial writes; 0x340 marker write; 0x350/351 retained markers'
+            metadata['failure_bars']['address_note'] = 'Subtract 4 only for bank pass stages 0x100..103 and 0x200..203.'
     args.output.with_suffix('.json').write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(metadata))

@@ -6,8 +6,10 @@ from pathlib import Path
 from PIL import Image
 
 
-def decode(path, rereads=0, cache_read=False):
+def decode(path, rereads=0, cache_read=False, target='ramh'):
     assert 0 <= rereads <= 2
+    assert target in ('ramh', 'vdp1fb')
+    assert target != 'vdp1fb' or not cache_read
     with Image.open(path) as original:
         image = original.convert('RGB')
     assert image.size == (320, 224), 'Expected unscaled 320x224 core screenshot'
@@ -23,10 +25,17 @@ def decode(path, rereads=0, cache_read=False):
         nibbles.append(red // 8)
     values = [sum(nibbles[8 * i + j] << (4 * j) for j in range(8)) for i in range(5 + rereads + int(cache_read))]
     expected, actual, address_register, remaining, stage = values[:5]
-    assert stage in (0x100, 0x101, 0x102, 0x103, 0x200, 0x310, 0x311, 0x312, 0x313, 0x320, 0x322), 'Unknown stage'
+    stages = (0x100, 0x101, 0x102, 0x103, 0x200, 0x310, 0x311, 0x312, 0x313, 0x320, 0x322)
+    if target == 'vdp1fb':
+        stages += (0x201, 0x202, 0x203, 0x410, 0x411, 0x412, 0x413, 0x420, 0x422, 0x340, 0x350, 0x351)
+    assert stage in stages, 'Unknown stage'
     assert actual != expected, 'Barcode does not describe a comparison failure'
-    address = address_register - 4 if stage <= 0x200 else address_register
-    assert 0x26000000 <= address < 0x26100000 or 0x06000000 <= address < 0x06100000, 'Invalid RAMH address'
+    post_increment = stage <= 0x200 if target == 'ramh' else stage in (*range(0x100, 0x104), *range(0x200, 0x204))
+    address = address_register - 4 if post_increment else address_register
+    if target == 'vdp1fb':
+        assert 0x25C80000 <= address < 0x25CC0000, 'Invalid VDP1 framebuffer address'
+    else:
+        assert 0x26000000 <= address < 0x26100000 or 0x06000000 <= address < 0x06100000, 'Invalid RAMH address'
     difference = expected ^ actual
     return {
         'result': 'COMPARE_FAIL', 'stage': f'{stage:08X}',
@@ -46,8 +55,9 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=Path)
     parser.add_argument('--rereads', type=int, choices=(0, 1, 2), default=0)
     parser.add_argument('--cache-read', action='store_true')
+    parser.add_argument('--target', choices=('ramh', 'vdp1fb'), default='ramh')
     args = parser.parse_args()
-    result = json.dumps(decode(args.image, args.rereads, args.cache_read), indent=2) + '\n'
+    result = json.dumps(decode(args.image, args.rereads, args.cache_read, args.target), indent=2) + '\n'
     if args.output:
         args.output.write_text(result, encoding='utf-8')
     print(result, end='')

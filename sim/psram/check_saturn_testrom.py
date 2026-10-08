@@ -7,13 +7,20 @@ spec.loader.exec_module(generator)
 build = generator.build
 
 
-def check(video_only=False, inject_error=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041, inject_offset=None, error_read_limit=None, error_stage=None, operation='both'):
-    program, rom, _ = build(video_only, cache_read, failure_bars, ram_words, failure_rereads, failure_cache_read, first_seed, operation)
+def check(video_only=False, inject_error=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041, inject_offset=None, error_read_limit=None, error_stage=None, operation='both', target='ramh', collapse_framebuffer_banks=False):
+    program, rom, _ = build(video_only, cache_read, failure_bars, ram_words, failure_rereads, failure_cache_read, first_seed, operation, target)
+    framebuffer = target == 'vdp1fb'
+    assert not collapse_framebuffer_banks or framebuffer
+    ram_base = 0x25C80000 if framebuffer else 0x26000000
     assert not inject_error or operation != 'write'
     error_offset = min(0xC0E4, 4 * (ram_words - 1)) if inject_offset is None else inject_offset
+    if collapse_framebuffer_banks:
+        error_offset = 0
     assert error_offset % 4 == 0 and 0 <= error_offset < 4 * ram_words
     assert error_read_limit is None or error_read_limit >= 1
     ram = bytearray(1048576)
+    banks = [bytearray(262144), bytearray(262144)]
+    selected_bank = flips = 0
     expected_pattern = b''.join(((first_seed + i * 0x01010101) & 0xFFFFFFFF).to_bytes(4, 'big') for i in range(ram_words))
     if operation == 'read':
         ram[:4 * ram_words] = expected_pattern
@@ -29,9 +36,10 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
 
     def read(address, width):
         nonlocal reads, error_reads, adapter_cache
-        if 0x26000000 <= address < 0x26100000 or 0x06000000 <= address < 0x06100000:
-            offset = (address & ~0x20000000) - 0x06000000
-            value = int.from_bytes(ram[offset:offset + width], 'big')
+        if (framebuffer and ram_base <= address < ram_base + 262144) or (not framebuffer and (0x26000000 <= address < 0x26100000 or 0x06000000 <= address < 0x06100000)):
+            offset = address - ram_base if framebuffer else (address & ~0x20000000) - 0x06000000
+            storage = banks[selected_bank] if framebuffer else ram
+            value = int.from_bytes(storage[offset:offset + width], 'big')
             reads += 1
             read_offsets.append(offset)
             if failure_cache_read and adapter_cache is not None and adapter_cache[0] == offset:
@@ -47,14 +55,21 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
         return int.from_bytes(rom[address:address + width], 'big')
 
     def write(address, value, width):
-        nonlocal writes, partial, adapter_cache
-        if 0x26000000 <= address < 0x26100000:
-            offset = address - 0x26000000
-            ram[offset:offset + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(width, 'big')
+        nonlocal writes, partial, adapter_cache, selected_bank, flips
+        if ram_base <= address < ram_base + (262144 if framebuffer else 1048576):
+            offset = address - ram_base
+            storage = banks[selected_bank] if framebuffer else ram
+            storage[offset:offset + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(width, 'big')
             if adapter_cache is not None and offset // 4 == adapter_cache[0] // 4:
                 adapter_cache = None
             writes += width == 4
             partial += width != 4
+        elif framebuffer and address in (0x25D00000, 0x25D00002, 0x25D00004, 0x25D00008, 0x25D0000A):
+            assert width == 2
+            if address == 0x25D00002 and value == 3:
+                flips += 1
+                if not collapse_framebuffer_banks:
+                    selected_bank ^= 1
         elif 0x25E00000 <= address < 0x25E00100:
             assert width == 2
             vram[address] = value & 0xFFFF
@@ -66,17 +81,20 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
     def signed(value, bits):
         return value - (1 << bits) if value & (1 << (bits - 1)) else value
 
-    for step in range(16000000):
+    for step in range(32000000 if framebuffer else 16000000):
         if failure_bars and pc == program.labels['fail_halt']:
-            assert inject_error
+            assert inject_error or collapse_framebuffer_banks
             extra_values = failure_rereads + int(failure_cache_read)
             words = [vram[0x25E00000 + 2 * i] for i in range(44 + 8 * extra_values)]
             assert words[:4] == [0x7C1F, 0x03E0, 0x001F, 0x7800 if failure_cache_read else 0x7C00]
             values = [sum(words[4 + 8 * i + j] << (4 * j) for j in range(8)) for i in range(5 + extra_values)]
             index = error_offset // 4
-            if error_stage is None or error_stage == 0x100:
+            if collapse_framebuffer_banks:
+                expected = 0x11223344
+                expected_base = [expected, 0x55667788, ram_base, 0, 0x350]
+            elif error_stage is None or error_stage == 0x100 or (framebuffer and error_stage == 0x200):
                 expected = (first_seed + index * 0x01010101) & 0xFFFFFFFF
-                expected_base = [expected, expected ^ 0x00800000, 0x26000000 + error_offset + 4, ram_words - index, 0x100]
+                expected_base = [expected, expected ^ 0x00800000, ram_base + error_offset + 4, ram_words - index, error_stage or 0x100]
             else:
                 assert error_offset == 0 and error_stage in (*range(0x310, 0x314), 0x320, 0x322)
                 expected_bytes = bytearray.fromhex('11223344')
@@ -84,11 +102,11 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
                 lane = error_stage & 15
                 expected_bytes[lane:lane + width] = (0xA5 if width == 1 else 0x5AA5).to_bytes(width, 'big')
                 expected = int.from_bytes(expected_bytes, 'big')
-                expected_base = [expected, expected ^ 0x00800000, 0x26000000, 0, error_stage]
+                expected_base = [expected, expected ^ 0x00800000, ram_base, 0, error_stage]
             expected_extra = [expected ^ 0x00800000] if failure_cache_read else []
             expected_offsets = [error_offset] if failure_cache_read else []
             for reread in range(failure_rereads):
-                expected_extra.append(expected ^ (0x00800000 if error_read_limit is None or reread + 2 <= error_read_limit else 0))
+                expected_extra.append(0x55667788 if collapse_framebuffer_banks else expected ^ (0x00800000 if error_read_limit is None or reread + 2 <= error_read_limit else 0))
                 expected_offsets += [error_offset ^ 4, error_offset]
             assert values == expected_base + expected_extra, values
             if expected_offsets:
@@ -99,7 +117,11 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
                 assert colors == [0x7C00] and reads == writes == partial == 0
             else:
                 assert colors == [0x7C00, 0x03E0]
-                if operation == 'both':
+                if framebuffer:
+                    assert reads == 8 * ram_words + 16 and writes == 8 * ram_words + 14 and partial == 12, (reads, writes, partial)
+                    assert flips == 3
+                    assert banks[0][:4] == bytes.fromhex('11223344') and banks[1][:4] == bytes.fromhex('55667788')
+                elif operation == 'both':
                     assert reads == 4 * ram_words + 6 + (ram_words if cache_read else 0) and writes == 4 * ram_words + 6 and partial == 6
                 else:
                     assert reads == (ram_words if operation == 'read' else 0)
@@ -187,3 +209,10 @@ if __name__ == '__main__':
     print('Full1MiB last-word transient:', check(cache_read=False, failure_bars=True, operation='read',
           failure_rereads=2, failure_cache_read=True, inject_error=True,
           inject_offset=0xFFFFC, error_read_limit=1))
+    print('Two full VDP1 framebuffer windows:', check(target='vdp1fb', ram_words=65536,
+          cache_read=False, failure_bars=True, failure_rereads=2))
+    print('VDP1 final word transient:', check(target='vdp1fb', ram_words=65536, cache_read=False,
+          failure_bars=True, failure_rereads=2, inject_error=True, inject_offset=0x3FFFC, error_read_limit=1))
+    print('VDP1 bank alias rejected:', check(target='vdp1fb', ram_words=16, cache_read=False,
+          failure_bars=True, failure_rereads=2, collapse_framebuffer_banks=True))
+    print('VDP1 flip completion is abstracted here; actual frame events require hardware marker verification.')
