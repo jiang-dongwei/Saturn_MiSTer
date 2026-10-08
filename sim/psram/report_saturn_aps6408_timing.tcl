@@ -2,6 +2,24 @@ project_open Saturn_APS6408 -revision Saturn_APS6408
 create_timing_netlist
 read_sdc
 update_timing_netlist
+set corner 0
+foreach_in_collection operating_condition [get_available_operating_conditions] {
+    set_operating_conditions $operating_condition
+    update_timing_netlist
+    puts "APS6408 ROUTE BUDGET CORNER $corner: [get_operating_conditions_info $operating_condition -model]"
+    foreach check {setup hold} {
+        report_timing -$check -from $aps_ddio_sources -to $aps_ddio_targets -npaths 12 -detail full_path -file .ci/aps6408-route-budget-corner$corner-$check.rpt
+    }
+    incr corner
+}
+if {$corner != 4} { error "Expected four route-budget operating conditions" }
+delete_timing_netlist
+# Re-read all constraints on the same fitted design, omitting only the tighter budget.
+set aps_report_natural_ddio 1
+create_timing_netlist
+read_sdc
+update_timing_netlist
+puts "APS6408 NATURAL CLOCK REQUIREMENT ANALYSIS"
 puts "APS6408 REQUEST CONTROL CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine_request_*}]]"
 puts "APS6408 REQUEST ADDRESS CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine|runtime_address*}]]"
 puts "APS6408 REQUEST DATA CAPTURES [get_collection_size [get_registers {*|ramh_psram|engine|runtime_data*}]]"
