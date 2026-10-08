@@ -106,7 +106,8 @@ module aps6408_diag_core #(
     wire rx_clock_done;
     reg rx_done_meta, rx_done_sync;
     reg rx_clock_done_meta, rx_clock_done_sync;
-    (* preserve, dont_merge *) reg [15:0] rx_early_hold, rx_mid_hold, rx_late_hold, rx_edges_hold;
+    (* preserve, dont_merge *) reg [15:0] rx_early_hold, rx_mid_hold, rx_late_hold;
+    reg [15:0] rx_edges_hold;
     (* preserve, dont_merge *) reg [15:0] rx_center_hold;
     (* preserve, dont_merge *) reg [15:0] rx_clock_hold;
     reg [15:0] clk_read_word;

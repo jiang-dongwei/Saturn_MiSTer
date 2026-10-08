@@ -94,31 +94,16 @@ if {![info exists aps_report_natural_ddio] || !$aps_report_natural_ddio} {
 }
 
 # Completed receive words stay held until the synchronized completion is consumed.
-set aps_receive_sources [get_registers {*|ramh_psram|engine|rx|early_word[*] *|ramh_psram|engine|rx|mid_word[*] *|ramh_psram|engine|rx|center_word[*] *|ramh_psram|engine|rx|late_word[*] *|ramh_psram|engine|rx|clock_word[*] *|ramh_psram|engine|rx|edge_word[*]}]
-set aps_receive_targets [get_registers {*|ramh_psram|engine|rx_early_hold[*] *|ramh_psram|engine|rx_mid_hold[*] *|ramh_psram|engine|rx_center_hold[*] *|ramh_psram|engine|rx_late_hold[*] *|ramh_psram|engine|rx_clock_hold[*] *|ramh_psram|engine|rx_edges_hold[*]}]
-foreach aps_receive_pair {{early_word rx_early_hold} {mid_word rx_mid_hold} {center_word rx_center_hold} {late_word rx_late_hold} {clock_word rx_clock_hold} {edge_word rx_edges_hold}} {
+set aps_receive_sources [get_registers {*|ramh_psram|engine|rx|early_word[*] *|ramh_psram|engine|rx|mid_word[*] *|ramh_psram|engine|rx|center_word[*] *|ramh_psram|engine|rx|late_word[*] *|ramh_psram|engine|rx|clock_word[*]}]
+set aps_receive_targets [get_registers {*|ramh_psram|engine|rx_early_hold[*] *|ramh_psram|engine|rx_mid_hold[*] *|ramh_psram|engine|rx_center_hold[*] *|ramh_psram|engine|rx_late_hold[*] *|ramh_psram|engine|rx_clock_hold[*]}]
+foreach aps_receive_pair {{early_word rx_early_hold} {mid_word rx_mid_hold} {center_word rx_center_hold} {late_word rx_late_hold} {clock_word rx_clock_hold}} {
     lassign $aps_receive_pair aps_receive_source aps_receive_target
     set aps_receive_source_bits [get_registers -no_duplicates [format {*|ramh_psram|engine|rx|%s[*]} $aps_receive_source]]
     set aps_receive_target_bits [get_registers -no_duplicates [format {*|ramh_psram|engine|%s[*]} $aps_receive_target]]
-    set aps_receive_count [get_collection_size $aps_receive_source_bits]
-    if {$aps_receive_source == "edge_word"} {
-        if {$aps_receive_count < 14 || $aps_receive_count > 16} { error "Missing receive edge payload bits" }
-        set aps_receive_target_count [get_collection_size $aps_receive_target_bits]
-        if {$aps_receive_target_count < 14 || $aps_receive_target_count > 16} { error "Missing receive edge capture bits" }
-        foreach aps_edge_bit {0 1 2 3 4 5 6 8 9 10 11 12 13 14} {
-            set aps_edge_source [get_registers -no_duplicates [format {*|ramh_psram|engine|rx|edge_word[%d]} $aps_edge_bit]]
-            set aps_edge_target [get_registers -no_duplicates [format {*|ramh_psram|engine|rx_edges_hold[%d]} $aps_edge_bit]]
-            if {[get_collection_size $aps_edge_source] != 1 || [get_collection_size $aps_edge_target] != 1} {
-                error "Missing variable receive edge bit $aps_edge_bit"
-            }
-        }
-    } elseif {$aps_receive_count != 16} {
-        error "Expected 16 receive payload bits: $aps_receive_source"
+    if {[get_collection_size $aps_receive_source_bits] != 16 || [get_collection_size $aps_receive_target_bits] != 16} {
+        error "Expected 16 receive payload and capture bits: $aps_receive_source/$aps_receive_target"
     }
-    if {$aps_receive_source != "edge_word" && [get_collection_size $aps_receive_target_bits] != $aps_receive_count} {
-        error "Receive payload capture count differs: $aps_receive_source/$aps_receive_target"
-    }
-    post_message -type info "APS6408 receive endpoints $aps_receive_source/$aps_receive_target: $aps_receive_count logical bits"
+    post_message -type info "APS6408 receive endpoints $aps_receive_source/$aps_receive_target: 16 logical bits"
 }
 set_max_delay 9.841 -from $aps_receive_sources -to $aps_receive_targets
 set_false_path -hold -from $aps_receive_sources -to $aps_receive_targets
