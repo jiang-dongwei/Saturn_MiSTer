@@ -26,14 +26,14 @@ jobs:
           docker system prune --all --force
       - name: Pull fixed Quartus
         run: docker pull theypsilon/quartus-lite-c5:17.0.2
-      - name: Restore unchanged mapped design
+      - name: Restore unchanged HDL mapping for current SDC inspection
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           git diff --exit-code 9cd78fd0af49a5e4966808458724b4727ec2ad42 HEAD -- \
-            '*.sv' '*.v' '*.vhd' '*.qip' '*.qsf' '*.sdc' '*.qsys' '*.ip' '*.mif' '*.hex' '*.qpf' 'sys/*.tcl'
+            '*.sv' '*.v' '*.vhd' '*.qip' '*.qsf' '*.qsys' '*.ip' '*.mif' '*.hex' '*.qpf' 'sys/*.tcl'
           mkdir -p .ci/clock-cache
           gh run download 37713782497 --repo "$GITHUB_REPOSITORY" \
             --name Saturn_APS6408_Clock_Probe --dir .ci/clock-cache
