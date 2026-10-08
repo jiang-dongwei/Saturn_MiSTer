@@ -34,6 +34,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install HDL checker
         run: sudo apt-get update && sudo apt-get install -y iverilog
       - name: Check self-written SH-2 diagnostic programs
@@ -47,9 +49,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .ci
-          iverilog -g2012 -DAPS6408_DIAG_SIM -s tb_ramh_aps6408 -o .ci/ramh-aps.vvp \
+          git show 9c2b5a32b3b33958f38162b1fc4e3998662e581a:rtl/aps6408_diag_core.sv \
+            | sed 's/^module aps6408_diag_core #(/module aps6408_diag_core_counter_reference #(/' \
+            > .ci/counter-reference.sv
+          grep -q '^module aps6408_diag_core_counter_reference #(' .ci/counter-reference.sv
+          iverilog -g2012 -DAPS6408_DIAG_SIM -DAPS_COUNTER_EQUIV -s tb_ramh_aps6408 -o .ci/ramh-aps.vvp \
             rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv \
-            rtl/ramh_aps6408_adapter.sv sim/psram/tb_ramh_aps6408.sv
+            rtl/ramh_aps6408_adapter.sv .ci/counter-reference.sv sim/psram/tb_ramh_aps6408.sv
           for args in '' '+src_fast' '+src_slow' '+refresh' '+src_fast +refresh' '+src_slow +refresh' '+drop_config' '+dq_delay=7.0' '+speed8' '+speed16' '+speed8 +refresh' '+speed16 +refresh' '+speed50' '+speed50 +src_fast' '+speed50 +refresh' '+speed50 +dq_delay=7.0'; do
             vvp .ci/ramh-aps.vvp $args | tee -a .ci/ramh-aps-regression.log
           done

@@ -39,6 +39,43 @@ module tb_ramh_aps6408;
         .adapter_error(adapter_error),.device_id(device_id),.stage_code(stage_code),
         .PSRAM_CLK(psram_clk),.PSRAM_CE_N(ce_n),.PSRAM_DQ(dq),.PSRAM_DQS(dqs)
     );
+`ifdef APS_COUNTER_EQUIV
+    tri [7:0] reference_dq;
+    tri reference_dqs;
+    assign reference_dq = dut.engine.dq_oe ? 8'hzz : dq;
+    assign reference_dqs = dut.engine.dm_oe ? 1'bz : dqs;
+    wire reference_clk, reference_ce, reference_ready, reference_done, reference_error;
+    wire reference_init, reference_init_error;
+    wire [15:0] reference_data, reference_id;
+    wire [7:0] reference_stage;
+    aps6408_diag_core_counter_reference #(
+        .POWERUP_CYCLES(8), .RESET_RECOVERY_CYCLES(8), .RUNTIME_API(1)
+    ) counter_reference (
+        .clk(engine_clk), .clk_phy(clk_phy), .reset(reset), .speed_select(speed_select),
+        .test_mode(2'd0), .d1_mode(2'd0), .drive_half(1'b1), .control_fast(speed_select==3),
+        .request_valid(dut.runtime_valid), .request_write(dut.source_write),
+        .request_address(dut.half_address), .request_write_data(dut.half_data),
+        .request_write_mask(dut.half_mask), .request_ready(reference_ready),
+        .request_done(reference_done), .request_error(reference_error), .request_read_data(reference_data),
+        .init_done(reference_init), .init_error(reference_init_error),
+        .id_word(reference_id), .stage_code(reference_stage),
+        .PSRAM_CLK(reference_clk), .PSRAM_CE_N(reference_ce),
+        .PSRAM_DQ(reference_dq), .PSRAM_DQS(reference_dqs)
+    );
+    always @(posedge engine_clk or negedge engine_clk) begin
+        #0.001;
+        if (!reset && {
+            reference_clk, reference_ce, reference_ready, reference_done, reference_error,
+            reference_data, reference_init, reference_init_error, reference_id, reference_stage,
+            counter_reference.dq_oe, counter_reference.dq_out, counter_reference.dm_oe, counter_reference.dm_out
+        } !== {
+            psram_clk, ce_n, dut.runtime_ready, dut.runtime_done, dut.runtime_error,
+            dut.runtime_read, dut.engine_init_done, dut.engine_init_error, device_id, stage_code,
+            dut.engine.dq_oe, dut.engine.dq_out, dut.engine.dm_oe, dut.engine.dm_out
+        }) $fatal(1,"Counter optimization changed an observable engine waveform");
+    end
+    initial $display("Counter baseline waveform equivalence enabled");
+`endif
     reg [7:0] memory[0:1048575];
     reg [7:0] instruction=0, mr0=8'h09;
     reg [31:0] byte_address;

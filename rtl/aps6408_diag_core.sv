@@ -62,9 +62,8 @@ module aps6408_diag_core #(
     reg did_global_reset = 1'b0;
     reg [17:0] power_count;
     reg [2:0] div_count;
-    reg [7:0] gap_count;
-    reg [6:0] timeout_edges;
-    reg [4:0] edge_index;
+    reg [5:0] wait_count;
+    reg [2:0] edge_index;
     reg [3:0] data_index;
     reg [7:0] cell_index;
     reg [1:0] pattern_pass;
@@ -272,8 +271,7 @@ module aps6408_diag_core #(
             rx_clock_done_sync <= 0;
             power_count <= 0;
             div_count <= 0;
-            gap_count <= 0;
-            timeout_edges <= 0;
+            wait_count <= 0;
             edge_index <= 0;
             data_index <= 0;
             cell_index <= 0;
@@ -395,7 +393,7 @@ module aps6408_diag_core #(
                     div_count <= 0;
                     edge_index <= 0;
                     data_index <= 0;
-                    timeout_edges <= 0;
+                    wait_count <= 0;
                     dqs_edge_word <= 0;
                     clk_read_word <= 0;
                     read_word <= 0;
@@ -470,10 +468,10 @@ module aps6408_diag_core #(
                     if (tick) begin
                         PSRAM_CLK <= ~PSRAM_CLK;
                         psram_clock_monitor <= ~PSRAM_CLK;
-                        timeout_edges <= timeout_edges + 1'b1;
+                        wait_count <= wait_count + 1'b1;
                         // Bound a missing-DQS transaction. Register reads use
                         // fixed LC=5; memory reads may incur refresh pushout.
-                        if (timeout_edges == (id_phase ? 7'd17 : 7'd50)) begin
+                        if (wait_count == (id_phase ? 6'd17 : 6'd50)) begin
                             stage_code <= 8'hE1; // no two DQS data edges
                             failure_address <= address;
                             dqs_edge_pair1 <= dqs_edge_word;
@@ -502,13 +500,13 @@ module aps6408_diag_core #(
                     psram_clock_monitor <= 0;
                     tx_oe <= 0;
                     tx_dm_oe <= 0;
-                    gap_count <= 0;
+                    wait_count <= 0;
                     state <= S_GAP;
                 end
 
                 S_GAP: if (tick) begin
-                    gap_count <= gap_count + 1'b1;
-                    if (gap_count == (RUNTIME_API != 0 && !id_phase && !drive_config_phase ? 8'd3 : 8'd31)) state <= S_ADVANCE;
+                    wait_count <= wait_count + 1'b1;
+                    if (wait_count == (RUNTIME_API != 0 && !id_phase && !drive_config_phase ? 6'd3 : 6'd31)) state <= S_ADVANCE;
                 end
 
                 S_ADVANCE: begin
