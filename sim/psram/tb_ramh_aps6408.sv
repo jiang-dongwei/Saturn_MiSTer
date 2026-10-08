@@ -31,7 +31,13 @@ module tb_ramh_aps6408;
     reg [7:0] mem_dq=0;
     assign dq=mem_oe ? mem_dq : 8'hzz;
     assign dqs=mem_oe ? mem_dqs : 1'bz;
-    ramh_aps6408_adapter #(.POWERUP_CYCLES(8),.RESET_RECOVERY_CYCLES(8)) dut (
+`ifdef APS_COUNTER_EQUIV
+    localparam MEMORY_TRAINING=0;
+`else
+    localparam MEMORY_TRAINING=1;
+`endif
+    ramh_aps6408_adapter #(.POWERUP_CYCLES(8),.RESET_RECOVERY_CYCLES(8),
+                         .MEMORY_TRAINING_ENABLE(MEMORY_TRAINING)) dut (
         .clk(src_clk),.reset(reset),.engine_clk(engine_clk),.engine_reset(reset),.clk_phy(clk_phy),
         .speed_select(speed_select),
         .addr(addr),.din(din),.wr(wr),.rd(rd),.burst(1'b1),.rfs(1'b0),
@@ -76,12 +82,13 @@ module tb_ramh_aps6408;
     end
     initial $display("Counter baseline waveform equivalence enabled");
 `endif
-    reg [7:0] memory[0:1048575];
+    reg [7:0] memory[0:1048607];
     reg [7:0] instruction=0, mr0=8'h09;
     reg [31:0] byte_address;
     integer edge_number=-1, writes=0, reads=0, reset_count=0, register_writes=0;
     integer byte_number, first_data_edge, refresh_extra=0;
-    integer drop_config=0, missing_memory_dqs=0;
+    integer drop_config=0, missing_memory_dqs=0, bad_training=0, drop_training_dqs=0;
+    wire memory_read_blocked = missing_memory_dqs || (drop_training_dqs && dut.engine.memory_training);
     real dq_delay=10.0;
     reg device_ready=0;
     realtime edge_time=-1e9, dq_time=-1e9, dm_time=-1e9;
@@ -133,10 +140,11 @@ module tb_ramh_aps6408;
             5: begin
                 byte_address[7:0]=dq;
                 first_data_edge=14+((instruction==8'h20) ? refresh_extra : 0);
-                if (instruction==8'h40 || instruction==8'h20 && !missing_memory_dqs) begin
+                if (instruction==8'h40 || instruction==8'h20 && !memory_read_blocked) begin
                     mem_oe <= #10 1; mem_dqs=0;
                 end
-                if ((instruction==8'h20 || instruction==8'hA0) && (byte_address>=1048576 || byte_address[0]))
+                if ((instruction==8'h20 || instruction==8'hA0) &&
+                    ((byte_address>=1048576 && !(dut.engine.memory_training && byte_address<=1048582)) || byte_address[0]))
                     $fatal(1,"invalid RAMH address %h",byte_address);
             end
             6: if (instruction==8'hC0) begin
@@ -150,7 +158,7 @@ module tb_ramh_aps6408;
             if (!dqs) memory[byte_address+edge_number-14]=dq;
             if (edge_number==14) writes=writes+1;
         end
-        if ((instruction==8'h40 || instruction==8'h20 && !missing_memory_dqs) && edge_number>=first_data_edge) begin
+        if ((instruction==8'h40 || instruction==8'h20 && !memory_read_blocked) && edge_number>=first_data_edge) begin
             byte_number=edge_number-first_data_edge;
             if (instruction==8'h40) begin
                 case (byte_address+byte_number%2)
@@ -159,7 +167,8 @@ module tb_ramh_aps6408;
                     default: mem_dq <= #(dq_delay) 8'h93;
                 endcase
             end else begin
-                mem_dq <= #(dq_delay) memory[byte_address+byte_number];
+                mem_dq <= #(dq_delay) memory[byte_address+byte_number] ^
+                                    ((bad_training && dut.engine.memory_training) ? 8'h80 : 8'h00);
                 if (byte_number==0) reads=reads+1;
             end
             mem_dqs <= #(dq_delay) !byte_number[0];
@@ -206,6 +215,8 @@ module tb_ramh_aps6408;
         if ($test$plusargs("speed50")) speed_select=3;
         if ($test$plusargs("refresh")) refresh_extra=10;
         drop_config=$test$plusargs("drop_config");
+        bad_training=$test$plusargs("bad_training");
+        drop_training_dqs=$test$plusargs("drop_training_dqs");
         if ($value$plusargs("dq_delay=%f",dq_delay)) begin end
         repeat(6) @(negedge src_clk);reset=0;
         wait(init_done || init_error);
@@ -215,7 +226,20 @@ module tb_ramh_aps6408;
                 $fatal(1,"unverified configuration escaped init gate");
             $display("RAMH APS6408 PASS: rejected bad MR0 before memory access");$finish;
         end
+        if (bad_training || drop_training_dqs) begin
+            repeat(5) @(negedge src_clk);
+            if (!MEMORY_TRAINING || !init_error || init_done || stage_code!==(drop_training_dqs ? 8'hE1 : 8'hE9) ||
+                writes!=4 || reads!=(drop_training_dqs ? 0 : 2) || !busy)
+                $fatal(1,"bad training data escaped init gate");
+            $display("RAMH APS6408 PASS: rejected bad data training before CPU memory access");$finish;
+        end
         if (init_error || device_id!==16'h0D93 || mr0!==8'h08) $fatal(1,"init failed stage=%h",stage_code);
+        if (MEMORY_TRAINING) begin
+            if (writes!=4 || reads!=2 || {memory[1048576],memory[1048577],memory[1048578],memory[1048579],
+                memory[1048580],memory[1048581],memory[1048582],memory[1048583]} !== 64'hA55AA55A5AA55AA5)
+                $fatal(1,"training did not use the reserved guard words");
+            $display("MEMORY TRAINING INIT PASS: four scratch writes and two calibrated reads");
+        end
         for (mask=1;mask<16;mask=mask+1) begin
             write_word(18'h12345,32'hA55A8041,4'hF);
             value=32'h369C7FE2 ^ (mask*32'h01010101);expected=32'hA55A8041;
