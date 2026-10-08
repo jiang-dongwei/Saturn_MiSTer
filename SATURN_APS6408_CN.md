@@ -180,3 +180,7 @@ python scripts/generate_saturn_ramh_testrom.py vdp1fb.bin --target vdp1fb --unca
 该ROM覆盖两个CPU选中缓冲各256KiB地址窗口，每缓冲四轮图样写读及六种部分写，随后用不同标记核对三次手动切换的数据保持。包含片上帧缓冲及现有实现的SDRAM扩展区域；不访问RAMH。失败截图用`decode_saturn_failure_bars.py --target vdp1fb --rereads 2`解码。程序检查器抽象帧切换完成，实际切换必须由上板标记检查确认；缓冲别名注错应在0x350阶段失败。默认RAMH ROM及已有交叉测试ROM保持逐字节一致。
 
 Runner37759146212通过88诊断、34运行时、8192+512选择以及上述程序检查。bcff435下8.47MHz双缓冲测试两次重载纯绿；把三处FBCR值3改为2的板上负例如期在0x350失败，期望11223344、实读及两次重读55667788。帧缓冲测试不能计为RAMH33MHz通过。
+
+### 修正版完整编译结果（2026-10-08）
+
+8cf40a9 / Runner37760138313成功生成4574968字节RBF，SHA256 5e8be62d6f2dfcd03d21610765f4febc0e26021fbf2e949c24b48a84af40eff0。模式逻辑2/2、物理4/2，约束计数修正生效；资源40168ALM/4189LAB/43502寄存器。四工况内部setup/hold为-2.741/+0.113ns，DDIO真实接收setup/hold为-0.498/+1.114ns；时序尚未通过。仿真与编译成功不能等同33MHz板测通过。新位流尚未传输或加载，用户要求先不烧录；COM13目前缺失，最后核实板端MENU且测试ROM/CFG已清理。
