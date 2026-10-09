@@ -51,6 +51,12 @@ foreach_in_collection operating_condition [get_available_operating_conditions] {
 foreach check {setup hold} {
     puts "=== APS6408 REGISTER TO REGISTER $check ==="
     report_timing -$check -from $diagnostic_regs -to $diagnostic_regs -npaths 20 -detail full_path -file .ci/aps6408-corner$corner-internal-$check.rpt
+    foreach aps_engine_profile {33 50} {
+        set aps_profile_clock [get_clocks APS6408_ENGINE_$aps_engine_profile]
+        report_timing -$check -from $diagnostic_regs -to $diagnostic_regs \
+            -from_clock $aps_profile_clock -to_clock $aps_profile_clock -npaths 20 \
+            -detail full_path -file .ci/aps6408-corner$corner-engine$aps_engine_profile-$check.rpt
+    }
     puts "=== APS6408 DQ INPUT REGISTER TO LOGIC $check ==="
     report_timing -$check -from $dq_regs -to $diagnostic_regs -npaths 12 -detail full_path -file .ci/aps6408-corner$corner-dq-register-$check.rpt
     puts "=== APS6408 EXTERNAL INPUT $check ==="

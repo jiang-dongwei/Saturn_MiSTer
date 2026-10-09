@@ -2,7 +2,11 @@
 module tb_ramh_aps6408;
     reg clk=0, clk_phy=0, clk_sample=0, src_clk=0;
     reg clk_fast=0;
-    initial begin #1.84525;clk_fast=1;forever #4.920666667 clk_fast=~clk_fast;end
+    real fast_phase=1.84525;
+    initial begin
+        if ($value$plusargs("fast_phase=%f",fast_phase)) begin end
+        #(fast_phase);clk_fast=1;forever #4.920666667 clk_fast=~clk_fast;
+    end
     wire engine_clk=speed_select==3 ? clk_fast : clk;
     reg [1:0] phase=0;
     real src_half=4.365;
@@ -45,6 +49,27 @@ module tb_ramh_aps6408;
         .adapter_error(adapter_error),.device_id(device_id),.stage_code(stage_code),
         .PSRAM_CLK(psram_clk),.PSRAM_CE_N(ce_n),.PSRAM_DQ(dq),.PSRAM_DQS(dqs)
     );
+`ifndef APS_COUNTER_EQUIV
+    real speed_changed_at=0;
+    integer speed_handoffs=0;
+    always @(dut.engine.rx_speed_hold) speed_changed_at=$realtime;
+    always @(posedge clk_phy) begin
+        if (!reset && dut.engine.rx.arm_sync && !dut.engine.rx.armed) begin
+            if ($realtime-speed_changed_at < 2*7.381-0.01)
+                $fatal(1,"Receive speed was not settled before arm capture");
+            if (dut.engine.rx_speed_hold !== dut.engine.active_speed)
+                $fatal(1,"Held receive speed differs from transaction speed");
+            speed_handoffs=speed_handoffs+1;
+        end
+        if (!reset && dut.engine.rx.armed && dut.engine.rx.arm_sync &&
+            dut.engine.rx.active_speed !== dut.engine.rx_speed_hold)
+            $fatal(1,"Receive speed changed during armed transaction");
+    end
+    final begin
+        if (speed_handoffs == 0) $fatal(1,"No held receive speed transfer tested");
+        $display("Held receive speed transfers checked: %0d",speed_handoffs);
+    end
+`endif
     realtime receive_changed_at = -1e9, reference_changed_at = -1e9;
     real control_period;
     integer receive_handoffs = 0;

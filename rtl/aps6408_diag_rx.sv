@@ -25,8 +25,8 @@ module aps6408_diag_rx (
     reg [8:0] previous_low, previous_high, older_high;
     reg clock_negative, clock_rising, clock_falling;
     reg clock_low, clock_high, previous_clock_low, previous_clock_high, older_clock_high;
-    reg arm_meta = 0;
-    reg arm_sync = 0;
+    (* preserve, altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *) reg arm_meta = 0;
+    (* preserve, altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *) reg arm_sync = 0;
     reg armed = 0;
     reg [1:0] active_speed = 0;
     reg [1:0] active_d1_mode = 0;

@@ -97,15 +97,16 @@ module aps6408_diag_core #(
     reg [15:0] dqs_edge_word;
     reg [7:0] tx_data;
     (* preserve, dont_merge *) reg psram_clock_monitor;
-    reg tx_oe;
+    (* preserve, dont_merge *) reg tx_oe;
     reg tx_dm_oe;
     wire rx_done;
     wire [15:0] rx_early, rx_mid, rx_late, rx_edges;
     wire [15:0] rx_center;
     wire [15:0] rx_clock;
     wire rx_clock_done;
-    reg rx_done_meta, rx_done_sync;
-    reg rx_clock_done_meta, rx_clock_done_sync;
+    (* preserve, altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *) reg rx_done_meta, rx_done_sync;
+    (* preserve, altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *) reg rx_clock_done_meta, rx_clock_done_sync;
+    (* preserve, dont_merge *) reg [1:0] rx_speed_hold;
     (* preserve, dont_merge *) reg [15:0] rx_early_hold, rx_mid_hold, rx_late_hold;
     reg [15:0] rx_edges_hold;
     (* preserve, dont_merge *) reg [15:0] rx_center_hold;
@@ -255,7 +256,7 @@ module aps6408_diag_core #(
     wire [15:0] receive_lo = tap_word(use_reference_taps ? reference_tap_second : read_capture_tap_second, rx_early_hold, rx_mid_hold, rx_late_hold, rx_center_hold);
 
     aps6408_diag_rx rx (
-        .clk(clk_phy), .reset(reset), .arm(rx_arm), .speed(active_speed),
+        .clk(clk_phy), .reset(reset), .arm(rx_arm), .speed(rx_speed_hold),
         .d1_mode(d1_mode),
         .psram_clk(psram_clock_monitor), .dq(PSRAM_DQ), .dqs(PSRAM_DQS),
         .done(rx_done), .early_word(rx_early), .mid_word(rx_mid),
@@ -265,7 +266,7 @@ module aps6408_diag_core #(
 
     always @(negedge clk) begin
         dq_out <= tx_data;
-        dq_oe <= tx_oe && state != S_TURN;
+        dq_oe <= tx_oe;
         dm_oe <= tx_dm_oe;
         dm_out <= tx_dm_data;
     end
@@ -312,6 +313,7 @@ module aps6408_diag_core #(
             retry_slow <= 0;
             tx_data <= 0;
             tx_oe <= 0;
+            rx_speed_hold <= 0;
             tx_dm_oe <= 0;
             tx_dm_data <= 0;
             runtime_address <= 0;
@@ -404,6 +406,7 @@ module aps6408_diag_core #(
                 end
 
                 S_START: begin
+                    rx_speed_hold <= active_speed;
                     PSRAM_CE_N <= 0;
                     PSRAM_CLK <= 0;
                     psram_clock_monitor <= 0;
@@ -443,7 +446,10 @@ module aps6408_diag_core #(
                             // MR writes capture one byte at the next rising edge (LC=1).
                             tx_data <= drive_target;
                             state <= S_WRITE;
-                        end else state <= S_TURN;
+                        end else begin
+                            tx_oe <= 0;
+                            state <= S_TURN;
+                        end
                         edge_index <= 0;
                     end
                 end

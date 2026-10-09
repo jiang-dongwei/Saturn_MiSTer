@@ -46,6 +46,21 @@ set_input_delay -clock $aps_external_clock -min 0.000 -add_delay \
 }
 
 set_false_path -to [get_registers {*|ramh_psram|req_meta *|ramh_psram|ack_meta *|ramh_psram|init_meta *|ramh_psram|error_meta}]
+# Only the first stage of each held-level synchronizer accepts metastability.
+foreach aps_sync_name {rx_done_meta rx_clock_done_meta rx|arm_meta} {
+    set aps_sync_first [get_registers [format {*|ramh_psram|engine|%s} $aps_sync_name]]
+    if {[get_collection_size $aps_sync_first] == 0} { error "Missing receive synchronizer: $aps_sync_name" }
+    set_false_path -to $aps_sync_first
+}
+# Transaction speed is registered before CA and held throughout the armed read.
+set aps_rx_speed_sources [get_registers {*|ramh_psram|engine|rx_speed_hold[*]}]
+set aps_rx_speed_targets [get_registers {*|ramh_psram|engine|rx|active_speed[*]}]
+if {[get_collection_size [get_registers -no_duplicates {*|ramh_psram|engine|rx_speed_hold[*]}]] != 2 ||
+    [get_collection_size [get_registers -no_duplicates {*|ramh_psram|engine|rx|active_speed[*]}]] != 2} {
+    error "Expected two held receive speed bits and two armed captures"
+}
+set_max_delay 7.381 -from $aps_rx_speed_sources -to $aps_rx_speed_targets
+set_false_path -hold -from $aps_rx_speed_sources -to $aps_rx_speed_targets
 set aps_mode_sources [get_registers {*|psram_clock_mode[*]}]
 set aps_mode_targets [get_registers {*|ramh_psram|engine_speed[*]}]
 set aps_mode_source_bits [get_registers -no_duplicates {*|psram_clock_mode[*]}]
