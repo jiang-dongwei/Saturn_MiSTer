@@ -36,7 +36,9 @@ module aps6408_diag_rx (
     reg second_phase = 0;
     reg [1:0] rise_event, fall_event, clock_event;
     reg [6:0] edge_low, edge_high;
-    (* preserve *) reg [31:0] data_low, data_high;
+    (* preserve *) reg [31:0] data_low;
+    (* preserve *) reg [31:8] data_high_upper;
+    wire [31:0] data_high = {data_high_upper, pair_low[7:0]};
     reg reference_pending = 0;
     reg [1:0] reference_delay = 0;
     reg reference_phase = 0;
@@ -68,7 +70,7 @@ module aps6408_diag_rx (
         older_clock_high <= previous_clock_high;
         // EARLY (-1), MID (0), CENTER (+2) and LATE (+3) DDR samples.
         data_low <= {older_high[7:0], previous_low[7:0], pair_low[7:0], pair_high[7:0]};
-        data_high <= {previous_low[7:0], previous_high[7:0], pair_high[7:0], input_falling[7:0]};
+        data_high_upper <= {previous_low[7:0], previous_high[7:0], pair_high[7:0]};
         rise_event <= {previous_high[8] && !previous_low[8],
                        previous_low[8] && !older_high[8]};
         fall_event <= {!previous_high[8] && previous_low[8],
@@ -156,4 +158,26 @@ module aps6408_diag_rx (
             end
         end
     end
+`ifdef APS_RX_EQUIV
+    wire reference_done, reference_clock_done;
+    wire [15:0] reference_early, reference_mid, reference_center, reference_late;
+    wire [15:0] reference_edges, reference_clock;
+    aps6408_diag_rx_reference receiver_reference (
+        .clk(clk), .reset(reset), .arm(arm), .speed(speed), .d1_mode(d1_mode),
+        .psram_clk(psram_clk), .dq(dq), .dqs(dqs), .done(reference_done),
+        .early_word(reference_early), .mid_word(reference_mid), .center_word(reference_center),
+        .late_word(reference_late), .edge_word(reference_edges), .clock_word(reference_clock),
+        .clock_done(reference_clock_done)
+    );
+    integer receiver_equivalence_checks=0;
+    always @(posedge clk) begin
+        #0.001;
+        if ({done,clock_done,early_word,mid_word,center_word,late_word,edge_word,clock_word,data_low,data_high} !==
+            {reference_done,reference_clock_done,reference_early,reference_mid,reference_center,reference_late,
+             reference_edges,reference_clock,receiver_reference.data_low,receiver_reference.data_high})
+            $fatal(1,"Receive sample sharing changed a waveform or capture result");
+        receiver_equivalence_checks=receiver_equivalence_checks+1;
+    end
+    final $display("RECEIVER WAVEFORM EQUIVALENCE CHECKS: %0d",receiver_equivalence_checks);
+`endif
 endmodule

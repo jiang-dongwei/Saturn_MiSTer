@@ -94,11 +94,11 @@ set_false_path -hold -from $aps_response_sources -to $aps_response_targets
 
 # Tighten only full-cycle DDIO outputs; retain native half-cycle and hold checks.
 set aps_ddio_sources [get_registers {*|ramh_psram|engine|rx|input_capture|input_ddr|*|dataout_h[*] *|ramh_psram|engine|rx|input_capture|input_ddr|*|dataout_l[*]}]
-set aps_ddio_targets [get_registers {*|ramh_psram|engine|rx|pair_low[*] *|ramh_psram|engine|rx|pair_high[*] *|ramh_psram|engine|rx|data_high[*]}]
+set aps_ddio_targets [get_registers {*|ramh_psram|engine|rx|pair_low[*] *|ramh_psram|engine|rx|pair_high[*] *|ramh_psram|engine|rx|data_high_upper[*]}]
 set aps_ddio_source_bits [get_registers -no_duplicates {*|ramh_psram|engine|rx|input_capture|input_ddr|*|dataout_h[*] *|ramh_psram|engine|rx|input_capture|input_ddr|*|dataout_l[*]}]
-set aps_ddio_target_bits [get_registers -no_duplicates {*|ramh_psram|engine|rx|pair_low[*] *|ramh_psram|engine|rx|pair_high[*] *|ramh_psram|engine|rx|data_high[*]}]
-if {[get_collection_size $aps_ddio_source_bits] != 18 || [get_collection_size $aps_ddio_target_bits] != 50} {
-    error "Missing DDIO route-budget endpoints: expected 18 outputs and 50 capture bits"
+set aps_ddio_target_bits [get_registers -no_duplicates {*|ramh_psram|engine|rx|pair_low[*] *|ramh_psram|engine|rx|pair_high[*] *|ramh_psram|engine|rx|data_high_upper[*]}]
+if {[get_collection_size $aps_ddio_source_bits] != 18 || [get_collection_size $aps_ddio_target_bits] != 42} {
+    error "Missing DDIO route-budget endpoints: expected 18 outputs and 42 capture bits"
 }
 post_message -type info "APS6408 DDIO route endpoints: logical [get_collection_size $aps_ddio_source_bits]/[get_collection_size $aps_ddio_target_bits], physical [get_collection_size $aps_ddio_sources]/[get_collection_size $aps_ddio_targets]"
 if {![info exists aps_report_natural_ddio] || !$aps_report_natural_ddio} {

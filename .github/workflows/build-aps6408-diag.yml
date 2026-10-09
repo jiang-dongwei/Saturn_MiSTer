@@ -36,6 +36,8 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Run APS6408 diagnostic simulations
         shell: bash
@@ -44,8 +46,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y iverilog
           mkdir -p .ci
-          iverilog -g2012 -DAPS6408_DIAG_SIM -s tb_aps6408_diag -o .ci/aps6408_diag.vvp \
-            rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv sim/psram/tb_aps6408_diag.sv
+          git show 7183387:rtl/aps6408_diag_rx.sv | sed 's/^module aps6408_diag_rx (/module aps6408_diag_rx_reference (/' > .ci/rx-reference.sv
+          grep -q '^module aps6408_diag_rx_reference (' .ci/rx-reference.sv
+          iverilog -g2012 -DAPS6408_DIAG_SIM -DAPS_RX_EQUIV -s tb_aps6408_diag -o .ci/aps6408_diag.vvp \
+            rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv .ci/rx-reference.sv sim/psram/tb_aps6408_diag.sv
           vvp .ci/aps6408_diag.vvp +speed16
           vvp .ci/aps6408_diag.vvp +speed16 +dq_lags_dqs
           vvp .ci/aps6408_diag.vvp +speed16 +late_memory_fall
