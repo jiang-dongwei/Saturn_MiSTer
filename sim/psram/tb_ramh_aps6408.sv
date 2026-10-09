@@ -148,6 +148,11 @@ module tb_ramh_aps6408;
     real dq_delay=10.0;
     real dq7_skew_ns=0.0;
     reg [1:0] model_d1=0;
+    always @(posedge clk_phy) begin
+        if (!reset && dut.engine.rx.arm_sync && dut.engine.rx.armed &&
+            dut.engine.rx.active_d1_mode !== (dut.engine.rx.active_speed==0 ? 2'd0 : model_d1))
+            $fatal(1,"MODEL INJECTION ERROR: second-byte mode was not applied");
+    end
     task return_byte;
         input [7:0] value;
         begin
@@ -313,6 +318,7 @@ module tb_ramh_aps6408;
                 memory[1048580],memory[1048581],memory[1048582],memory[1048583]} !== 64'hA55A3C965AA5C369)
                 $fatal(1,"training did not use the reserved guard words");
             $display("MEMORY TRAINING INIT PASS: four scratch writes and two calibrated reads");
+            $display("MODEL SELECTED TAPS: first=%0d second=%0d receiver_mode=%0d",dut.engine.read_capture_tap,dut.engine.read_capture_tap_second,dut.engine.rx.active_d1_mode);
         end
         if (held_mode) begin
             if (!MEMORY_TRAINING || held_speed==3) $fatal(1,"held mode test requires a normal runtime clock");

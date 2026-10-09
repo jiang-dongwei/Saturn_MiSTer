@@ -15,6 +15,7 @@ def measure(name,args,control=False):
     log=out/(name+'.log')
     log.write_text(result.stdout+result.stderr,encoding='utf-8')
     passed=result.returncode==0 and 'RAMH APS6408 PASS:' in result.stdout
+    assert 'MODEL INJECTION ERROR' not in result.stdout, 'Mode override was not applied'
     rows.append(dict(name=name,args=args,control=control,passed=passed,
                      returncode=result.returncode,log=log.name,
                      log_sha256=hashlib.sha256(log.read_bytes()).hexdigest(),
@@ -26,7 +27,7 @@ for speed in ('8','16','33','50'):
     args=[] if speed=='33' else ['+speed'+speed]
     measure('control_'+speed,args,control=True)
 
-for delay,mode,skew in itertools.product((2.0,10.0,13.0),range(4),(-1,0,1,2,3,4,5,6,7,8)):
+for delay,mode,skew in itertools.product((2.0,10.0,13.0),range(4),(-1,0,1,2,3,4,5,6,7,8,10,12,14,16,18,20,24)):
     name=f'delay{delay:g}_mode{mode}_skew{skew}'.replace('-','neg')
     measure(name,[f'+dq_delay={delay}',f'+model_d1={mode}',f'+dq7_skew_ns={skew}'])
 
