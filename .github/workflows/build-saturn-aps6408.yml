@@ -73,6 +73,14 @@ jobs:
             rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv \
             sim/psram/tb_aps6408_training.sv
           vvp .ci/training.vvp | tee -a .ci/ramh-aps-regression.log
+      - name: Verify isolated DQ7 selectors and reset-held controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          iverilog -g2012 -DAPS6408_DIAG_SIM -s tb_aps6408_dq7_taps -o .ci/dq7-taps.vvp \
+            rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv \
+            rtl/ramh_aps6408_adapter.sv sim/psram/tb_aps6408_dq7_taps.sv
+          vvp .ci/dq7-taps.vvp | tee .ci/dq7-selectors.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -80,6 +88,7 @@ jobs:
           path: |
             .ci/ramh-aps-regression.log
             .ci/testrom-semantics.log
+            .ci/dq7-selectors.log
           include-hidden-files: true
   quartus:
     needs: [diagnostic, runtime]

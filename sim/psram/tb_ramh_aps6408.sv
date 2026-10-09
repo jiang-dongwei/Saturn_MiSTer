@@ -41,9 +41,10 @@ module tb_ramh_aps6408;
     localparam MEMORY_TRAINING=1;
 `endif
     ramh_aps6408_adapter #(.POWERUP_CYCLES(8),.RESET_RECOVERY_CYCLES(8),
-                         .MEMORY_TRAINING_ENABLE(MEMORY_TRAINING)) dut (
+                         .MEMORY_TRAINING_ENABLE(MEMORY_TRAINING), .DQ7_DIAGNOSTIC_ENABLE(1)) dut (
         .clk(src_clk),.reset(reset),.engine_clk(engine_clk),.engine_reset(reset),.clk_phy(clk_phy),
         .speed_select(speed_select),
+        .dq7_tap_first(3'd0),.dq7_tap_second(3'd0),
         .addr(addr),.din(din),.wr(wr),.rd(rd),.burst(1'b1),.rfs(1'b0),
         .dout(dout),.busy(busy),.init_done(init_done),.init_error(init_error),
         .adapter_error(adapter_error),.device_id(device_id),.stage_code(stage_code),

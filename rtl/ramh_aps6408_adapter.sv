@@ -1,11 +1,13 @@
 module ramh_aps6408_adapter #(
     parameter integer POWERUP_CYCLES = 135476,
     parameter integer RESET_RECOVERY_CYCLES = 204,
-    parameter integer MEMORY_TRAINING_ENABLE = 1
+    parameter integer MEMORY_TRAINING_ENABLE = 1,
+    parameter integer DQ7_DIAGNOSTIC_ENABLE = 0
 ) (
     input clk, reset,
     input engine_clk, engine_reset, clk_phy,
     input [1:0] speed_select,
+    input [2:0] dq7_tap_first, dq7_tap_second,
     input [19:2] addr,
     input [31:0] din,
     input [3:0] wr,
@@ -102,6 +104,7 @@ module ramh_aps6408_adapter #(
     (* preserve *) reg [3:0] engine_request_mask;
     (* preserve *) reg engine_request_write;
     (* preserve *) reg [1:0] engine_speed;
+    (* preserve *) reg [2:0] engine_dq7_tap_first, engine_dq7_tap_second;
     reg [1:0] engine_state;
     reg runtime_valid;
     wire runtime_ready, runtime_done, runtime_error;
@@ -115,6 +118,8 @@ module ramh_aps6408_adapter #(
         runtime_valid <= 0;
         if (engine_reset) begin
             engine_speed <= speed_select;
+            engine_dq7_tap_first <= dq7_tap_first;
+            engine_dq7_tap_second <= dq7_tap_second;
             req_meta <= 0;
             req_sync <= 0;
             req_seen <= 0;
@@ -171,11 +176,13 @@ module ramh_aps6408_adapter #(
     aps6408_diag_core #(
         .POWERUP_CYCLES(POWERUP_CYCLES),
         .RESET_RECOVERY_CYCLES(RESET_RECOVERY_CYCLES), .RUNTIME_API(1),
-        .MEMORY_TRAINING_ENABLE(MEMORY_TRAINING_ENABLE)
+        .MEMORY_TRAINING_ENABLE(MEMORY_TRAINING_ENABLE),
+        .DQ7_DIAGNOSTIC_ENABLE(DQ7_DIAGNOSTIC_ENABLE)
     ) engine (
         .clk(engine_clk), .clk_phy(clk_phy), .reset(engine_reset),
         .speed_select(engine_speed), .test_mode(2'd0), .d1_mode(2'd0), .drive_half(1'b1),
         .control_fast(engine_speed==3),
+        .dq7_tap_first(engine_dq7_tap_first), .dq7_tap_second(engine_dq7_tap_second),
         .request_valid(runtime_valid), .request_ready(runtime_ready),
         .request_write(engine_request_write), .request_address(half_address),
         .request_write_data(half_data), .request_write_mask(half_mask),

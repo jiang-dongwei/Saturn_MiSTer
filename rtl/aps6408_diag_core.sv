@@ -5,7 +5,8 @@ module aps6408_diag_core #(
     parameter integer POWERUP_CYCLES = 135476, // 2 ms at 67.7376 MHz
     parameter integer RESET_RECOVERY_CYCLES = 136, // at least 2 us
     parameter integer RUNTIME_API = 0,
-    parameter integer MEMORY_TRAINING_ENABLE = 0
+    parameter integer MEMORY_TRAINING_ENABLE = 0,
+    parameter integer DQ7_DIAGNOSTIC_ENABLE = 0
 ) (
     input clk,
     input clk_phy,
@@ -15,6 +16,8 @@ module aps6408_diag_core #(
     input [1:0] d1_mode,
     input drive_half,
     input control_fast,
+    input [2:0] dq7_tap_first,
+    input [2:0] dq7_tap_second,
     input request_valid,
     input request_write,
     input [23:0] request_address,
@@ -254,6 +257,28 @@ module aps6408_diag_core #(
     wire [15:0] trained_second = {trained_current_hi[15:8], trained_current_lo[7:0]};
     wire [15:0] receive_hi = tap_word(use_reference_taps ? reference_tap_first : read_capture_tap, rx_early_hold, rx_mid_hold, rx_late_hold, rx_center_hold);
     wire [15:0] receive_lo = tap_word(use_reference_taps ? reference_tap_second : read_capture_tap_second, rx_early_hold, rx_mid_hold, rx_late_hold, rx_center_hold);
+    function dq7_sample;
+        input [2:0] mode;
+        input original, early_value, mid_value, center_value, late_value;
+        begin
+            case (mode)
+                1: dq7_sample = early_value;
+                2: dq7_sample = mid_value;
+                3: dq7_sample = center_value;
+                4: dq7_sample = late_value;
+                default: dq7_sample = original;
+            endcase
+        end
+    endfunction
+    wire dq7_override = DQ7_DIAGNOSTIC_ENABLE != 0 && !id_phase &&
+                        !memory_training && !retry_slow && read_speed != 0;
+    wire dq7_first = dq7_sample(dq7_tap_first, receive_hi[15], rx_early_hold[15],
+                               rx_mid_hold[15], rx_center_hold[15], rx_late_hold[15]);
+    wire dq7_second = dq7_sample(dq7_tap_second, receive_lo[7], rx_early_hold[7],
+                                rx_mid_hold[7], rx_center_hold[7], rx_late_hold[7]);
+    wire [15:0] receive_word = dq7_override ?
+        {dq7_first, receive_hi[14:8], dq7_second, receive_lo[6:0]} :
+        {receive_hi[15:8], receive_lo[7:0]};
 
     aps6408_diag_rx rx (
         .clk(clk_phy), .reset(reset), .arm(rx_arm), .speed(rx_speed_hold),
@@ -507,7 +532,7 @@ module aps6408_diag_core #(
                         end
                     end
                     if (rx_done_sync && (!id_phase || rx_clock_done_sync)) begin
-                        read_word <= {receive_hi[15:8], receive_lo[7:0]};
+                        read_word <= receive_word;
                         dqs_edge_word <= rx_edges_hold;
                         clk_read_word <= rx_clock_hold;
                         if (!retry_slow) begin

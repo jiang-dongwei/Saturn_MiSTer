@@ -320,6 +320,8 @@ module emu
 		"-;",
 `ifdef SATURN_APS6408
 		"O[83:82],PSRAM clock,33.87 MHz,16.93 MHz,8.47 MHz,50.80 MHz EXP;",
+		"O[86:84],DQ7 first byte,Auto,Early,Mid,Center,Late;",
+		"O[89:87],DQ7 second byte,Auto,Early,Mid,Center,Late;",
 		"-;",
 `endif
 
@@ -1692,13 +1694,19 @@ module emu
 	(* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
 	reg [1:0] psram_mode_meta = 0, psram_mode_sync = 0;
 	reg [1:0] psram_clock_mode = 0;
+	(* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+	reg [5:0] psram_dq7_meta = 0, psram_dq7_sync = 0;
+	(* preserve *) reg [5:0] psram_dq7_mode = 0;
 	reg psram_mode_restart = 0;
 	always @(posedge CLK_50M) begin
 		psram_mode_meta <= status[83:82];
 		psram_mode_sync <= psram_mode_meta;
+		psram_dq7_meta <= status[89:84];
+		psram_dq7_sync <= psram_dq7_meta;
 		psram_mode_restart <= 0;
-		if (psram_clock_mode != psram_mode_sync) begin
+		if (psram_clock_mode != psram_mode_sync || psram_dq7_mode != psram_dq7_sync) begin
 			psram_clock_mode <= psram_mode_sync;
+			psram_dq7_mode <= psram_dq7_sync;
 			psram_mode_restart <= 1;
 		end
 	end
@@ -1721,16 +1729,18 @@ module emu
 		.inclk({psram_fast_clk,psram_control_clk,1'b0,CLK_50M}),
 		.clkselect({1'b1,psram_clock_mode==3}), .ena(1'b1), .outclk(psram_engine_clk)
 	);
-	wire psram_reset_request = reset || rst_ram || !psram_pll_locked || psram_mode_restart || psram_clock_mode != psram_mode_sync;
+	wire psram_reset_request = reset || rst_ram || !psram_pll_locked || psram_mode_restart ||
+	                          psram_clock_mode != psram_mode_sync || psram_dq7_mode != psram_dq7_sync;
 	always @(posedge psram_engine_clk) begin
 		if (psram_reset_request) psram_reset_pipe <= 3'b111;
 		else psram_reset_pipe <= {psram_reset_pipe[1:0],1'b0};
 	end
 	assign psram_opi_ready = psram_qpi_init_done && !psram_qpi_init_error && !psram_adapter_error;
-	ramh_aps6408_adapter ramh_psram (
+	ramh_aps6408_adapter #(.DQ7_DIAGNOSTIC_ENABLE(1)) ramh_psram (
 		.clk(clk_ram), .reset(psram_reset_request), .engine_clk(psram_engine_clk),
 		.engine_reset(psram_reset_pipe[2]), .clk_phy(psram_phy_clk),
 		.speed_select(psram_selected_speed),
+		.dq7_tap_first(psram_dq7_mode[2:0]), .dq7_tap_second(psram_dq7_mode[5:3]),
 		.addr(MEM_A[19:2]), .din(ramh_din), .wr(ramh_wr),
 		.rd(~RAMH_CS_N & ~MEM_RD_N), .burst(RAMH_BURST), .rfs(~RAMH_CS_N & RAMH_RFS),
 		.dout(psram_ramh_do), .busy(psram_ramh_busy),

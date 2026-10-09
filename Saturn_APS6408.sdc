@@ -71,6 +71,14 @@ if {[get_collection_size $aps_mode_source_bits] != 2 || [get_collection_size $ap
 post_message -type info "APS6408 mode endpoints: logical [get_collection_size $aps_mode_source_bits]/[get_collection_size $aps_mode_target_bits], physical [get_collection_size $aps_mode_sources]/[get_collection_size $aps_mode_targets]"
 set_max_delay 9.841 -from $aps_mode_sources -to $aps_mode_targets
 set_false_path -hold -from $aps_mode_sources -to $aps_mode_targets
+set aps_dq7_mode_sources [get_registers {*|psram_dq7_mode[*]}]
+set aps_dq7_mode_targets [get_registers {*|ramh_psram|engine_dq7_tap_first[*] *|ramh_psram|engine_dq7_tap_second[*]}]
+if {[get_collection_size [get_registers -no_duplicates {*|psram_dq7_mode[*]}]] != 6 ||
+    [get_collection_size [get_registers -no_duplicates {*|ramh_psram|engine_dq7_tap_first[*] *|ramh_psram|engine_dq7_tap_second[*]}]] != 6} {
+    error "Expected six held DQ7 mode bits and six reset-time captures"
+}
+set_max_delay 9.841 -from $aps_dq7_mode_sources -to $aps_dq7_mode_targets
+set_false_path -hold -from $aps_dq7_mode_sources -to $aps_dq7_mode_targets
 # Bundled payloads remain held until the synchronized acknowledgement.
 set aps_request_sources [get_registers {*|ramh_psram|source_addr* *|ramh_psram|source_data* *|ramh_psram|source_mask* *|ramh_psram|source_write}]
 set aps_control_targets [get_registers {*|ramh_psram|engine_request_*}]
