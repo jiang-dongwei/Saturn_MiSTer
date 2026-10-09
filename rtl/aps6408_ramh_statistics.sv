@@ -6,6 +6,8 @@ module aps6408_ramh_statistics #(
     input [1:0] seed_select,
     input init_done, init_error, adapter_error, busy,
     input [31:0] dout,
+    input [7:0] adapter_stage,
+    input [15:0] device_id,
     output [19:2] addr,
     output [31:0] din,
     output reg [3:0] wr,
@@ -16,7 +18,7 @@ module aps6408_ramh_statistics #(
 );
     localparam BOOT=0, WRITE_START=1, WRITE_BUSY=2, WRITE_WAIT=3,
                READ_START=4, READ_BUSY=5, READ_WAIT=6, EVALUATE=7,
-               FINISH=8, DONE=9, FAULT=10;
+               FINISH=8, DONE=9, FAULT=10, FAULT_LATCH=11;
     localparam [31:0] WORD_COUNT = WORDS;
     reg [3:0] state;
     reg [17:0] index;
@@ -25,6 +27,9 @@ module aps6408_ramh_statistics #(
     reg [31:0] xor_or, rising_or, falling_or, checksum;
     reg [31:0] dq_counts[0:7];
     reg [31:0] wait_cycles;
+    reg [31:0] fault_reason, fault_state, fault_address, fault_wait;
+    reg [31:0] fault_flags, fault_stage, fault_device_id;
+    reg [31:0] completed_writes, completed_reads;
     wire [31:0] difference = pattern ^ received;
     integer bit_index;
     reg [31:0] checksum_value;
@@ -33,7 +38,13 @@ module aps6408_ramh_statistics #(
     assign din = pattern;
     assign ready = state == DONE;
     assign failed = state == FAULT;
-    assign report = {checksum, dq_counts[7], dq_counts[6], dq_counts[5], dq_counts[4],
+    assign report = (state == FAULT || state == FAULT_LATCH) ?
+                    {checksum, fault_device_id, completed_reads, completed_writes,
+                     falling_or, rising_or, xor_or, first_actual, first_expected,
+                     last_address, first_address, error_words, fault_stage,
+                     fault_flags, fault_wait, fault_address, fault_state,
+                     WORD_COUNT, seed, fault_reason, 32'd1, 32'h46414C54} :
+                    {checksum, dq_counts[7], dq_counts[6], dq_counts[5], dq_counts[4],
                      dq_counts[3], dq_counts[2], dq_counts[1], dq_counts[0],
                      falling_or, rising_or, xor_or, first_actual, first_expected,
                      last_address, first_address, error_words, WORD_COUNT, seed,
@@ -74,15 +85,32 @@ module aps6408_ramh_statistics #(
             falling_or <= 0;
             checksum <= 0;
             wait_cycles <= 0;
+            fault_reason <= 0;
+            fault_state <= 0;
+            fault_address <= 0;
+            fault_wait <= 0;
+            fault_flags <= 0;
+            fault_stage <= 0;
+            fault_device_id <= 0;
+            completed_writes <= 0;
+            completed_reads <= 0;
             for (bit_index=0; bit_index<8; bit_index=bit_index+1)
                 dq_counts[bit_index] <= 0;
-        end else if (init_error || adapter_error || wait_cycles == TIMEOUT_CYCLES-1) begin
-            state <= FAULT;
+        end else if (state != FAULT && state != FAULT_LATCH && state != DONE &&
+                     (init_error || adapter_error || wait_cycles == TIMEOUT_CYCLES-1 || state > FAULT_LATCH)) begin
+            state <= FAULT_LATCH;
+            fault_reason <= init_error ? 1 : adapter_error ? 2 : state > FAULT_LATCH ? 4 : 3;
+            fault_state <= state;
+            fault_address <= 32'h26000000 + {12'd0,index,2'b00};
+            fault_wait <= wait_cycles;
+            fault_flags <= {28'd0,init_done,init_error,adapter_error,busy};
+            fault_stage <= {24'd0,adapter_stage};
+            fault_device_id <= {16'd0,device_id};
             wr <= 0;
             rd <= 0;
         end else begin
-            if (state == BOOT || state == WRITE_BUSY || state == WRITE_WAIT ||
-                state == READ_BUSY || state == READ_WAIT)
+            if (state == BOOT || state == WRITE_START || state == WRITE_BUSY || state == WRITE_WAIT ||
+                state == READ_START || state == READ_BUSY || state == READ_WAIT)
                 wait_cycles <= wait_cycles + 1'b1;
             else wait_cycles <= 0;
             case (state)
@@ -96,6 +124,7 @@ module aps6408_ramh_statistics #(
                     state <= WRITE_WAIT;
                 end
                 WRITE_WAIT: if (!busy) begin
+                    completed_writes <= completed_writes + 1'b1;
                     if (index == WORDS-1) begin
                         index <= 0;
                         pattern <= seed;
@@ -117,6 +146,7 @@ module aps6408_ramh_statistics #(
                     state <= EVALUATE;
                 end
                 EVALUATE: begin
+                    completed_reads <= completed_reads + 1'b1;
                     if (difference != 0) begin
                         error_words <= error_words + 1'b1;
                         if (error_words == 0) begin
@@ -144,6 +174,7 @@ module aps6408_ramh_statistics #(
                     state <= DONE;
                 end
                 DONE: begin wr <= 0; rd <= 0; end
+                FAULT_LATCH: begin checksum <= checksum_value; state <= FAULT; end
                 FAULT: begin wr <= 0; rd <= 0; end
                 default: state <= FAULT;
             endcase

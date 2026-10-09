@@ -36,7 +36,7 @@ module tb_aps6408_statistics_video;
         ready=0; #1;
         if ({red,green,blue}!==24'h0000F8) $fatal(1,"running screen mismatch");
         failed=1; #1;
-        if ({red,green,blue}!==24'hF80000) $fatal(1,"fault screen mismatch");
+        if ({red,green,blue}!==24'hF8F800) $fatal(1,"fault report header mismatch");
         $display("RAMH statistics video PASS: all 180 report rows and incomplete/fault screens");
         $finish;
     end

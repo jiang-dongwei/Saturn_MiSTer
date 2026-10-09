@@ -37,6 +37,8 @@ jobs:
           vvp .ci/statistics-full.vvp | tee -a .ci/statistics-regression.log
           iverilog -g2012 -s tb_aps6408_statistics_video -o .ci/statistics-video.vvp rtl/aps6408_statistics_video.sv sim/psram/tb_aps6408_statistics_video.sv
           vvp .ci/statistics-video.vvp | tee -a .ci/statistics-regression.log
+          python3 -m pip install pillow
+          python3 sim/psram/check_statistics_barcode.py | tee .ci/statistics-barcode.log
       - name: Verify complete RAMH protocol and CDC
         shell: bash
         run: |

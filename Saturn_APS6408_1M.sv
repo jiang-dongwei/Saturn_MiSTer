@@ -183,6 +183,7 @@ aps6408_ramh_statistics tester (
     .clk(clk_33), .reset(diagnostic_reset), .seed_select(selected_seed),
     .init_done(init_done), .init_error(init_error), .adapter_error(adapter_error),
     .busy(test_busy), .dout(test_dout), .addr(test_addr), .din(test_din), .wr(test_wr), .rd(test_rd),
+    .adapter_stage(stage_code), .device_id(device_id),
     .ready(ready), .failed(failed), .report(report)
 );
 aps6408_statistics_video video (

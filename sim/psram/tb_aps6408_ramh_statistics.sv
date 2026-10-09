@@ -4,6 +4,8 @@ module tb_aps6408_ramh_statistics;
     reg clk=0, reset=1, init_done=0, init_error=0, adapter_error=0, busy=0;
     reg [1:0] seed_select=0;
     reg [31:0] dout=0;
+    reg [7:0] adapter_stage=8'hE6;
+    reg [15:0] device_id=16'h0D5D;
     wire [19:2] addr;
     wire [31:0] din;
     wire [3:0] wr;
@@ -115,6 +117,16 @@ module tb_aps6408_ramh_statistics;
         @(negedge clk);
         if (no_init || bad_init || bad_adapter || stall_read || stall_write) begin
             if (!failed || ready) $fatal(1,"fault did not fail closed");
+            if (report[0+:32]!==32'h46414C54 || report[32+:32]!==1 ||
+                report[64+:32]!== (bad_init ? 1 : bad_adapter ? 2 : 3))
+                $fatal(1,"incorrect fault reason");
+            if (report[288+:32]!==32'hE6 || report[640+:32]!==32'h0D5D)
+                $fatal(1,"fault stage/device not captured");
+            checksum=0;
+            for (i=0;i<21;i=i+1) checksum=checksum^report[i*32+:32];
+            if (checksum!==report[672+:32]) $fatal(1,"fault checksum mismatch");
+            if (report[576+:32]!== (stall_write ? 0 : writes) || report[608+:32]!== (stall_read ? 0 : reads))
+                $fatal(1,"fault completed transaction counts incorrect");
         end else begin
             if (!ready || failed || writes!=WORDS || reads!=WORDS) $fatal(1,"incomplete scan");
             for (i=0;i<22;i=i+1)
@@ -122,6 +134,8 @@ module tb_aps6408_ramh_statistics;
                     $fatal(1,"field %0d expected %08x actual %08x",i,expected[i],report[i*32+:32]);
             for (i=0;i<WORDS;i=i+1)
                 if (memory[i]!==reference_pattern(i)) $fatal(1,"read scan altered memory");
+            if (dut.completed_reads!=WORDS || dut.completed_writes!=WORDS)
+                $fatal(1,"completed transaction counters incorrect");
         end
         repeat(8) begin
             @(negedge clk);

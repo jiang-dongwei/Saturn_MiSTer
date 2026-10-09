@@ -27,7 +27,7 @@ module aps6408_statistics_video (
         field = 0;
         color = failed ? 15'h001F : ready ?
                 (report[160 +: 32] != 0 ? 15'h001F : 15'h03E0) : 15'h7C00;
-        if (ready) begin
+        if (ready || failed) begin
             case (v_count)
                 0: color = 15'h03FF;
                 1: color = 15'h03E0;
