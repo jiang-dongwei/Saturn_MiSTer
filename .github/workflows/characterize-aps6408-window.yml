@@ -1,5 +1,11 @@
 name: Characterize APS6408 digital receive window
 on:
+  push:
+    branches: [codex/aps6408-rx-window-model]
+    paths:
+      - .github/workflows/characterize-aps6408-window.yml
+      - sim/psram/characterize_receive_window.py
+      - sim/psram/tb_ramh_aps6408.sv
   workflow_dispatch:
 permissions:
   contents: read
