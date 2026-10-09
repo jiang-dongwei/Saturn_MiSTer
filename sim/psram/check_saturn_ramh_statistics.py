@@ -6,9 +6,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 from generate_saturn_ramh_statistics import build, FIELDS, HEADER, MAGIC, STATS_BASE
 
 
-def check(words=262144, seed=0xA55A8041, scan='uncached', operation='both', faults=None):
+def check(words=262144, seed=0xA55A8041, scan='uncached', operation='both', faults=None, read_gap=0, write_gap=0):
     faults = faults or {}
-    program, rom, _ = build(words, seed, scan, operation)
+    program, rom, _ = build(words, seed, scan, operation, read_gap, write_gap)
     reference = [((seed + i * 0x01010101) & 0xFFFFFFFF) for i in range(words)]
     memory = reference.copy() if operation == 'read' else [0] * words
     vram = {}
@@ -52,7 +52,7 @@ def check(words=262144, seed=0xA55A8041, scan='uncached', operation='both', faul
     def signed(value, bits):
         return value - (1 << bits) if value & (1 << (bits - 1)) else value
 
-    for steps in range(40000000):
+    for steps in range(40000000+4*words*(read_gap+write_gap)):
         if pc == program.labels['report_halt']:
             break
         assert pc != program.labels['fault'], 'Program took exception path'
@@ -151,4 +151,10 @@ if __name__ == '__main__':
     print('Read only preserves writes:', check(operation='read', faults={0: 0x80, 262143: 0x80000000}))
     print('Cached complete:', check(seed=0, scan='cached'))
     print('Cached failure continues:', check(words=128, seed=0, scan='cached', faults={124: 0x80000000, 127: 0x01}))
+    for read_gap, write_gap in ((4,0),(16,0),(64,0),(0,16),(16,16)):
+        print('Gap instructions preserve scan:',check(words=128,read_gap=read_gap,write_gap=write_gap,faults={0:0x01,127:0x80808080}))
+    print('Full1MiB read-gap complete:',check(seed=0,read_gap=4))
+    import hashlib
+    assert hashlib.sha256(build()[1]).hexdigest()=='30660476aba67e2ae0b4ace8c8c1fde15989a739fbece4eb8fc879d4ad28590e'
+    print('Default statistics ROM unchanged')
     print('Generated SH-2 program semantics only; cached returns are abstracted, not SH-2 cache RTL or board timing.')

@@ -26,6 +26,12 @@ jobs:
           done
           python3 scripts/generate_saturn_ramh_statistics.py .ci/roms/stats-cached.bin --seed 0 --scan cached
           python3 scripts/generate_saturn_ramh_statistics.py .ci/roms/stats-readonly.bin --operation read
+          python3 scripts/generate_saturn_ramh_statistics.py .ci/roms/stats-readonly-zero.bin --operation read --seed 0
+          python3 scripts/generate_saturn_ramh_statistics.py .ci/roms/stats-readonly-ones.bin --operation read --seed 0xFFFFFFFF
+          for gap in 4 16 64; do
+            python3 scripts/generate_saturn_ramh_statistics.py ".ci/roms/stats-zero-readgap$gap.bin" --seed 0 --read-gap "$gap"
+          done
+          python3 scripts/generate_saturn_ramh_statistics.py .ci/roms/stats-zero-writegap16.bin --seed 0 --write-gap 16
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -14,11 +14,20 @@ FIELDS = ('magic', 'version', 'stage', 'seed', 'words', 'error_words',
           *(f'dq{bit}_error_words' for bit in range(8)), 'checksum')
 
 
-def build(ram_words=262144, seed=0xA55A8041, scan='uncached', operation='both'):
+def build(ram_words=262144, seed=0xA55A8041, scan='uncached', operation='both', read_gap=0, write_gap=0):
     assert 1 <= ram_words <= 262144
     assert 0 <= seed <= 0xFFFFFFFF
     assert scan in ('uncached', 'cached') and operation in ('both', 'read')
+    assert 0 <= read_gap <= 127 and 0 <= write_gap <= 127
     p = Program()
+
+    def pause(count, label):
+        if count:
+            p.emit(0xEC00 | count)
+            p.label(label)
+            p.emit(0x0009)
+            p.emit(0x4C10)
+            p.branch(label, 'false')
 
     def store(index, register):
         p.literal(10, STATS_BASE + index * 4)
@@ -61,8 +70,10 @@ def build(ram_words=262144, seed=0xA55A8041, scan='uncached', operation='both'):
         p.literal(2, ram_words)
         p.literal(0, seed)
         p.label('write_pattern')
-        for word in (0x2102, 0x7104, 0x303C, 0x4210):
+        for word in (0x2102, 0x7104, 0x303C):
             p.emit(word)
+        pause(write_gap, 'write_gap')
+        p.emit(0x4210)
         p.branch('write_pattern', 'false')
     if scan == 'cached':
         p.literal(1, 0xFFFFFE92)
@@ -114,6 +125,7 @@ def build(ram_words=262144, seed=0xA55A8041, scan='uncached', operation='both'):
     p.emit(0x4B10)
     p.branch('count_dq', 'false')
     p.label('next_word')
+    pause(read_gap, 'read_gap')
     p.emit(0x303C)
     p.emit(0x4210)
     p.branch('scan_word', 'false')
@@ -169,14 +181,17 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=lambda value: int(value, 0), default=0xA55A8041)
     parser.add_argument('--scan', choices=('uncached', 'cached'), default='uncached')
     parser.add_argument('--operation', choices=('both', 'read'), default='both')
+    parser.add_argument('--read-gap', type=int, default=0)
+    parser.add_argument('--write-gap', type=int, default=0)
     args = parser.parse_args()
-    program, rom, pool = build(args.ram_words, args.seed, args.scan, args.operation)
+    program, rom, pool = build(args.ram_words, args.seed, args.scan, args.operation, args.read_gap, args.write_gap)
     args.output.write_bytes(rom)
     args.output.with_suffix('.json').write_text(json.dumps({
         'purpose': 'Continue after data mismatches and count all scanned words',
         'sha256': hashlib.sha256(rom).hexdigest(), 'bytes': len(rom),
         'ram_words': args.ram_words, 'seed': args.seed, 'scan': args.scan,
         'operation': args.operation, 'stats_base': hex(STATS_BASE),
+        'read_gap': args.read_gap, 'write_gap': args.write_gap,
         'fields': FIELDS, 'pool_start': pool,
         'limitations': 'Single pattern; no partial-write coverage; error accounting changes access cadence; never substitutes for the default full ROM',
     }, indent=2) + '\n', encoding='utf-8')
