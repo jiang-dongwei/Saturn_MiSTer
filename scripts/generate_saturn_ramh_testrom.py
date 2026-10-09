@@ -84,8 +84,8 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
     assert operation != 'write' or not (failure_rereads or failure_cache_read)
     assert 1 <= ram_words <= 262144
     assert 0 <= failure_rereads <= 2
-    assert not failure_rereads or (failure_bars and not cache_read and not video_only)
-    assert not failure_cache_read or (failure_bars and not cache_read and not video_only)
+    assert not failure_rereads or (failure_bars and not video_only)
+    assert not failure_cache_read or (failure_bars and not video_only)
     assert 0 <= first_seed <= 0xFFFFFFFF
     assert not video_only or first_seed == 0xA55A8041
     p = Program()
@@ -158,6 +158,8 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
             if failure_bars:
                 p.literal(12, 0x200)
             p.label('cached_read')
+            if dynamic_failure_address:
+                p.emit(0x6513)
             p.emit(0x6416)
             p.compare()
             p.emit(0x303C)
@@ -225,6 +227,10 @@ def build(video_only=False, cache_read=True, failure_bars=False, ram_words=26214
     if failure_bars:
         for instruction in (0x6603, 0x6743, 0x6813, 0x6923, 0x6BC3):
             p.emit(instruction)
+        if cache_read and (failure_rereads or failure_cache_read):
+            p.literal(1, 0xFFFFFE92)
+            p.emit(0xE000)
+            p.emit(0x2100)
         if failure_cache_read:
             if dynamic_failure_address:
                 p.emit(0x6153)
@@ -316,6 +322,8 @@ if __name__ == '__main__':
             metadata['failure_bars']['rereads'] = 'Read failed-address XOR 4 to replace the adapter cache, then reread the failed address without writes; repeated as requested.'
         if args.failure_cache_read:
             metadata['failure_bars']['adapter_cache_read'] = 'Immediately reread the failed address before any other RAMH access; SH-2 cache is disabled, adapter one-word cache stays valid.'
+        if not args.uncached_only and (args.failure_rereads or args.failure_cache_read):
+            metadata['failure_bars']['cache_failure_probe'] = 'Preserve first failure, disable SH-2 cache, then probe the failed word without RAMH writes. Cached address and stage remain in the original failure bars.'
     if args.target == 'vdp1fb':
         metadata.update(target='vdp1fb', uncached_ram_start='0x25C80000', framebuffer_banks=2, passes=8, partial_write_cases=12, flip_requests=3)
         metadata['framebuffer_scope'] = 'CPU window in both selected buffers; distinct marker retention verifies switching. Frame timing requires hardware verification.'

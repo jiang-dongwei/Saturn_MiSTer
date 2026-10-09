@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location('testrom', Path(__file__).resolve().parents[2] / 'scripts/generate_saturn_ramh_testrom.py')
@@ -7,12 +8,13 @@ spec.loader.exec_module(generator)
 build = generator.build
 
 
-def check(video_only=False, inject_error=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041, inject_offset=None, error_read_limit=None, error_stage=None, operation='both', target='ramh', collapse_framebuffer_banks=False):
+def check(video_only=False, inject_error=False, cache_read=True, failure_bars=False, ram_words=262144, failure_rereads=0, failure_cache_read=False, first_seed=0xA55A8041, inject_offset=None, error_read_limit=None, error_stage=None, operation='both', target='ramh', collapse_framebuffer_banks=False, cache_error_only=False):
     program, rom, _ = build(video_only, cache_read, failure_bars, ram_words, failure_rereads, failure_cache_read, first_seed, operation, target)
     framebuffer = target == 'vdp1fb'
     assert not collapse_framebuffer_banks or framebuffer
     ram_base = 0x25C80000 if framebuffer else 0x26000000
     assert not inject_error or operation != 'write'
+    assert not cache_error_only or (inject_error and cache_read and error_stage == 0x200)
     error_offset = min(0xC0E4, 4 * (ram_words - 1)) if inject_offset is None else inject_offset
     if collapse_framebuffer_banks:
         error_offset = 0
@@ -33,6 +35,8 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
     read_offsets = []
     error_reads = 0
     adapter_cache = None
+    cache_control = 0
+    writes_at_failure = None
 
     def read(address, width):
         nonlocal reads, error_reads, adapter_cache
@@ -42,6 +46,15 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
             value = int.from_bytes(storage[offset:offset + width], 'big')
             reads += 1
             read_offsets.append(offset)
+            if cache_read and (failure_rereads or failure_cache_read) and pc >= program.labels['fail']:
+                assert cache_control & 1 == 0, 'Physical failure probes must disable SH-2 cache first'
+                assert writes == writes_at_failure, 'Failure probes must not rewrite RAMH'
+            if cache_error_only:
+                if failure_cache_read:
+                    adapter_cache = (offset, value)
+                if offset == error_offset and registers[12] == 0x200 and cache_control & 1:
+                    value ^= 0x00800000
+                return value
             if failure_cache_read and adapter_cache is not None and adapter_cache[0] == offset:
                 return adapter_cache[1]
             if inject_error and offset == error_offset and (error_stage is None or registers[12] == error_stage):
@@ -55,7 +68,7 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
         return int.from_bytes(rom[address:address + width], 'big')
 
     def write(address, value, width):
-        nonlocal writes, partial, adapter_cache, selected_bank, flips
+        nonlocal writes, partial, adapter_cache, selected_bank, flips, cache_control
         if ram_base <= address < ram_base + (262144 if framebuffer else 1048576):
             offset = address - ram_base
             storage = banks[selected_bank] if framebuffer else ram
@@ -77,11 +90,16 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
                 colors.append(value & 0x7FFF)
         else:
             assert address in (0x25F80000, 0x25F800AC, 0x25F800AE, 0xFFFFFE92), hex(address)
+            if address == 0xFFFFFE92:
+                assert width == 1
+                cache_control = value & 0xFF
 
     def signed(value, bits):
         return value - (1 << bits) if value & (1 << (bits - 1)) else value
 
     for step in range(32000000 if framebuffer else 16000000):
+        if pc == program.labels['fail']:
+            writes_at_failure = writes
         if failure_bars and pc == program.labels['fail_halt']:
             assert inject_error or collapse_framebuffer_banks
             extra_values = failure_rereads + int(failure_cache_read)
@@ -92,6 +110,10 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
             if collapse_framebuffer_banks:
                 expected = 0x11223344
                 expected_base = [expected, 0x55667788, ram_base, 0, 0x350]
+            elif error_stage == 0x200 and not framebuffer:
+                assert cache_read
+                expected = (index * 0x01010101) & 0xFFFFFFFF
+                expected_base = [expected, expected ^ 0x00800000, 0x06000000 + error_offset + 4, ram_words - index, 0x200]
             elif error_stage is None or error_stage == 0x100 or (framebuffer and error_stage == 0x200):
                 expected = (first_seed + index * 0x01010101) & 0xFFFFFFFF
                 expected_base = [expected, expected ^ 0x00800000, ram_base + error_offset + 4, ram_words - index, error_stage or 0x100]
@@ -103,10 +125,10 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
                 expected_bytes[lane:lane + width] = (0xA5 if width == 1 else 0x5AA5).to_bytes(width, 'big')
                 expected = int.from_bytes(expected_bytes, 'big')
                 expected_base = [expected, expected ^ 0x00800000, ram_base, 0, error_stage]
-            expected_extra = [expected ^ 0x00800000] if failure_cache_read else []
+            expected_extra = [expected if cache_error_only else expected ^ 0x00800000] if failure_cache_read else []
             expected_offsets = [error_offset] if failure_cache_read else []
             for reread in range(failure_rereads):
-                expected_extra.append(0x55667788 if collapse_framebuffer_banks else expected ^ (0x00800000 if error_read_limit is None or reread + 2 <= error_read_limit else 0))
+                expected_extra.append(0x55667788 if collapse_framebuffer_banks else expected ^ (0x00800000 if not cache_error_only and (error_read_limit is None or reread + 2 <= error_read_limit) else 0))
                 expected_offsets += [error_offset ^ 4, error_offset]
             assert values == expected_base + expected_extra, values
             if expected_offsets:
@@ -176,6 +198,8 @@ def check(video_only=False, inject_error=False, cache_read=True, failure_bars=Fa
 
 
 if __name__ == '__main__':
+    assert hashlib.sha256(build(failure_bars=True)[1]).hexdigest() == '56aa111b2ed97d1d780ba4f139734501b0567c3e8641b1c1beb597bb8c640382'
+    print('Default full1MiB ROM identity unchanged')
     print('Video:', check(video_only=True))
     print('RAMH:', check())
     print('RAMH uncached only:', check(cache_read=False))
@@ -197,6 +221,14 @@ if __name__ == '__main__':
     print('Partial-write failed-address probe:', check(cache_read=False, failure_bars=True, ram_words=16,
           failure_rereads=2, failure_cache_read=True, inject_error=True, inject_offset=0,
           error_read_limit=1, error_stage=0x311))
+    print('Cached-phase probe completes full1MiB:', check(cache_read=True, failure_bars=True,
+          failure_rereads=2, failure_cache_read=True))
+    for cache_only, limit in ((False, None), (False, 1), (True, None)):
+        print(f'Cached-phase injected at1F0 cache_only={cache_only} limit={limit}:',
+              check(cache_read=True, failure_bars=True, ram_words=128, failure_rereads=2,
+                    failure_cache_read=True, inject_error=True, inject_offset=0x1F0,
+                    error_stage=0x200, error_read_limit=limit, cache_error_only=cache_only))
+    print('CPU cache faults are abstracted here; this checks probe order and saved values, not SH-2 cache RTL.')
     print('This checks generated SH-2 program semantics, not FPGA timing or HDL simulation.')
     for operation in ('write', 'read'):
         print(f'64KiB {operation} only:', check(cache_read=False, failure_bars=True, ram_words=16384, operation=operation))
