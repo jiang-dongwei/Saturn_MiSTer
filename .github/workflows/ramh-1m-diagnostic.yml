@@ -1,0 +1,108 @@
+name: Build independent APS6408 RAMH 1MiB statistics
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    uses: ./.github/workflows/build-aps6408-diag.yml
+    with:
+      simulation_only: true
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install HDL checker
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Verify full-window statistics and video
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          iverilog -g2012 -s tb_aps6408_ramh_statistics -o .ci/statistics.vvp rtl/aps6408_ramh_statistics.sv sim/psram/tb_aps6408_ramh_statistics.sv
+          for seed in 0 1 2 3; do
+            for fault in '' '+inject' '+all_faults'; do
+              vvp .ci/statistics.vvp "+seed=$seed" $fault | tee -a .ci/statistics-regression.log
+            done
+          done
+          for fault in no_init bad_init bad_adapter stall_read stall_write; do
+            vvp .ci/statistics.vvp "+$fault" | tee -a .ci/statistics-regression.log
+          done
+          iverilog -g2012 -s tb_aps6408_ramh_statistics -Ptb_aps6408_ramh_statistics.WORDS=1 -o .ci/statistics-one.vvp rtl/aps6408_ramh_statistics.sv sim/psram/tb_aps6408_ramh_statistics.sv
+          vvp .ci/statistics-one.vvp +inject | tee -a .ci/statistics-regression.log
+          iverilog -g2012 -s tb_aps6408_ramh_statistics -Ptb_aps6408_ramh_statistics.WORDS=262144 -o .ci/statistics-full.vvp rtl/aps6408_ramh_statistics.sv sim/psram/tb_aps6408_ramh_statistics.sv
+          vvp .ci/statistics-full.vvp | tee -a .ci/statistics-regression.log
+          iverilog -g2012 -s tb_aps6408_statistics_video -o .ci/statistics-video.vvp rtl/aps6408_statistics_video.sv sim/psram/tb_aps6408_statistics_video.sv
+          vvp .ci/statistics-video.vvp | tee -a .ci/statistics-regression.log
+          python3 -m pip install pillow
+          python3 sim/psram/check_statistics_barcode.py | tee .ci/statistics-barcode.log
+      - name: Verify complete RAMH protocol and CDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          git show 9c2b5a32b3b33958f38162b1fc4e3998662e581a:rtl/aps6408_diag_core.sv \
+            | sed 's/^module aps6408_diag_core #(/module aps6408_diag_core_counter_reference #(/' \
+            > .ci/counter-reference.sv
+          grep -q '^module aps6408_diag_core_counter_reference #(' .ci/counter-reference.sv
+          iverilog -g2012 -DAPS6408_DIAG_SIM -DAPS_COUNTER_EQUIV -s tb_ramh_aps6408 -o .ci/ramh-aps.vvp \
+            rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv \
+            rtl/ramh_aps6408_adapter.sv .ci/counter-reference.sv sim/psram/tb_ramh_aps6408.sv
+          for args in '' '+src_fast' '+src_slow' '+refresh' '+src_fast +refresh' '+src_slow +refresh' '+drop_config' '+dq_delay=7.0' '+speed8' '+speed16' '+speed8 +refresh' '+speed16 +refresh' '+speed50' '+speed50 +src_fast' '+speed50 +refresh' '+speed50 +dq_delay=7.0'; do
+            vvp .ci/ramh-aps.vvp $args | tee -a .ci/ramh-aps-regression.log
+          done
+          iverilog -g2012 -DAPS6408_DIAG_SIM -s tb_ramh_aps6408 -o .ci/ramh-memory-training.vvp \
+            rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv \
+            rtl/ramh_aps6408_adapter.sv sim/psram/tb_ramh_aps6408.sv
+          for args in '' '+src_fast' '+src_slow' '+refresh' '+src_fast +refresh' '+src_slow +refresh' '+drop_config' '+dq_delay=7.0' '+speed8' '+speed16' '+speed8 +refresh' '+speed16 +refresh' '+speed50' '+speed50 +src_fast' '+speed50 +refresh' '+speed50 +dq_delay=7.0' '+bad_training' '+drop_training_dqs'; do
+            vvp .ci/ramh-memory-training.vvp $args | tee -a .ci/ramh-aps-regression.log
+          done
+          iverilog -g2012 -DAPS6408_DIAG_SIM -s tb_aps6408_training -o .ci/training.vvp \
+            rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv \
+            sim/psram/tb_aps6408_training.sv
+          vvp .ci/training.vvp | tee -a .ci/ramh-aps-regression.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RAMH_1M_Regression
+          include-hidden-files: true
+          path: .ci/*.log
+  quartus:
+    needs: [diagnostic, runtime]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free runner disk
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune --all --force
+      - name: Pull fixed Quartus
+        run: docker pull theypsilon/quartus-lite-c5:17.0.2
+      - name: Compile independent RAMH 1MiB statistics revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          docker run --rm -v "$GITHUB_WORKSPACE:/project" -w /project \
+            theypsilon/quartus-lite-c5:17.0.2 \
+            bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_APS6408_1M.qsf; quartus_sh --flow compile Saturn_APS6408_1M 2>&1 | tee .ci/aps6408-1m-build.log; quartus_sta -t sim/psram/report_aps6408_1m_timing.tcl 2>&1 | tee .ci/aps6408-1m-paths.log'
+      - name: Record RBF identity
+        run: |
+          test -s output_files_aps6408_1m/Saturn_APS6408_1M.rbf
+          sha256sum output_files_aps6408_1m/Saturn_APS6408_1M.rbf | tee .ci/aps6408-1m-rbf.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: APS6408_RAMH_1M_Build_Evidence
+          include-hidden-files: true
+          retention-days: 30
+          path: |
+            .ci/*.log
+            .ci/*.rpt
+            .ci/*.sha256
+            output_files_aps6408_1m/*.rbf
+            output_files_aps6408_1m/*.rpt

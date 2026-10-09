@@ -149,26 +149,26 @@ initial begin
 	reset <= 1'b0;
 
 	if ($test$plusargs("DWRITE_DROP")) begin
-		dut.adapter.engine.memory[32] = 8'hFF;
-		dut.adapter.engine.memory[33] = 8'hFF;
-		dut.adapter.engine.memory[34] = 8'hFF;
-		dut.adapter.engine.memory[35] = 8'hFF;
+		dut.adapter.g_direct_engine.engine.memory[32] = 8'hFF;
+		dut.adapter.g_direct_engine.engine.memory[33] = 8'hFF;
+		dut.adapter.g_direct_engine.engine.memory[34] = 8'hFF;
+		dut.adapter.g_direct_engine.engine.memory[35] = 8'hFF;
 		wait ((dut.tester.hstate == 5'd1) &&
 		      (dut.tester.pattern_id == 0) &&
 		      (dut.tester.word_index == 18'd8));
-		write_start_count = dut.adapter.engine.write_accepted_count;
-		dut.adapter.engine.drop_next_write = 1'b1;
+		write_start_count = dut.adapter.g_direct_engine.engine.write_accepted_count;
+		dut.adapter.g_direct_engine.engine.drop_next_write = 1'b1;
 		wait ((dut.tester.hstate == 5'd1) &&
 		      (dut.tester.word_index == 18'd9));
 		#1;
-		if ((dut.adapter.engine.write_accepted_count - write_start_count) != 2) begin
+		if ((dut.adapter.g_direct_engine.engine.write_accepted_count - write_start_count) != 2) begin
 			$display("FAIL: expected two physical writes, got %0d",
-			         dut.adapter.engine.write_accepted_count - write_start_count);
+			         dut.adapter.g_direct_engine.engine.write_accepted_count - write_start_count);
 			$fatal(1);
 		end
 		wait (failed || ((phase_code == 8'h20) &&
 		                (dut.tester.word_index > 18'd8)));
-		if (failed || (dut.adapter.engine.dropped_write_count != 1)) begin
+		if (failed || (dut.adapter.g_direct_engine.engine.dropped_write_count != 1)) begin
 			$display("FAIL: duplicated write did not recover dropped first write");
 			$fatal(1);
 		end
@@ -177,19 +177,19 @@ initial begin
 	end
 	else if ($test$plusargs("CONFIRM_RECOVER")) begin
 		wait ((phase_code == 8'h20) && (pattern_id == 0));
-		dut.adapter.engine.memory[32] =
-			dut.adapter.engine.memory[32] ^ 8'h01;
+		dut.adapter.g_direct_engine.engine.memory[32] =
+			dut.adapter.g_direct_engine.engine.memory[32] ^ 8'h01;
 		wait (dut.tester.hstate == 5'd16);
-		confirm_start_count = dut.adapter.engine.accepted_count;
-		dut.adapter.engine.memory[32] =
-			dut.adapter.engine.memory[32] ^ 8'h01;
+		confirm_start_count = dut.adapter.g_direct_engine.engine.accepted_count;
+		dut.adapter.g_direct_engine.engine.memory[32] =
+			dut.adapter.g_direct_engine.engine.memory[32] ^ 8'h01;
 		wait (failed);
 		if ((actual_data == 0) || (confirm_data1 != 0) ||
 		    (confirm_data2 != 0) ||
-		    ((dut.adapter.engine.accepted_count - confirm_start_count) != 4)) begin
+		    ((dut.adapter.g_direct_engine.engine.accepted_count - confirm_start_count) != 4)) begin
 			$display("FAIL: recover confirm R0=%08x R1=%08x R2=%08x requests=%0d",
 			         actual_data, confirm_data1, confirm_data2,
-			         dut.adapter.engine.accepted_count - confirm_start_count);
+			         dut.adapter.g_direct_engine.engine.accepted_count - confirm_start_count);
 			$fatal(1);
 		end
 		$display("PASS: physical rereads recovered R0=%08x R1=%08x R2=%08x",
@@ -198,17 +198,17 @@ initial begin
 	end
 	else if ($test$plusargs("CONFIRM_PERSIST")) begin
 		wait ((phase_code == 8'h20) && (pattern_id == 0));
-		dut.adapter.engine.memory[32] =
-			dut.adapter.engine.memory[32] ^ 8'h01;
+		dut.adapter.g_direct_engine.engine.memory[32] =
+			dut.adapter.g_direct_engine.engine.memory[32] ^ 8'h01;
 		wait (dut.tester.hstate == 5'd16);
-		confirm_start_count = dut.adapter.engine.accepted_count;
+		confirm_start_count = dut.adapter.g_direct_engine.engine.accepted_count;
 		wait (failed);
 		if ((actual_data == 0) || (confirm_data1 != actual_data) ||
 		    (confirm_data2 != actual_data) ||
-		    ((dut.adapter.engine.accepted_count - confirm_start_count) != 4)) begin
+		    ((dut.adapter.g_direct_engine.engine.accepted_count - confirm_start_count) != 4)) begin
 			$display("FAIL: persistent confirm R0=%08x R1=%08x R2=%08x requests=%0d",
 			         actual_data, confirm_data1, confirm_data2,
-			         dut.adapter.engine.accepted_count - confirm_start_count);
+			         dut.adapter.g_direct_engine.engine.accepted_count - confirm_start_count);
 			$fatal(1);
 		end
 		$display("PASS: physical rereads persistent R0=%08x R1=%08x R2=%08x",
@@ -217,13 +217,13 @@ initial begin
 	end
 	else if ($test$plusargs("FAULT_DATA")) begin
 		wait ((phase_code == 8'h20) && (pattern_id == 0));
-		dut.adapter.engine.memory[32] =
-			dut.adapter.engine.memory[32] ^ 8'h01;
+		dut.adapter.g_direct_engine.engine.memory[32] =
+			dut.adapter.g_direct_engine.engine.memory[32] ^ 8'h01;
 		wait_for_failure(8'h20);
 	end
 	else if ($test$plusargs("FAULT_ADDRESS")) begin
 		wait ((phase_code == 8'h24) && (pattern_id == 4));
-		dut.adapter.engine.read_address_xor = 24'h000004;
+		dut.adapter.g_direct_engine.engine.read_address_xor = 24'h000004;
 		wait_for_failure(8'h24);
 	end
 	else if ($test$plusargs("FAULT_CACHE")) begin

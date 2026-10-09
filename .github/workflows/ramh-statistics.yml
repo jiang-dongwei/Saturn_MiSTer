@@ -1,0 +1,49 @@
+name: RAMH statistics ROM checks
+on:
+  push:
+    branches: [codex/qpi-33m87-validation]
+    paths:
+      - .github/workflows/ramh-statistics.yml
+      - scripts/generate_saturn_ramh_statistics.py
+      - scripts/decode_saturn_ramh_statistics.py
+      - sim/psram/check_saturn_ramh_statistics.py
+      - sim/psram/check_statistics_barcode.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  statistics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check diagnostic program semantics
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          python3 -m pip install pillow
+          python3 sim/psram/check_saturn_ramh_statistics.py | tee .ci/statistics-semantics.log
+          python3 sim/psram/check_statistics_barcode.py | tee .ci/statistics-barcode.log
+          python3 sim/psram/check_saturn_testrom.py | tee .ci/original-rom-semantics.log
+      - name: Generate separately identified statistics programs
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/roms
+          for seed in 0xA55A8041 0x5AA57FBE 0xFFFFFFFF 0; do
+            python3 scripts/generate_saturn_ramh_statistics.py ".ci/roms/stats-$seed.bin" --seed "$seed"
+          done
+          python3 scripts/generate_saturn_ramh_statistics.py .ci/roms/stats-cached.bin --seed 0 --scan cached
+          python3 scripts/generate_saturn_ramh_statistics.py .ci/roms/stats-readonly.bin --operation read
+          python3 scripts/generate_saturn_ramh_statistics.py .ci/roms/stats-readonly-zero.bin --operation read --seed 0
+          python3 scripts/generate_saturn_ramh_statistics.py .ci/roms/stats-readonly-ones.bin --operation read --seed 0xFFFFFFFF
+          for gap in 4 16 64; do
+            python3 scripts/generate_saturn_ramh_statistics.py ".ci/roms/stats-zero-readgap$gap.bin" --seed 0 --read-gap "$gap"
+          done
+          python3 scripts/generate_saturn_ramh_statistics.py .ci/roms/stats-zero-writegap16.bin --seed 0 --write-gap 16
+          python3 scripts/generate_saturn_ramh_statistics.py .ci/roms/stats-cache-constant7c.bin --seed 0x7C7C7C7C --increment 0 --scan cached
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RAMH_Statistics_Evidence
+          include-hidden-files: true
+          path: .ci/

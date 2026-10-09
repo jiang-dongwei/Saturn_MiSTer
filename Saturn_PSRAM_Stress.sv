@@ -125,7 +125,12 @@ wire clk_67;
 wire clk_101;
 wire pll_locked;
 
-psram_diag_pll pll
+psram_diag_pll
+`ifdef PSRAM_STRESS_33M87_PIPELINE
+psram_speed_pll
+`else
+pll
+`endif
 (
 	.refclk(CLK_50M),
 	.rst(1'b0),
@@ -135,23 +140,51 @@ psram_diag_pll pll
 	.locked(pll_locked)
 );
 
+`ifdef PSRAM_STRESS_33M87_PIPELINE
+wire clk_stress;
+wire source_pll_locked;
+pll source_pll
+(
+	.refclk(CLK_50M),
+	.rst(1'b0),
+	.outclk_0(),
+	.outclk_1(clk_stress),
+	.locked(source_pll_locked)
+);
+wire clocks_locked = pll_locked & source_pll_locked;
+`else
+wire clk_stress = clk_67;
+wire clocks_locked = pll_locked;
+`endif
+
 (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
 reg [6:0] status_meta = 7'd0;
 (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
 reg [6:0] status_sync = 7'd0;
-always @(posedge clk_67) begin
+always @(posedge clk_stress) begin
 	status_meta <= status[6:0];
 	status_sync <= status_meta;
 end
 
 wire stress_reset_request = RESET | buttons[1] | status_sync[0] |
-	                          status_sync[6] | !pll_locked;
+	                          status_sync[6] | !clocks_locked;
 reg [2:0] stress_reset_pipe = 3'b111;
-always @(posedge clk_67) begin
+always @(posedge clk_stress) begin
 	if (stress_reset_request) stress_reset_pipe <= 3'b111;
 	else stress_reset_pipe <= {stress_reset_pipe[1:0], 1'b0};
 end
 wire stress_reset = stress_reset_pipe[2];
+`ifdef PSRAM_STRESS_33M87_PIPELINE
+(* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+reg [2:0] psram_engine_reset_pipe = 3'b111;
+always @(posedge clk_67 or posedge stress_reset) begin
+	if (stress_reset) psram_engine_reset_pipe <= 3'b111;
+	else psram_engine_reset_pipe <= {psram_engine_reset_pipe[1:0], 1'b0};
+end
+wire stress_engine_reset = psram_engine_reset_pipe[2];
+`else
+wire stress_engine_reset = stress_reset;
+`endif
 
 wire [1:0] result_code;
 wire [7:0] phase_code;
@@ -171,6 +204,21 @@ wire init_error;
 wire stress_failed;
 wire stress_activity;
 
+`ifdef PSRAM_STRESS_33M87_PIPELINE
+localparam [5:0] STRESS_HALF_DIVIDER = 6'd1;
+localparam [7:0] STRESS_GUARD_CYCLES = 8'd8;
+localparam integer STRESS_READ_LINE_BYTES = 16;
+localparam [1:0] STRESS_MODE_CODE = 2'd0;
+localparam integer STRESS_CONFIRM_ON_MISMATCH = 0;
+localparam integer STRESS_DUPLICATE_WRITES = 0;
+localparam integer STRESS_DIRECT_READ_CAPTURE = 0;
+localparam integer STRESS_LATE_SAMPLE_VIEW = 0;
+localparam integer STRESS_LONG_GAP_VIEW = 0;
+localparam integer STRESS_FAST_READ_PIPELINE = 1;
+localparam integer STRESS_ASYNC_ENGINE = 1;
+`else
+localparam integer STRESS_FAST_READ_PIPELINE = 0;
+localparam integer STRESS_ASYNC_ENGINE = 0;
 `ifdef PSRAM_STRESS_LATE_SAMPLE
 localparam [5:0] STRESS_HALF_DIVIDER = 6'd4;
 localparam [7:0] STRESS_GUARD_CYCLES = 8'd8;
@@ -252,6 +300,7 @@ localparam integer STRESS_DIRECT_READ_CAPTURE = 0;
 localparam integer STRESS_LATE_SAMPLE_VIEW = 0;
 localparam integer STRESS_LONG_GAP_VIEW = 0;
 `endif
+`endif
 
 psram_stress_core
 #(
@@ -260,12 +309,16 @@ psram_stress_core
 	.READ_LINE_BYTES(STRESS_READ_LINE_BYTES),
 	.CONFIRM_ON_MISMATCH(STRESS_CONFIRM_ON_MISMATCH),
 	.DUPLICATE_WRITES(STRESS_DUPLICATE_WRITES),
-	.DIRECT_READ_CAPTURE(STRESS_DIRECT_READ_CAPTURE)
+	.DIRECT_READ_CAPTURE(STRESS_DIRECT_READ_CAPTURE),
+	.FAST_READ_PIPELINE(STRESS_FAST_READ_PIPELINE),
+	.ASYNC_ENGINE(STRESS_ASYNC_ENGINE)
 )
 stress
 (
-	.clk(clk_67),
+	.clk(clk_stress),
 	.reset(stress_reset),
+	.engine_clk(clk_67),
+	.engine_reset(stress_engine_reset),
 	.result_code(result_code),
 	.phase_code(phase_code),
 	.pattern_id(pattern_id),
@@ -288,30 +341,91 @@ stress
 	.PSRAM_DQ(PSRAM_DQ)
 );
 
+`ifdef PSRAM_STRESS_33M87_PIPELINE
+reg display_request = 0;
+(* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+reg display_req_sync1 = 0, display_req_sync2 = 0;
+reg display_ack = 0;
+reg [281:0] display_mailbox = 0;
+always @(posedge clk_stress) begin
+ display_req_sync1 <= display_request;
+ display_req_sync2 <= display_req_sync1;
+ if (display_req_sync2 != display_ack) begin
+  display_mailbox <= {result_code, phase_code, pattern_id, loop_count, operation_count, device_id, current_address, expected_data, actual_data, xor_data, confirm_data1, confirm_data2, byte_mask};
+  display_ack <= display_req_sync2;
+ end
+end
+(* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+reg display_ack_sync1 = 0, display_ack_sync2 = 0;
+reg display_seen = 0;
+reg [15:0] display_poll = 0;
+reg [281:0] display_snapshot = 0;
+always @(posedge clk_33) begin
+ display_ack_sync1 <= display_ack;
+ display_ack_sync2 <= display_ack_sync1;
+ display_poll <= display_poll + 1'b1;
+ if (display_ack_sync2 != display_seen) begin
+  display_snapshot <= display_mailbox;
+  display_seen <= display_ack_sync2;
+ end
+ if ((display_poll == 0) && (display_request == display_seen))
+  display_request <= ~display_request;
+end
+wire [1:0] display_result_code;
+wire [7:0] display_phase_code;
+wire [3:0] display_pattern_id;
+wire [31:0] display_loop_count;
+wire [31:0] display_operation_count;
+wire [15:0] display_device_id;
+wire [23:0] display_current_address;
+wire [31:0] display_expected_data;
+wire [31:0] display_actual_data;
+wire [31:0] display_xor_data;
+wire [31:0] display_confirm_data1;
+wire [31:0] display_confirm_data2;
+wire [3:0] display_byte_mask;
+assign {display_result_code, display_phase_code, display_pattern_id, display_loop_count, display_operation_count, display_device_id, display_current_address, display_expected_data, display_actual_data, display_xor_data, display_confirm_data1, display_confirm_data2, display_byte_mask} = display_snapshot;
+`else
+wire [1:0] display_result_code = result_code;
+wire [7:0] display_phase_code = phase_code;
+wire [3:0] display_pattern_id = pattern_id;
+wire [31:0] display_loop_count = loop_count;
+wire [31:0] display_operation_count = operation_count;
+wire [15:0] display_device_id = device_id;
+wire [23:0] display_current_address = current_address;
+wire [31:0] display_expected_data = expected_data;
+wire [31:0] display_actual_data = actual_data;
+wire [31:0] display_xor_data = xor_data;
+wire [31:0] display_confirm_data1 = confirm_data1;
+wire [31:0] display_confirm_data2 = confirm_data2;
+wire [3:0] display_byte_mask = byte_mask;
+`endif
+
 psram_stress_video
 #(
 	.MODE_CODE(STRESS_MODE_CODE),
 	.CONFIRM_VIEW(STRESS_CONFIRM_ON_MISMATCH),
 	.DWRITE_VIEW(STRESS_DUPLICATE_WRITES),
 	.LATE_SAMPLE_VIEW(STRESS_LATE_SAMPLE_VIEW),
-	.LONG_GAP_VIEW(STRESS_LONG_GAP_VIEW)
+	.LONG_GAP_VIEW(STRESS_LONG_GAP_VIEW),
+	.PIPELINED_33M87_VIEW(STRESS_FAST_READ_PIPELINE)
 )
 video
 (
 	.clk(clk_33),
-	.result_code(result_code),
-	.phase_code(phase_code),
-	.pattern_id(pattern_id),
-	.loop_count(loop_count),
-	.operation_count(operation_count),
-	.device_id(device_id),
-	.current_address(current_address),
-	.expected_data(expected_data),
-	.actual_data(actual_data),
-	.xor_data(xor_data),
-	.confirm_data1(confirm_data1),
-	.confirm_data2(confirm_data2),
-	.byte_mask(byte_mask),
+	.result_code(display_result_code),
+	.phase_code(display_phase_code),
+	.pattern_id(display_pattern_id),
+	.loop_count(display_loop_count),
+	.operation_count(display_operation_count),
+	.device_id(display_device_id),
+	.current_address(display_current_address),
+	.expected_data(display_expected_data),
+	.actual_data(display_actual_data),
+	.xor_data(display_xor_data),
+	.confirm_data1(display_confirm_data1),
+	.confirm_data2(display_confirm_data2),
+	.byte_mask(display_byte_mask),
 	.ce_pixel(CE_PIXEL),
 	.red(VGA_R),
 	.green(VGA_G),

@@ -65,6 +65,7 @@ source files_psram.qip
 source files_psram_33m87.qip
 
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to PSRAM_CE_N
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to PSRAM_DQ[*]
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to PSRAM_DQ[*]
 set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to PSRAM_DQ[*]
 

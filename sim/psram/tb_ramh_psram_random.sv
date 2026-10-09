@@ -38,6 +38,8 @@ dut
 (
 	.clk(clk),
 	.reset(reset),
+	.engine_clk(clk),
+	.engine_reset(reset),
 	.addr(addr),
 	.din(din),
 	.wr(wr),
@@ -136,7 +138,7 @@ task read_checked;
 		expected = expected_word(absolute_address);
 		expected_hit = reference_cache_valid &&
 		               (reference_cache_tag == absolute_address[19:4]);
-		before_requests = dut.engine.accepted_count;
+		before_requests = dut.g_direct_engine.engine.accepted_count;
 
 		@(negedge clk);
 		addr = absolute_address[19:2];
@@ -154,11 +156,11 @@ task read_checked;
 		if (dout !== expected)
 			$fatal(1, "FAIL: read address=%05h actual=%08h expected=%08h op=%0d",
 			       absolute_address, dout, expected, operation_index);
-		if (dut.engine.accepted_count != before_requests +
+		if (dut.g_direct_engine.engine.accepted_count != before_requests +
 		    (expected_hit ? 0 : 1))
 			$fatal(1, "FAIL: read request count address=%05h hit=%0d delta=%0d",
 			       absolute_address, expected_hit,
-			       dut.engine.accepted_count - before_requests);
+			       dut.g_direct_engine.engine.accepted_count - before_requests);
 
 		if (expected_hit) hit_count = hit_count + 1;
 		else begin
@@ -181,7 +183,7 @@ task write_checked;
 	integer index;
 	begin
 		expected_runs = write_run_count(mask);
-		before_requests = dut.engine.accepted_count;
+		before_requests = dut.g_direct_engine.engine.accepted_count;
 
 		@(negedge clk);
 		addr = absolute_address[19:2];
@@ -198,10 +200,10 @@ task write_checked;
 		if (busy || adapter_error)
 			$fatal(1, "FAIL: write timeout address=%05h mask=%b",
 			       absolute_address, mask);
-		if (dut.engine.accepted_count != before_requests + expected_runs)
+		if (dut.g_direct_engine.engine.accepted_count != before_requests + expected_runs)
 			$fatal(1, "FAIL: write request count address=%05h mask=%b delta=%0d expected=%0d",
 			       absolute_address, mask,
-			       dut.engine.accepted_count - before_requests,
+			       dut.g_direct_engine.engine.accepted_count - before_requests,
 			       expected_runs);
 
 		@(negedge clk);
@@ -223,13 +225,13 @@ endtask
 
 task pulse_rfs;
 	begin
-		before_requests = dut.engine.accepted_count;
+		before_requests = dut.g_direct_engine.engine.accepted_count;
 		@(negedge clk);
 		rfs = 1'b1;
 		repeat (3) @(posedge clk);
 		@(negedge clk);
 		rfs = 1'b0;
-		if (busy || dut.engine.accepted_count != before_requests)
+		if (busy || dut.g_direct_engine.engine.accepted_count != before_requests)
 			$fatal(1, "FAIL: RFS created busy or a memory request");
 		rfs_count = rfs_count + 1;
 	end
@@ -237,7 +239,7 @@ endtask
 
 task reset_adapter;
 	begin
-		before_requests = dut.engine.accepted_count;
+		before_requests = dut.g_direct_engine.engine.accepted_count;
 		@(negedge clk);
 		reset = 1'b1;
 		rd = 1'b0;
@@ -248,7 +250,7 @@ task reset_adapter;
 		@(negedge clk);
 		reset = 1'b0;
 		wait_for_initialization();
-		if (dut.engine.accepted_count != before_requests)
+		if (dut.g_direct_engine.engine.accepted_count != before_requests)
 			$fatal(1, "FAIL: reset generated a runtime request");
 		reference_cache_valid = 1'b0;
 		reset_count = reset_count + 1;
@@ -274,7 +276,7 @@ initial begin
 	     byte_index = byte_index + 1) begin
 		reference_memory[byte_index] =
 			((byte_index * 73) + (byte_index >> 3) + 8'h5A) & 8'hFF;
-		dut.engine.memory[TEST_BASE + byte_index] =
+		dut.g_direct_engine.engine.memory[TEST_BASE + byte_index] =
 			reference_memory[byte_index];
 	end
 
@@ -348,7 +350,7 @@ initial begin
 
 	$display("PASS: S2-C randomized RAMH regression ops=%0d reads=%0d writes=%0d hits=%0d misses=%0d resets=%0d rfs=%0d requests=%0d",
 	         operation_index, read_count, write_count, hit_count, miss_count,
-	         reset_count, rfs_count, dut.engine.accepted_count);
+	         reset_count, rfs_count, dut.g_direct_engine.engine.accepted_count);
 	$finish;
 end
 

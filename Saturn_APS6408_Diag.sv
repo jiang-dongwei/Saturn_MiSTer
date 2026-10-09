@@ -92,6 +92,9 @@ module emu
 parameter CONF_STR = {
     "APS6408L DDR DIAG;;",
     "O34,PSRAM clock,8.47 MHz,16.93 MHz,33.87 MHz;",
+    "O78,Test mode,Same speed,8 MHz write,8 MHz read;",
+    "O9A,D1 timing,Fixed,Earlier 3.69 ns,Later 3.69 ns,DQS falling;",
+    "OB,PSRAM drive,Default 100 ohm,Half 50 ohm;",
     "T6,Restart test;",
     "R0,Reset;",
     "-;",
@@ -123,43 +126,49 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 wire clk_33;
 wire clk_67;
-wire clk_135;
+wire clk_phy;
 wire pll_locked;
 
-psram_diag_pll pll
+aps6408_diag_pll pll
 (
 	.refclk(CLK_50M),
 	.rst(1'b0),
 	.outclk_0(clk_33),
 	.outclk_1(clk_67),
-	.outclk_2(clk_135),
+	.outclk_2(clk_phy),
 	.locked(pll_locked)
 );
 
 (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
-reg [6:0] status_meta = 7'd0;
+reg [11:0] status_meta = 12'd0;
 (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
-reg [6:0] status_sync = 7'd0;
+reg [11:0] status_sync = 12'd0;
 reg [1:0] selected_speed = 2'd0;
+reg [1:0] selected_test_mode = 2'd0;
+reg [1:0] selected_d1_mode = 2'd0;
+reg selected_drive_half = 1'b0;
 reg       mode_restart = 1'b0;
-always @(posedge clk_135) begin
-	status_meta <= status[6:0];
+always @(posedge clk_67) begin
+	status_meta <= status[11:0];
 	status_sync <= status_meta;
 	mode_restart <= 1'b0;
-	if (selected_speed != status_sync[4:3]) begin
+	if (selected_speed != status_sync[4:3] || selected_test_mode != status_sync[8:7] || selected_d1_mode != status_sync[10:9] || selected_drive_half != status_sync[11]) begin
 		selected_speed <= status_sync[4:3];
+		selected_test_mode <= status_sync[8:7];
+		selected_d1_mode <= status_sync[10:9];
+        selected_drive_half <= status_sync[11];
 		mode_restart <= 1'b1;
 	end
 end
 
 wire diagnostic_reset_request = RESET | buttons[1] | status_sync[0] |
 	                              status_sync[6] | mode_restart |
-	                              (selected_speed != status_sync[4:3]) | !pll_locked;
+	                              (selected_speed != status_sync[4:3] || selected_test_mode != status_sync[8:7] || selected_d1_mode != status_sync[10:9] || selected_drive_half != status_sync[11]) | !pll_locked;
 
 // Synchronous assertion stretching and release keep the diagnostic free of
 // the asynchronous recovery violation seen in Stage 53.
 reg [2:0] diagnostic_reset_pipe = 3'b111;
-always @(posedge clk_135) begin
+always @(posedge clk_67) begin
 	if (diagnostic_reset_request)
 		diagnostic_reset_pipe <= 3'b111;
 	else
@@ -176,14 +185,18 @@ wire [15:0] expected_data;
 wire [15:0] actual_data;
 wire [15:0] sample_early;
 wire [15:0] sample_mid;
+wire [15:0] sample_center;
 wire [15:0] sample_late;
 wire [15:0] retry_read_data;
 wire retry_read_valid;
+wire [1:0] read_capture_tap;
+wire [1:0] read_capture_tap_second;
 wire [15:0] mr_pair0;
 wire [15:0] mr_pair1;
 wire [15:0] mr_pair2;
 wire [15:0] dqs_edge_pair1;
 wire [15:0] clk_pair1;
+wire [15:0] reference_mr0, reference_mr1;
 wire [2:0] speed_index = {1'b0, selected_speed};
 wire [7:0] diagnostic_leds;
 wire diagnostic_activity;
@@ -196,9 +209,13 @@ wire [23:0] matrix_c = {8'd0, (stage_code == 8'hE1 || stage_code == 8'hE6) ? clk
 
 aps6408_diag_core diagnostic
 (
-    .clk(clk_135),
+    .clk(clk_67),
+    .clk_phy(clk_phy),
     .reset(diagnostic_reset),
     .speed_select(selected_speed),
+    .test_mode(selected_test_mode),
+    .d1_mode(selected_d1_mode),
+    .drive_half(selected_drive_half),
     .result_code(result_code),
     .stage_code(stage_code),
     .failure_address(failure_address),
@@ -207,14 +224,18 @@ aps6408_diag_core diagnostic
     .actual_data(actual_data),
     .sample_early(sample_early),
     .sample_mid(sample_mid),
+    .sample_center(sample_center),
     .sample_late(sample_late),
     .retry_read_data(retry_read_data),
     .retry_read_valid(retry_read_valid),
+    .read_capture_tap(read_capture_tap),
+    .read_capture_tap_second(read_capture_tap_second),
     .mr_pair0(mr_pair0),
     .mr_pair1(mr_pair1),
     .mr_pair2(mr_pair2),
     .dqs_edge_pair1(dqs_edge_pair1),
     .clk_pair1(clk_pair1),
+    .reference_mr0(reference_mr0), .reference_mr1(reference_mr1),
     .diagnostic_leds(diagnostic_leds),
     .activity(diagnostic_activity),
     .PSRAM_CLK(PSRAM_CLK),
@@ -234,16 +255,23 @@ aps6408_diag_video video
 	.expected_data(expected_data),
 	.actual_data(actual_data),
 	.speed_index(speed_index),
-	.mode(2'd0),
+	.mode(selected_test_mode),
+    .d1_mode(selected_d1_mode),
+    .drive_half(selected_drive_half),
+    .mr_pair0(mr_pair0), .mr_pair1(mr_pair1),
+    .reference_mr0(reference_mr0), .reference_mr1(reference_mr1),
 	.matrix_a(matrix_a),
 	.matrix_b(matrix_b),
 	.matrix_c(matrix_c),
 	.read_edge_pair(dqs_edge_pair1),
 	.read_sample_early(sample_early),
 	.read_sample_mid(sample_mid),
+    .read_sample_center(sample_center),
 	.read_sample_late(sample_late),
 	.retry_read_data(retry_read_data),
 	.retry_read_valid(retry_read_valid),
+	.read_capture_tap(read_capture_tap),
+    .read_capture_tap_second(read_capture_tap_second),
 	.ce_pixel(CE_PIXEL),
 	.red(VGA_R),
 	.green(VGA_G),

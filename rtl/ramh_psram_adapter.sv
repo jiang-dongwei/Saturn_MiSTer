@@ -14,7 +14,8 @@ module ramh_psram_adapter
 	parameter [7:0]   GUARD_CYCLES   = 8'd8,
 	parameter integer READ_LINE_BYTES = 16,
 	parameter integer DIRECT_READ_CAPTURE = 0,
-	parameter integer ASYNC_ENGINE = 0
+	parameter integer ASYNC_ENGINE = 0,
+	parameter integer FAST_READ_PIPELINE = 0
 )
 (
 	input              clk,
@@ -198,7 +199,8 @@ generate
 			.POWERUP_CYCLES(POWERUP_CYCLES),
 			.HALF_DIVIDER(HALF_DIVIDER),
 			.GUARD_CYCLES(GUARD_CYCLES),
-			.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE)
+			.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE),
+			.FAST_READ_PIPELINE(FAST_READ_PIPELINE)
 		)
 		engine_cdc
 		(
@@ -229,7 +231,8 @@ generate
 			.POWERUP_CYCLES(POWERUP_CYCLES),
 			.HALF_DIVIDER(HALF_DIVIDER),
 			.GUARD_CYCLES(GUARD_CYCLES),
-			.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE)
+			.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE),
+			.FAST_READ_PIPELINE(FAST_READ_PIPELINE)
 		)
 		engine
 		(
