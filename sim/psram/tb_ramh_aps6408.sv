@@ -146,6 +146,15 @@ module tb_ramh_aps6408;
     reg [1:0] held_speed;
     wire memory_read_blocked = missing_memory_dqs || (drop_training_dqs && dut.engine.memory_training);
     real dq_delay=10.0;
+    real dq7_skew_ns=0.0;
+    reg [1:0] model_d1=0;
+    task return_byte;
+        input [7:0] value;
+        begin
+            mem_dq[6:0] <= #(dq_delay) value[6:0];
+            mem_dq[7] <= #(dq_delay+dq7_skew_ns) value[7];
+        end
+    endtask
     reg device_ready=0;
     realtime edge_time=-1e9, dq_time=-1e9, dm_time=-1e9;
     reg [1:0] transaction_speed;
@@ -218,14 +227,14 @@ module tb_ramh_aps6408;
             byte_number=edge_number-first_data_edge;
             if (instruction==8'h40) begin
                 case (byte_address+byte_number%2)
-                    0: mem_dq <= #(dq_delay) mr0;
-                    1: mem_dq <= #(dq_delay) 8'h0D;
-                    default: mem_dq <= #(dq_delay) 8'h93;
+                    0: return_byte(mr0);
+                    1: return_byte(8'h0D);
+                    default: return_byte(8'h93);
                 endcase
             end else begin
-                mem_dq <= #(dq_delay) memory[byte_address+byte_number+
+                return_byte(memory[byte_address+byte_number+
                               ((shift_training_word && dut.engine.memory_training) ? 2 : 0)] ^
-                                    ((bad_training && dut.engine.memory_training) ? 8'h80 : 8'h00);
+                                    ((bad_training && dut.engine.memory_training) ? 8'h80 : 8'h00));
                 if (byte_number==0) reads=reads+1;
             end
             mem_dqs <= #(dq_delay) !byte_number[0];
@@ -278,6 +287,11 @@ module tb_ramh_aps6408;
         held_mode=$test$plusargs("held_mode");
         held_speed=speed_select;
         if ($value$plusargs("dq_delay=%f",dq_delay)) begin end
+        if ($value$plusargs("dq7_skew_ns=%f",dq7_skew_ns)) begin end
+        if ($value$plusargs("model_d1=%d",model_d1)) begin end
+        if (dq_delay+dq7_skew_ns < 0) $fatal(1,"Negative model propagation delay");
+        force dut.engine.rx.d1_mode=model_d1;
+        $display("RX WINDOW MODEL: DQS/DQ0-6 delay=%0.3fns DQ7 skew=%0.3fns second-byte mode=%0d",dq_delay,dq7_skew_ns,model_d1);
         repeat(6) @(negedge src_clk);reset=0;
         wait(init_done || init_error);
         if (drop_config) begin

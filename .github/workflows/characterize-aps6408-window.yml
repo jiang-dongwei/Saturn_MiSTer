@@ -1,0 +1,32 @@
+name: Characterize APS6408 digital receive window
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  characterize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install HDL simulator
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Sweep fixed DQ7 skew and second-byte capture mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          iverilog -g2012 -DAPS6408_DIAG_SIM -s tb_ramh_aps6408 -o .ci/receive-window.vvp \
+            rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv \
+            rtl/ramh_aps6408_adapter.sv sim/psram/tb_ramh_aps6408.sv
+          python3 sim/psram/characterize_receive_window.py | tee .ci/receive-window-summary.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: APS6408_Digital_Receive_Window
+          include-hidden-files: true
+          path: |
+            .ci/receive-window/*
+            .ci/receive-window-summary.log
