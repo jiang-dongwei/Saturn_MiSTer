@@ -324,6 +324,9 @@ if __name__ == '__main__':
             metadata['failure_bars']['adapter_cache_read'] = 'Immediately reread the failed address before any other RAMH access; SH-2 cache is disabled, adapter one-word cache stays valid.'
         if not args.uncached_only and (args.failure_rereads or args.failure_cache_read):
             metadata['failure_bars']['cache_failure_probe'] = 'Preserve first failure, disable SH-2 cache, then probe the failed word without RAMH writes. Cached address and stage remain in the original failure bars.'
+            if args.failure_cache_read:
+                metadata['failure_bars']['values'][5] = 'first_read_after_sh2_cache_disable'
+                metadata['failure_bars']['adapter_cache_read'] = 'First failed-word read after disabling SH-2 cache. Adapter-cache hit is not guaranteed after a CPU cache-line fill; subsequent displacing rereads force new physical requests.'
     if args.target == 'vdp1fb':
         metadata.update(target='vdp1fb', uncached_ram_start='0x25C80000', framebuffer_banks=2, passes=8, partial_write_cases=12, flip_requests=3)
         metadata['framebuffer_scope'] = 'CPU window in both selected buffers; distinct marker retention verifies switching. Frame timing requires hardware verification.'
