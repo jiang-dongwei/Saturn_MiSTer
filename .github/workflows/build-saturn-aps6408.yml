@@ -1,29 +1,8 @@
-name: Build Saturn APS6408 octal DDR
+name: Build independent APS6408 RAMH 1MiB statistics
 on:
-  push:
-    branches: [codex/qpi-33m87-validation]
-    paths:
-      - .github/workflows/build-saturn-aps6408.yml
-      - Saturn.sv
-      - Saturn_APS6408.*
-      - files_aps6408_runtime.qip
-      - rtl/ramh_aps6408_adapter.sv
-      - rtl/aps6408_diag_core.sv
-      - sim/psram/tb_ramh_aps6408.sv
-      - sim/psram/tb_aps6408_training.sv
-      - sim/psram/report_saturn_aps6408_timing.tcl
-      - rtl/aps6408_runtime_pll/**
   workflow_dispatch:
-    inputs:
-      build_quartus:
-        description: Build complete Saturn after regression
-        type: boolean
-        default: true
 permissions:
   contents: read
-concurrency:
-  group: saturn-aps6408-${{ github.ref }}
-  cancel-in-progress: false
 jobs:
   diagnostic:
     uses: ./.github/workflows/build-aps6408-diag.yml
@@ -31,19 +10,33 @@ jobs:
       simulation_only: true
   runtime:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Install HDL checker
         run: sudo apt-get update && sudo apt-get install -y iverilog
-      - name: Check self-written SH-2 diagnostic programs
+      - name: Verify full-window statistics and video
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .ci
-          python3 sim/psram/check_saturn_testrom.py | tee .ci/testrom-semantics.log
+          iverilog -g2012 -s tb_aps6408_ramh_statistics -o .ci/statistics.vvp rtl/aps6408_ramh_statistics.sv sim/psram/tb_aps6408_ramh_statistics.sv
+          for seed in 0 1 2 3; do
+            for fault in '' '+inject' '+all_faults'; do
+              vvp .ci/statistics.vvp "+seed=$seed" $fault | tee -a .ci/statistics-regression.log
+            done
+          done
+          for fault in no_init bad_init bad_adapter stall_read stall_write; do
+            vvp .ci/statistics.vvp "+$fault" | tee -a .ci/statistics-regression.log
+          done
+          iverilog -g2012 -s tb_aps6408_ramh_statistics -Ptb_aps6408_ramh_statistics.WORDS=1 -o .ci/statistics-one.vvp rtl/aps6408_ramh_statistics.sv sim/psram/tb_aps6408_ramh_statistics.sv
+          vvp .ci/statistics-one.vvp +inject | tee -a .ci/statistics-regression.log
+          iverilog -g2012 -s tb_aps6408_ramh_statistics -Ptb_aps6408_ramh_statistics.WORDS=262144 -o .ci/statistics-full.vvp rtl/aps6408_ramh_statistics.sv sim/psram/tb_aps6408_ramh_statistics.sv
+          vvp .ci/statistics-full.vvp | tee -a .ci/statistics-regression.log
+          iverilog -g2012 -s tb_aps6408_statistics_video -o .ci/statistics-video.vvp rtl/aps6408_statistics_video.sv sim/psram/tb_aps6408_statistics_video.sv
+          vvp .ci/statistics-video.vvp | tee -a .ci/statistics-regression.log
       - name: Verify complete RAMH protocol and CDC
         shell: bash
         run: |
@@ -72,16 +65,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Saturn_APS6408_Runtime_Regression
-          path: |
-            .ci/ramh-aps-regression.log
-            .ci/testrom-semantics.log
+          name: RAMH_1M_Regression
           include-hidden-files: true
+          path: .ci/*.log
   quartus:
     needs: [diagnostic, runtime]
-    if: github.event_name == 'push' || inputs.build_quartus
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - name: Free runner disk
@@ -90,27 +80,27 @@ jobs:
           docker system prune --all --force
       - name: Pull fixed Quartus
         run: docker pull theypsilon/quartus-lite-c5:17.0.2
-      - name: Compile complete Saturn revision
+      - name: Compile independent RAMH 1MiB statistics revision
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .ci
           docker run --rm -v "$GITHUB_WORKSPACE:/project" -w /project \
             theypsilon/quartus-lite-c5:17.0.2 \
-            bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_APS6408.qsf; quartus_sh --flow compile Saturn_APS6408 2>&1 | tee .ci/saturn-aps-build.log; quartus_sta -t sim/psram/report_saturn_aps6408_timing.tcl 2>&1 | tee .ci/saturn-aps-paths.log'
+            bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_APS6408_1M.qsf; quartus_sh --flow compile Saturn_APS6408_1M 2>&1 | tee .ci/aps6408-1m-build.log; quartus_sta -t sim/psram/report_aps6408_1m_timing.tcl 2>&1 | tee .ci/aps6408-1m-paths.log'
       - name: Record RBF identity
         run: |
-          test -s output_files_aps6408/Saturn_APS6408.rbf
-          sha256sum output_files_aps6408/Saturn_APS6408.rbf | tee .ci/saturn-aps-rbf.sha256
+          test -s output_files_aps6408_1m/Saturn_APS6408_1M.rbf
+          sha256sum output_files_aps6408_1m/Saturn_APS6408_1M.rbf | tee .ci/aps6408-1m-rbf.sha256
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Saturn_APS6408_Build_Evidence
+          name: APS6408_RAMH_1M_Build_Evidence
           include-hidden-files: true
           retention-days: 30
           path: |
             .ci/*.log
             .ci/*.rpt
             .ci/*.sha256
-            output_files_aps6408/*.rbf
-            output_files_aps6408/*.rpt
+            output_files_aps6408_1m/*.rbf
+            output_files_aps6408_1m/*.rpt
