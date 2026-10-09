@@ -6,10 +6,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 from generate_saturn_ramh_statistics import build, FIELDS, HEADER, MAGIC, STATS_BASE
 
 
-def check(words=262144, seed=0xA55A8041, scan='uncached', operation='both', faults=None, read_gap=0, write_gap=0):
+def check(words=262144, seed=0xA55A8041, scan='uncached', operation='both', faults=None, read_gap=0, write_gap=0, increment=0x01010101):
     faults = faults or {}
-    program, rom, _ = build(words, seed, scan, operation, read_gap, write_gap)
-    reference = [((seed + i * 0x01010101) & 0xFFFFFFFF) for i in range(words)]
+    program, rom, _ = build(words, seed, scan, operation, read_gap, write_gap, increment)
+    reference = [((seed + i * increment) & 0xFFFFFFFF) for i in range(words)]
     memory = reference.copy() if operation == 'read' else [0] * words
     vram = {}
     regs = [0] * 16
@@ -154,6 +154,7 @@ if __name__ == '__main__':
     for read_gap, write_gap in ((4,0),(16,0),(64,0),(0,16),(16,16)):
         print('Gap instructions preserve scan:',check(words=128,read_gap=read_gap,write_gap=write_gap,faults={0:0x01,127:0x80808080}))
     print('Full1MiB read-gap complete:',check(seed=0,read_gap=4))
+    print('Full1MiB original cached constant pattern:',check(seed=0x7C7C7C7C,increment=0,scan='cached',faults={124:0x80000000,262143:0x80808080}))
     import hashlib
     assert hashlib.sha256(build()[1]).hexdigest()=='30660476aba67e2ae0b4ace8c8c1fde15989a739fbece4eb8fc879d4ad28590e'
     print('Default statistics ROM unchanged')

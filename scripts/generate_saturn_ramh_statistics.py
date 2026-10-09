@@ -14,9 +14,10 @@ FIELDS = ('magic', 'version', 'stage', 'seed', 'words', 'error_words',
           *(f'dq{bit}_error_words' for bit in range(8)), 'checksum')
 
 
-def build(ram_words=262144, seed=0xA55A8041, scan='uncached', operation='both', read_gap=0, write_gap=0):
+def build(ram_words=262144, seed=0xA55A8041, scan='uncached', operation='both', read_gap=0, write_gap=0, increment=0x01010101):
     assert 1 <= ram_words <= 262144
     assert 0 <= seed <= 0xFFFFFFFF
+    assert 0 <= increment <= 0xFFFFFFFF
     assert scan in ('uncached', 'cached') and operation in ('both', 'read')
     assert 0 <= read_gap <= 127 and 0 <= write_gap <= 127
     p = Program()
@@ -64,7 +65,7 @@ def build(ram_words=262144, seed=0xA55A8041, scan='uncached', operation='both', 
     constant(2, 0x501 if scan == 'uncached' else 0x502)
     constant(3, seed)
     constant(4, ram_words)
-    p.literal(3, 0x01010101)
+    p.literal(3, increment)
     if operation == 'both':
         p.literal(1, 0x26000000)
         p.literal(2, ram_words)
@@ -183,8 +184,9 @@ if __name__ == '__main__':
     parser.add_argument('--operation', choices=('both', 'read'), default='both')
     parser.add_argument('--read-gap', type=int, default=0)
     parser.add_argument('--write-gap', type=int, default=0)
+    parser.add_argument('--increment', type=lambda value: int(value,0), default=0x01010101)
     args = parser.parse_args()
-    program, rom, pool = build(args.ram_words, args.seed, args.scan, args.operation, args.read_gap, args.write_gap)
+    program, rom, pool = build(args.ram_words, args.seed, args.scan, args.operation, args.read_gap, args.write_gap, args.increment)
     args.output.write_bytes(rom)
     args.output.with_suffix('.json').write_text(json.dumps({
         'purpose': 'Continue after data mismatches and count all scanned words',
@@ -192,6 +194,7 @@ if __name__ == '__main__':
         'ram_words': args.ram_words, 'seed': args.seed, 'scan': args.scan,
         'operation': args.operation, 'stats_base': hex(STATS_BASE),
         'read_gap': args.read_gap, 'write_gap': args.write_gap,
+        'increment': args.increment,
         'fields': FIELDS, 'pool_start': pool,
         'limitations': 'Single pattern; no partial-write coverage; error accounting changes access cadence; never substitutes for the default full ROM',
     }, indent=2) + '\n', encoding='utf-8')
