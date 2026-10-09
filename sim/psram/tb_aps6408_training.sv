@@ -23,13 +23,6 @@ module tb_aps6408_training;
         case(index) 0:second_order=fast_mode?3:2; 1:second_order=fast_mode?1:3;
                     2:second_order=fast_mode?2:1; 3:second_order=0; endcase
     endfunction
-    function integer memory_order(input integer index);
-        case(index) 0:memory_order=3; 1:memory_order=1;
-                    2:memory_order=2; 3:memory_order=0; endcase
-    endfunction
-    function integer memory_first_order(input integer index, input fast_mode);
-        memory_first_order=fast_mode?first_order(index):memory_order(index);
-    endfunction
     initial begin
         force dut.reference_phase = phase;
         force dut.memory_training = memory_phase;
@@ -103,7 +96,7 @@ module tb_aps6408_training;
             old_valid=0;old_pair=0;
             for (f=0; f<4; f=f+1)
             for (s=0; s<4; s=s+1) begin
-                ft=memory_first_order(f,fast);st=memory_order(s);
+                ft=first_order(f);st=second_order(s,fast);
                 old_valid[f*4+s]=({previous[ft][15:8],previous[st][7:0]}==ref_previous) &&
                                ({current[ft][15:8],current[st][7:0]}==ref_current);
             end
@@ -111,16 +104,16 @@ module tb_aps6408_training;
             #1;
             if(dut.training_valid !== (|old_valid))
                 $fatal(1,"Memory training masks=%0d/%0d fast=%0d",fmask,smask,fast);
-            if(dut.training_valid && (dut.trained_tap !== memory_first_order(old_pair[3:2],fast) ||
-                                     dut.trained_tap_second !== memory_order(old_pair[1:0])))
-                $fatal(1,"Memory training CENTER/MID/LATE/EARLY priority masks=%0d/%0d fast=%0d",fmask,smask,fast);
+            if(dut.training_valid && (dut.trained_tap !== first_order(old_pair[3:2]) ||
+                                     dut.trained_tap_second !== second_order(old_pair[1:0],fast)))
+                $fatal(1,"Memory training legacy priority masks=%0d/%0d fast=%0d",fmask,smask,fast);
             if(!dut.training_valid && dut.trained_pair !== 0)
                 $fatal(1,"Invalid memory training must not select a candidate");
             if(dut.training_valid && (dut.trained_first !== ref_previous || dut.trained_second !== ref_current))
                 $fatal(1,"Memory training must match both complete patterns");
             cases=cases+1;
         end
-        $display("PASS memory training center priority: %0d cases",cases);
+        $display("PASS memory training legacy priority: %0d cases",cases);
         $finish;
     end
 endmodule

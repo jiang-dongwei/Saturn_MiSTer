@@ -236,11 +236,6 @@ module aps6408_diag_core #(
                 if (valid_first_taps[pair_index]) trained_pair[3:2] = pair_index;
                 if (valid_second_taps[pair_index]) trained_pair[1:0] = pair_index;
             end
-            if (memory_training && !fast_control) begin
-                if (valid_first_taps[2]) trained_pair[3:2] = 2;
-                if (valid_second_taps[1]) trained_pair[1:0] = 1;
-                else if (valid_second_taps[2]) trained_pair[1:0] = 2;
-            end
         end
     end
     wire [1:0] trained_tap = first_tap_order(trained_pair[3:2]);
