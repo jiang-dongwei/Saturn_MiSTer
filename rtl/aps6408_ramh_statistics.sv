@@ -114,7 +114,7 @@ module aps6408_ramh_statistics #(
                 wait_cycles <= wait_cycles + 1'b1;
             else wait_cycles <= 0;
             case (state)
-                BOOT: if (init_done && !busy) state <= WRITE_START;
+                BOOT: if (init_done && !busy) begin state <= WRITE_START; wait_cycles <= 0; end
                 WRITE_START: if (!busy) begin
                     wr <= 4'hF;
                     state <= WRITE_BUSY;
@@ -124,6 +124,7 @@ module aps6408_ramh_statistics #(
                     state <= WRITE_WAIT;
                 end
                 WRITE_WAIT: if (!busy) begin
+                    wait_cycles <= 0;
                     completed_writes <= completed_writes + 1'b1;
                     if (index == WORDS-1) begin
                         index <= 0;
@@ -141,6 +142,7 @@ module aps6408_ramh_statistics #(
                 end
                 READ_BUSY: if (busy) state <= READ_WAIT;
                 READ_WAIT: if (!busy) begin
+                    wait_cycles <= 0;
                     received <= dout;
                     rd <= 0;
                     state <= EVALUATE;

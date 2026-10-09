@@ -128,7 +128,8 @@ module tb_aps6408_ramh_statistics;
             if (report[576+:32]!== (stall_write ? 0 : writes) || report[608+:32]!== (stall_read ? 0 : reads))
                 $fatal(1,"fault completed transaction counts incorrect");
         end else begin
-            if (!ready || failed || writes!=WORDS || reads!=WORDS) $fatal(1,"incomplete scan");
+            if (!ready || failed || writes!=WORDS || reads!=WORDS)
+                $fatal(1,"incomplete scan reason=%0d state=%0d writes=%0d reads=%0d",dut.fault_reason,dut.fault_state,writes,reads);
             for (i=0;i<22;i=i+1)
                 if (report[i*32+:32]!==expected[i])
                     $fatal(1,"field %0d expected %08x actual %08x",i,expected[i],report[i*32+:32]);
