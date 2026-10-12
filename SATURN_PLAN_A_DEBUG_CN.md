@@ -41,12 +41,12 @@
 | E3 独立反证 | 子agent C检查E2是否符合CACHE/总线契约，尝试推翻H3；不得用多数意见代替证据。 | 缺日志推论已否定。指出单改TRCAS会放行重复消费，盲目置busy又会死锁非burst；测试已加入消费地址与首请求busy检查。该TB只模拟CACHE消费契约，不等于真实CACHE集成验收 |
 | E4 最小内部观测 | 如E1确认传输仍黑，独立候选RBF仅暴露init_done/init_error/adapter_error/stage、CPU活动和BIOS计数。保留门控。ready正常且复位释放否定持续复位假设；init/runtime error支持H2。 | 在确证BSC缺陷后先评估最小修复；保留观测方案，不移除保护门控 |
 | E5 BSC最小候选前后对照 | 仅慢区域32位真实SDRAM burst续读转TRCAS并重新置BUSY/活跃consumer busy；单字dummy burst、16/8位、写、LL0、普通区保持原代码。原版须重复失败，候选256项须零错；非burst须排空。 | 9171350 / Runner38219635675：原版32项失败重现；候选LL0 64/64、LL1 192/192通过，快速路径CASE观察一致。仅在独立分支，生产分支与板端RBF未改 |
-| E6 真实CACHE集成 | 生产CACHE+BSC，原语模型保留读地址寄存边沿；四偏移、FAST两档、延迟0/1/12/逐词不同。每次miss恰好四次正确cache RAM写入，再四词命中、无新外存请求；换tag同set重测。原版应失败、候选应通过。 | 6b36dbe / Runner38220310290 PASS：原版LL1 64项中24项失败；候选64/64与快速16/16通过。保留生产CACHE，仅用同步读地址模型替代Altera存储原语，不等于物理RAM或板测 |
-| E7 完整候选构建 | 固定6b36dbe源码；三组Runner回归先通过，再Quartus17.0.2综合布局布线及原SDC报告。检查资源与内部/外部setup、hold、recovery，产物SHA唯一识别，不能仅看workflow SUCCESS。 | Runner38220583985已启动；runtime与bsc已PASS，diagnostic仍执行，Quartus尚未开始。保留全部频率菜单，PSRAM不锁最高频；编译阶段Docker内nproc设置全部可用核心，实际日志待核对 |
+| E6 真实CACHE集成 | 生产CACHE+BSC，CACHE_RAM保留posedge注册读地址，TAG/VALID/LRU按实际MLAB异步读；四偏移、FAST两档、延迟0/1/12/逐词不同。每次miss恰好四次正确cache RAM写入，再四词命中、无新外存请求；换tag同set重测。原版应失败、候选应通过。 | 6b36dbe / 38220310290旧模型PASS保留，但其后三类存储模型误读同名未引用文件，不再计为生产时序匹配。修正08f3b8d / 38221596989：原版24失败、候选快16/慢64全通过；a4d67db / 38221839189追加零初值/旧有效内容两组，候选160/160通过，原版各24失败。均为数字RAM模型，非物理RAM验收 |
+| E7 完整候选构建 | 固定6b36dbe功能源码；三组Runner回归先通过，再Quartus17.0.2综合布局布线及原SDC报告。检查资源与内部/外部setup、hold、recovery，产物SHA唯一识别，不能仅看workflow SUCCESS。 | Runner38220583985三门禁已PASS，Quartus编译进行中。其CACHE门禁用旧模型，板测额外要求独立更正回归38221839189通过（现已PASS），6b36→a4d功能RTL/QSF/SDC/QIP git diff为空。保留全部频率菜单，PSRAM不锁最高频；Docker内nproc设置全部可用核心，实际日志待核对 |
 
 ## 验收层级
 
-源码交叉审查、独立候选BSC消费契约256项及真实CACHE/同步RAM模型80项前后仿真已完成；生产源码与板端RBF未改。综合布局布线、时序和原板BIOS/游戏验收待完成。历史RBF的构建成功不代表整体时序通过，历史诊断PASS不代表游戏通过。
+源码交叉审查、独立候选BSC消费契约256项及更正后的真实CACHE/M10K/MLAB模型160项前后仿真已完成；生产源码与板端RBF未改。综合布局布线、时序和原板BIOS/游戏验收待完成。历史RBF的构建成功不代表整体时序通过，历史诊断PASS不代表游戏通过。
 
 本地日志位于聊天工作目录`work`：`plan-a-baseline-20261012-A.log`、`PA_DEBUG_*`、`GAME_BIOS*`、`GAME_SIIKA16_MGL_A.load.log`；截图和统计位于`outputs/APS6408_33MHz_20261006`。保留失败样本，不提交用户BIOS/游戏二进制到公开仓库。
 
@@ -57,3 +57,5 @@ E1证据：`PA_DEBUG_BIOS_ONLY_A.debug.txt:217–219`默认发送；`PA_DEBUG_F2
 E2范围：32位CBUS/DBUS、burst/nonburst、四个起始偏移、FAST0/1、LL0/1。DRAM0 DBUS因BSC不实现该burst，驱动表现为四个连续普通请求，只用于消费数据对照，不能计为普通区域DMA单burst协议通过。16位、真实CACHE标签/回读、仲裁与背靠背读写仍待补充。
 
 BIOS静态证据（只读反汇编，不执行）：复位PC=20000200；文件偏移0200无条件调用0380缓存初始化、03A2写CCR=01；020E随后调用0478；0480写BCR1=A55A03F1，0484写BCR2=A55A00FC，0488写WCR=A55A5555，均在主/从分支048A之前。主CPU048E写MCR=A55A0078，从CPU返回延迟槽04A2写A55A0070，二者均32位。静态初始化链不能证明当前实板已达到这些指令。
+
+模型纠错与限制：files.qip:5实际引用`rtl/SH7604_mem.sv`，未引用`rtl/SH/SH7604/SH7604_mem.sv`。首次审查据后者误设TAG/VALID/LRU为negedge注册读，撤回生产时序匹配结论；实际前三类为MLAB异步读，CACHE_RAM为M10K注册读地址。生产MLAB允许未知初值，Verilator二态模型只覆盖零和预先有效旧内容，检查DIRTY复位屏蔽及复位后旧cache再次miss；不宣称真实X态或原语CONSTRAINED_DONT_CARE读写冲突行为已覆盖。
