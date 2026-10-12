@@ -79,3 +79,6 @@ E4接口预备已只读核对：ttyS0/FFC02000为COM13控制台，ttyS1/FFC03000
 
 
 E10重新演示：e42同boot重新演示16.9344MHz：重新加载同Siikasaurus后到PRESS START，PA_E42_REDEMO16_B截图352×720，重复画面与颜色异常。用户按Start明确反馈进入后卡住或黑屏；PA_E42_REDEMO16_AFTER_START_A截图与标题异常图SHA相同29d42a1a...。确认该轮16MHz游戏验收失败，不能将BIOS/标题显示称游戏通过。随后重新加载8.4672MHz进行同样操作对照，结果待确认。
+
+
+8MHz重新演示后首次截图全黑，随后PA_E42_REDEMO8_B到PRESS START，320x240，无16MHz重复画面异常；截图SHA ec959b75b75dcd1a33742cdbf4eb7f2bf0d4cdc3a06d0b754ae871aec34d0bb6。已提示用户按Start，操作反馈待确认，板端保持e42/8.4672MHz。
