@@ -94,3 +94,7 @@ E4 UART观测判据：先确认帧序号、校验和与分域fresh有效位；�
 
 
 5e2079f/38236922070 UART两分频、停源与reset恢复、BSC256/CACHE160数字回归通过。67f3991追加每个valid字段内容检查及停源首帧全invalid断言，功能观测RTL不变；完整Runner38237273814已启动，需三门禁后才能Quartus。用户关闭F12后手柄Start仍无反应，排除仅在设置菜单内操作这一条件。原板e42/8MHz不变，没有新诊断RBF；输入到达/CPU活动与运行error仍待帧证据。
+
+
+2026-10-12用户确认已拔下板卡串口，要求先记录；停止本轮上板操作。最后实测仍为e42 APS/8.4672MHz，关闭F12后手柄Start无反应；16MHz标题重复/颜色异常且Start后卡住或黑屏。原版DDR3同游戏此前由用户确认可进入并操作，不能用于证明APS通过。新UART诊断67f3991/38237273814已完整构建且RBF本地SHA核对一致，STA未签核，未传板。重新接入后先核对新boot_id/BIOS/CFG/core，再另存诊断RBF、8MHz无盘与同游戏读UART基线，关闭F12并按手柄Start后比对fresh Start_seen、CPU活动、ready/error/复位；不先改协议或再次调电阻。
+三门禁及完整Quartus成功，全部4个可用逻辑处理器nproc/online=4、allowed0-3、并行4。最终40146ALM/43368FF/4189LAB（仅余2LAB），逻辑RAM4006464位不变。RBF4556904B/SHA363afeaba8c07bf36023e68440b1adb2e8ae5e0818b4dbcd2dbda286f53e4a70。整体STA仍FAIL：默认STA clk_ram setup/hold=-0.737/-0.294ns，clk_sys=-0.350/+0.051ns；诊断新增跨域观测路径须与原功能路径分开分析，不计时序优化完成。COM13在上板预检时已消失，用户确认已拔下并要求先记录；未上传/加载此诊断RBF，无UART板端帧或游戏验收结论。
