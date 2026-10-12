@@ -68,6 +68,10 @@ module tb_sh7604_slow_burst;
           errors=errors+1;
           $display("CONSUMED_WHILE_WAIT beat=%0d A=%h",count,a);
         end
+        if (burst && a !== {start_address[26:4],start_address[3:2]+2'(count),2'b00}) begin
+          errors=errors+1;
+          $display("BAD_PHYSICAL_ADDRESS beat=%0d A=%h",count,a);
+        end
         count=count+1;
         if (port_sel) da={da[31:4],da[3:2]+2'd1,2'b00};
         else ca={ca[31:4],ca[3:2]+2'd1,2'b00};
@@ -106,6 +110,7 @@ module tb_sh7604_slow_burst;
       if(port_sel) dr=1; else cr=1;
       // Match CACHE: only consume after the request has been registered and busy observed.
       tick();
+      if (!(port_sel ? dbusy : cbusy)) $fatal(1,"Request did not register busy");
       monitor=1;
       loops=0;
       while (monitor && loops<2000) begin tick(); loops=loops+1; end

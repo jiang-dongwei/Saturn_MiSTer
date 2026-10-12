@@ -1,6 +1,12 @@
 name: Plan A SH7604 slow burst counterexample
 on:
   workflow_dispatch:
+  push:
+    branches: [codex/saturn-plan-a-bsc]
+    paths:
+      - .github/workflows/plan-a-bsc.yml
+      - sim/psram/tb_sh7604_slow_burst.sv
+      - rtl/SH/SH7604/BSC.sv
 permissions:
   contents: read
 jobs:
