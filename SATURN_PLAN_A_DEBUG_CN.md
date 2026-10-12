@@ -27,7 +27,7 @@
 | --- | --- | --- | --- | --- |
 | H1 | HPS未发送完整BIOS | 黑屏；早期仅有文件摘要 | DEBUG2已记录默认index0.0及显式index2.0各524288字节、Done、CRC32 224B752C | HPS未发送已排除；FPGA内部接收/DDR内容仍待验 |
 | H2 | PSRAM初始化/运行错误令整机持续复位；Saturn.sv:658、1729 | ready要求init_done且两种error均0，直接门控rst_sys；OSD独立工作 | 当前RBF无flag/stage读口；独立核PASS不能推定完整核同样状态 | 待内部观测 |
-| H3 | BIOS配置SDRAM区域后，慢RAMH后续突发词忽略WAIT；BSC.sv:393、411、587 | Runner原版反例成立，LL1配置SDRAM突发延迟1/12时第二词起出错；BIOS静态复位调用链确实先开缓存再写BCR1=03F1、MCR为32位 | 真实CACHE集成及实板到达该路径仍待验；更早复位失败亦可能 | BSC级缺陷已证，黑屏因果仍待证 |
+| H3 | APS单词缓存不满足原BSC后续SDRAM突发契约；BSC.sv:393、411、587 / adapter:36–41 | Runner原版配慢后端反例成立，配置SDRAM突发延迟1/12时第二词起出错；BIOS复位链先开缓存再设32位SDRAM。原版DDR3后端预取32B块，APS只存一个32位词，换址即miss | 候选CACHE回归已通过；实际APS核是否到该分支/更早复位失败仍待验。不能将整合不匹配泛称所有上游BSC都有故障 | 整合握手缺陷已复现，黑屏因果待板测 |
 | H4 | 完整核内部时序/复位恢复失败 | 原Runner多条setup/recovery失败，8MHz仍使用相同内部时钟 | 时序失败与当前症状尚无因果关联 | 保留 |
 | H5 | SCU持续写使write_armed不再触发 | 初读状态机时疑似 | SCU.sv:1530每clk默认WR归0、CE_R单脉冲，WRITE_WAIT保持地址 | 已否定，不改写协议 |
 | H6 | 仅16MHz外部链路过快 | 先前高速诊断有错 | 同RBF/BIOS改8MHz仍黑，独立8/16MHz均零错 | 单因解释减弱；不能排除完整核链路问题 |
@@ -44,6 +44,7 @@
 | E6 真实CACHE集成 | 生产CACHE+BSC，CACHE_RAM保留posedge注册读地址，TAG/VALID/LRU按实际MLAB异步读；四偏移、FAST两档、延迟0/1/12/逐词不同。每次miss恰好四次正确cache RAM写入，再四词命中、无新外存请求；换tag同set重测。原版应失败、候选应通过。 | 6b36dbe / 38220310290旧模型PASS保留，但其后三类存储模型误读同名未引用文件，不再计为生产时序匹配。修正08f3b8d / 38221596989：原版24失败、候选快16/慢64全通过；a4d67db / 38221839189追加零初值/旧有效内容两组，候选160/160通过，原版各24失败。均为数字RAM模型，非物理RAM验收 |
 | E7 完整候选构建 | 固定6b36dbe功能源码；三组Runner回归先通过，再Quartus17.0.2综合布局布线及原SDC报告。检查资源与内部/外部setup、hold、recovery，产物SHA唯一识别，不能仅看workflow SUCCESS。 | Runner38220583985三门禁PASS后Fitter失败：需求4207 LAB，器件4191，超出16；没有RBF及完整STA。其CACHE旧模型范围已撤回，额外更正回归38221839189已PASS且功能源码无diff。Info20032并行设4，Warning20031同时报系统检测2，不据此声称4物理核 |
 | E8 资源单变量对照 | 保留BSC/PHY/频率/QSF/SDC，仅关闭APS6408的12个逻辑FB RAM实例在线JTAG编辑；默认其他core为YES。历史31b65d9曾布局成功，但不同基线不能直接推定本轮节省。须检查附加编辑网络消失、功能RAM参数不变、新fit/STA。 | bdbf8e8复用历史三文件；两名独立agent审查地址/容量/字节写/输出时序/默认参数无变，已知仅去掉Memory Content Editor能力。e42c61b加CPU分配日志，Runner38224686093完整重编已启动，尚无新RBF/板测结论 |
+| E9 官方单SDRAM正对照 | 只切换板端既有官方Saturn_20251003.rbf，保持同boot/真实JP BIOS/其他Saturn.CFG；其RAMH走板载DDR3，CFG中的APS频率位无效。若显示BIOS/游戏，降低HPS/文件/主SDRAM整体失效解释；仍黑则不能把故障仅归于APS路径。不同发布/拟合版本不能独立证明BSC补丁解决原故障。 | 官方Git blob faa1a6fcbfbd7e26cb4c50cea31c215fec8e5c55 / SHA a78fc42b1890e4293e259dacfc871d906873a90013eab5dcb22f6b48adf11a37。板端同boot下显示BIOS界面；同Siikasaurus CUE进入PRESS START，连续两张截图确认标题动画继续更新。BIOS/INI/CFG SHA不变，未覆盖RBF。游戏实际操作待用户反馈，不计APS8/16/33MHz通过 |
 
 ## 验收层级
 
@@ -62,3 +63,5 @@ E2范围：32位CBUS/DBUS、burst/nonburst、四个起始偏移、FAST0/1、LL0/
 BIOS静态证据（只读反汇编，不执行）：复位PC=20000200；文件偏移0200无条件调用0380缓存初始化、03A2写CCR=01；020E随后调用0478；0480写BCR1=A55A03F1，0484写BCR2=A55A00FC，0488写WCR=A55A5555，均在主/从分支048A之前。主CPU048E写MCR=A55A0078，从CPU返回延迟槽04A2写A55A0070，二者均32位。静态初始化链不能证明当前实板已达到这些指令。
 
 模型纠错与限制：files.qip:5实际引用`rtl/SH7604_mem.sv`，未引用`rtl/SH/SH7604/SH7604_mem.sv`。首次审查据后者误设TAG/VALID/LRU为negedge注册读，撤回生产时序匹配结论；实际前三类为MLAB异步读，CACHE_RAM为M10K注册读地址。生产MLAB允许未知初值，Verilator二态模型只覆盖零和预先有效旧内容，检查DIRTY复位屏蔽及复位后旧cache再次miss；不宣称真实X态或原语CONSTRAINED_DONT_CARE读写冲突行为已覆盖。
+
+E9证据：`PA_STOCK_CORE_IDENTITY_A.log`与官方仓库contents API元数据一致；`PA_NATIVE_BIOS_SCREEN_A.png`为320×224 BIOS/CD控制界面；`PA_NATIVE_SIIKA_SCREEN_A/B.png`均320×240 PRESS START，SHA分别6278f746... / 07dc355b...，背景与三维模型姿态变化；`PA_NATIVE_SIIKA_RUNTIME_A.log`记录同boot、三文件SHA一致及ISO/WAV打开。板上当前临时为官方DDR3后端正常版本，不冒充APS候选。
