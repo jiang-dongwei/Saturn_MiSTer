@@ -99,7 +99,7 @@ jobs:
           mkdir -p .ci
           docker run --rm -v "$GITHUB_WORKSPACE:/project" -w /project \
             theypsilon/quartus-lite-c5:17.0.2 \
-            bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_APS6408.qsf; quartus_sh --flow compile Saturn_APS6408 2>&1 | tee .ci/saturn-aps-build.log; quartus_sta -t sim/psram/report_saturn_aps6408_timing.tcl 2>&1 | tee .ci/saturn-aps-paths.log'
+            bash -lc 'set -euo pipefail; cores=$(nproc); printf "Runner nproc=%s online=%s\n" "$cores" "$(getconf _NPROCESSORS_ONLN)" | tee .ci/saturn-aps-cpu.log; grep Cpus_allowed_list /proc/self/status | tee -a .ci/saturn-aps-cpu.log; sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_APS6408.qsf; grep NUM_PARALLEL_PROCESSORS Saturn_APS6408.qsf | tee -a .ci/saturn-aps-cpu.log; quartus_sh --flow compile Saturn_APS6408 2>&1 | tee .ci/saturn-aps-build.log; quartus_sta -t sim/psram/report_saturn_aps6408_timing.tcl 2>&1 | tee .ci/saturn-aps-paths.log'
       - name: Record RBF identity
         run: |
           test -s output_files_aps6408/Saturn_APS6408.rbf
