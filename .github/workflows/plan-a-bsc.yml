@@ -10,6 +10,8 @@ on:
       - sim/psram/tb_sh7604_cache_slow_burst.sv
       - sim/psram/sh7604_cache_memory_models.sv
       - rtl/SH/SH7604/BSC.sv
+      - rtl/plan_a_uart_trace.sv
+      - sim/psram/tb_plan_a_uart_trace.sv
 permissions:
   contents: read
 jobs:
@@ -20,7 +22,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: sudo apt-get update && sudo apt-get install -y verilator
+      - run: sudo apt-get update && sudo apt-get install -y verilator iverilog
+      - name: Verify UART snapshots and stopped-clock recovery on Runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          for divider in 8 434; do
+            iverilog -g2012 -s tb_plan_a_uart_trace -Ptb_plan_a_uart_trace.DIVIDER=$divider -o .ci/plan-a-uart-$divider.vvp rtl/plan_a_uart_trace.sv sim/psram/tb_plan_a_uart_trace.sv
+            vvp .ci/plan-a-uart-$divider.vvp | tee -a .ci/plan-a-uart.log
+          done
       - name: Compile on Runner and record original contract failures
         shell: bash
         run: |

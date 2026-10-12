@@ -3,4 +3,5 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/aps6408_diag_core.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/aps6408_diag_rx.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/aps6408_diag_ddio_input.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ramh_aps6408_adapter.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/plan_a_uart_trace.sv
 set_global_assignment -name SDC_FILE Saturn_APS6408.sdc

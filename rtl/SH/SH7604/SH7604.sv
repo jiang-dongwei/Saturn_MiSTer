@@ -67,6 +67,10 @@ module SH7604
 	input       [5:0] MD,
 	
 	input             FAST
+
+`ifdef SATURN_APS6408_DEBUG_UART
+    ,output [15:0] PA_TRACE_CPU
+`endif
 	
 `ifdef DEBUG
 	                  ,
@@ -208,6 +212,16 @@ module SH7604
 	bit        CLK8192_CE;
 	
 	bit        RES_SYNC_N;
+`ifdef SATURN_APS6408_DEBUG_UART
+    reg [7:0] pa_fetch_count = 0;
+    always @(posedge CLK) begin
+        if (!RST_N || !RES_SYNC_N) pa_fetch_count <= 0;
+        else if (CE_R && EN && CBUS_REQ && CBUS_ID && !(CACHE_BUSY | (MULT_BUSY & ~FAST)))
+            pa_fetch_count <= pa_fetch_count + 1'b1;
+    end
+    assign PA_TRACE_CPU = {pa_fetch_count, RES_SYNC_N, CBUS_REQ, CBUS_ID,
+                           CACHE_BUSY, MULT_BUSY, CBUS_A[26:24]};
+`endif
 	always @(posedge CLK or negedge RST_N) begin
 		if (!RST_N) begin
 			RES_SYNC_N <= 0;

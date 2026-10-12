@@ -2,6 +2,10 @@ module Saturn
 #(parameter bit RAMH_SLOW=0)
 (
 	input              CLK,
+`ifdef SATURN_APS6408_DEBUG_UART
+    output [15:0] PA_TRACE_CPU,
+    output [1:0] PA_CPU_RESET_N,
+`endif
 	input              RST_N,
 	input              EN,
 	
@@ -212,6 +216,9 @@ module Saturn
 	bit         MSHIVECF_N;
 	bit   [3:0] MSHIRL_N;
 	bit         MSHRES_N;
+`ifdef SATURN_APS6408_DEBUG_UART
+    assign PA_CPU_RESET_N = {SYSRES_N, MSHRES_N};
+`endif
 	bit         MSHNMI_N;
 	bit         MSHBGR_N;
 	bit         MSHBRLS_N;
@@ -400,6 +407,9 @@ module Saturn
 		.MD(6'b001000),
 		
 		.FAST(FAST)
+`ifdef SATURN_APS6408_DEBUG_UART
+        ,.PA_TRACE_CPU(PA_TRACE_CPU)
+`endif
 `ifdef DEBUG
 		,
 		.DBG_REGN('0),

@@ -29,6 +29,21 @@ foreach_in_collection operating_condition [get_available_operating_conditions] {
     set_operating_conditions $operating_condition
     update_timing_netlist
     puts "APS6408 CORNER $corner: [get_operating_conditions_info $operating_condition -model]"
+    set pa_clock_groups [list \
+        clk_sys [get_clocks {emu|pll|pll_inst|altera_pll_i|cyclonev_pll|counter?0?.output_counter|divclk}] \
+        clk_ram [get_clocks {emu|pll|pll_inst|altera_pll_i|cyclonev_pll|counter?1?.output_counter|divclk}] \
+        engine33 [get_clocks APS6408_ENGINE_33] \
+        engine50 [get_clocks APS6408_ENGINE_50]]
+    foreach {label clocks} $pa_clock_groups {
+        if {[get_collection_size $clocks] != 1} { error "Expected one clock for $label" }
+        foreach_in_collection clock $clocks { puts "PLAN_A CLOCK $label [get_clock_info -name $clock]" }
+        foreach check {setup hold} {
+            report_timing -$check -to_clock $clocks -npaths 20 -nworst 1 -detail full_path \
+                -file .ci/plan-a-corner${corner}-${label}-incoming-${check}.rpt
+            report_timing -$check -from_clock $clocks -to_clock $clocks -npaths 20 -nworst 1 -detail full_path \
+                -file .ci/plan-a-corner${corner}-${label}-sameclock-${check}.rpt
+        }
+    }
 foreach check {setup hold} {
     puts "=== APS6408 REGISTER TO REGISTER $check ==="
     report_timing -$check -from $diagnostic_regs -to $diagnostic_regs -npaths 20 -detail full_path -file .ci/aps6408-corner$corner-internal-$check.rpt

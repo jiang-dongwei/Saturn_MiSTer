@@ -184,7 +184,11 @@ module emu
 );
 
 	assign ADC_BUS  = 'Z;
-	assign {UART_RTS, UART_TXD, UART_DTR} = 0;
+`ifdef SATURN_APS6408_DEBUG_UART
+    assign {UART_RTS, UART_DTR} = 0;
+`else
+    assign {UART_RTS, UART_TXD, UART_DTR} = 0;
+`endif
 	assign BUTTONS   = {1'b0,osd_btn};
 	assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
@@ -917,6 +921,10 @@ module emu
 	(
 		.CLK(clk_sys),
 		.RST_N(~rst_sys),
+`ifdef SATURN_APS6408_DEBUG_UART
+        .PA_TRACE_CPU(pa_trace_cpu),
+        .PA_CPU_RESET_N(pa_cpu_reset_n),
+`endif
 		.EN(~DBG_PAUSE),
 		
 		.SYS_CE_F(SYS_CE_F),
@@ -1685,6 +1693,27 @@ module emu
 	wire        psram_adapter_error;
 
 `ifdef SATURN_APS6408
+`ifdef SATURN_APS6408_DEBUG_UART
+    wire [15:0] pa_trace_cpu;
+    wire [1:0] pa_cpu_reset_n;
+    wire [7:0] pa_stage;
+    reg pa_start_seen = 0;
+    always @(posedge clk_sys) begin
+        if (reset || bios_download) pa_start_seen <= 0;
+        else if (joystick_0[7]) pa_start_seen <= 1;
+    end
+    plan_a_uart_trace pa_trace (
+        .clk(CLK_50M), .reset(RESET), .ram_clk(clk_ram),
+        .engine_clk(psram_engine_clk), .sys_clk(clk_sys),
+        .ram_data({psram_clock_mode, psram_selected_speed, ~RAMH_CS_N & ~MEM_RD_N,
+                   psram_ramh_busy, psram_pll_locked, bios_download, download, rst_ram,
+                   reset, rst_sys, psram_opi_ready, psram_adapter_error,
+                   psram_qpi_init_error, psram_qpi_init_done}),
+        .engine_data(pa_stage),
+        .sys_data({2'b00, pa_cpu_reset_n, 2'b00, pa_start_seen, joystick_0[7], pa_trace_cpu}),
+        .tx(UART_TXD)
+    );
+`endif
 	wire psram_engine_clk, psram_phy_clk, psram_pll_locked;
 	wire psram_control_clk, psram_fast_clk, psram_reference_clk;
 	wire psram_clk_33_unused;
@@ -1735,7 +1764,12 @@ module emu
 		.rd(~RAMH_CS_N & ~MEM_RD_N), .burst(RAMH_BURST), .rfs(~RAMH_CS_N & RAMH_RFS),
 		.dout(psram_ramh_do), .busy(psram_ramh_busy),
 		.init_done(psram_qpi_init_done), .init_error(psram_qpi_init_error),
-		.adapter_error(psram_adapter_error), .device_id(psram_qpi_device_id), .stage_code(),
+		.adapter_error(psram_adapter_error), .device_id(psram_qpi_device_id),
+`ifdef SATURN_APS6408_DEBUG_UART
+        .stage_code(pa_stage),
+`else
+        .stage_code(),
+`endif
 		.PSRAM_CLK(PSRAM_CLK), .PSRAM_CE_N(PSRAM_CE_N), .PSRAM_DQ(PSRAM_DQ), .PSRAM_DQS(PSRAM_DQS)
 	);
 `else
