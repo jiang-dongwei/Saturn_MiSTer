@@ -31,6 +31,8 @@
 | H4 | 完整核内部时序/复位恢复失败 | 原Runner多条setup/recovery失败，8MHz仍使用相同内部时钟 | 时序失败与当前症状尚无因果关联 | 保留 |
 | H5 | SCU持续写使write_armed不再触发 | 初读状态机时疑似 | SCU.sv:1530每clk默认WR归0、CE_R单脉冲，WRITE_WAIT保持地址 | 已否定，不改写协议 |
 | H6 | 仅16MHz外部链路过快 | 先前高速诊断有错 | 同RBF/BIOS改8MHz仍黑，独立8/16MHz均零错 | 单因解释减弱；不能排除完整核链路问题 |
+| H7 | 手柄Start未到游戏输入路径，或CPU无法处理 | 8MHz截图到标题但手柄Start无反应；F12设置仍可打开 | 用户明确关闭F12后仍无反应，排除仅在OSD内操作；诊断Start current/sticky和CPU活动尚未上板读取 | 待内部帧证据 |
+| H8 | 未缓存SDRAM读的dummy遗留事务跨CPU→SCU仲裁，导致SCU单拍请求未被APS捕获 | BSC单读续接真实地址+4与RD脉冲；APS source_pending不随CS撤回取消；grant无额外后端busy门，SCU START不先查ECWAIT | 尚未Runner反例或实板证据。必须证明合法仲裁时旧dummy仍pending，而非强制构造非法忙时写；与已否定持续WR假设不同 | 条件性兼容风险，未改协议 |
 
 ## 预先声明的实验
 
@@ -98,3 +100,6 @@ E4 UART观测判据：先确认帧序号、校验和与分域fresh有效位；�
 
 2026-10-12用户确认已拔下板卡串口，要求先记录；停止本轮上板操作。最后实测仍为e42 APS/8.4672MHz，关闭F12后手柄Start无反应；16MHz标题重复/颜色异常且Start后卡住或黑屏。原版DDR3同游戏此前由用户确认可进入并操作，不能用于证明APS通过。新UART诊断67f3991/38237273814已完整构建且RBF本地SHA核对一致，STA未签核，未传板。重新接入后先核对新boot_id/BIOS/CFG/core，再另存诊断RBF、8MHz无盘与同游戏读UART基线，关闭F12并按手柄Start后比对fresh Start_seen、CPU活动、ready/error/复位；不先改协议或再次调电阻。
 三门禁及完整Quartus成功，全部4个可用逻辑处理器nproc/online=4、allowed0-3、并行4。最终40146ALM/43368FF/4189LAB（仅余2LAB），逻辑RAM4006464位不变。RBF4556904B/SHA363afeaba8c07bf36023e68440b1adb2e8ae5e0818b4dbcd2dbda286f53e4a70。整体STA仍FAIL：默认STA clk_ram setup/hold=-0.737/-0.294ns，clk_sys=-0.350/+0.051ns；诊断新增跨域观测路径须与原功能路径分开分析，不计时序优化完成。COM13在上板预检时已消失，用户确认已拔下并要求先记录；未上传/加载此诊断RBF，无UART板端帧或游戏验收结论。
+
+
+67f3991新增分组STA复核：clk_ram入站setup -0.737ns为SCU.CBUS_WR[0](clk_sys)到ramh_din[6](clk_ram)，hold -0.294ns为VDP2.VRAMA_D[60]到sdram1.din[0][60]；主PLL相关功能通路，不能任意false-path。同clk_ram setup/hold -0.065/-0.254ns仍负。clk_sys入站setup -0.350ns是adapter cache_addr[9]到Saturn.OPEN_BUS[19]；四角hold最坏 -0.088ns，默认+0.051ns不是四角签核。ENGINE33同钟四角最坏 -1.259ns、ENGINE50 -6.180ns，训练reference_mr0到memory_training；新观测/模式迁移跨域须另证，不以整体FAIL仅归外部模型。另保留H8未缓存dummy读跨SCU仲裁可能漏单拍请求假设：仅静态允许前提，未跑反例/上板，不改协议。
