@@ -29,8 +29,10 @@ jobs:
           set -euo pipefail
           mkdir -p .ci
           for divider in 8 434; do
-            iverilog -g2012 -s tb_plan_a_uart_trace -Ptb_plan_a_uart_trace.DIVIDER=$divider -o .ci/plan-a-uart-$divider.vvp rtl/plan_a_uart_trace.sv sim/psram/tb_plan_a_uart_trace.sv
-            vvp .ci/plan-a-uart-$divider.vvp | tee -a .ci/plan-a-uart.log
+            verilator --binary --timing -Wno-fatal -j "$(nproc)" --top-module tb_plan_a_uart_trace \
+              -GDIVIDER=$divider --Mdir .ci/uart-$divider rtl/plan_a_uart_trace.sv sim/psram/tb_plan_a_uart_trace.sv \
+              > .ci/uart-compile-$divider.log 2>&1
+            .ci/uart-$divider/Vtb_plan_a_uart_trace | tee -a .ci/plan-a-uart.log
           done
       - name: Compile on Runner and record original contract failures
         shell: bash
