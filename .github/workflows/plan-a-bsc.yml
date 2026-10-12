@@ -15,23 +15,30 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - run: sudo apt-get update && sudo apt-get install -y verilator
       - name: Compile on Runner and record original contract failures
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .ci
+          git show ca35b11465a7563060aac11a057914e1f70f2079:rtl/SH/SH7604/BSC.sv > .ci/BSC-original.sv
+          for variant in original candidate; do
+          bsc=.ci/BSC-original.sv
+          if [ "$variant" = candidate ]; then bsc=rtl/SH/SH7604/BSC.sv; fi
           for slow in 0 1; do
             verilator --binary --timing -Wno-fatal -Wno-BLKANDNBLK -j 2 --top-module tb_sh7604_slow_burst \
-              -GSLOW=$slow --Mdir .ci/obj-$slow \
-              rtl/SH/SH7604/SH7604_pkg.sv rtl/SH/SH7604/BSC.sv \
-              sim/psram/tb_sh7604_slow_burst.sv > .ci/compile-$slow.log 2>&1
+              -GSLOW=$slow --Mdir .ci/obj-$variant-$slow \
+              rtl/SH/SH7604/SH7604_pkg.sv "$bsc" \
+              sim/psram/tb_sh7604_slow_burst.sv > .ci/compile-$variant-$slow.log 2>&1
             set +e
-            .ci/obj-$slow/Vtb_sh7604_slow_burst > .ci/original-$slow.log 2>&1
+            .ci/obj-$variant-$slow/Vtb_sh7604_slow_burst > .ci/$variant-$slow.log 2>&1
             result=$?
             set -e
-            printf '%s\n' "$result" > .ci/original-$slow.exitcode
-            grep 'SUMMARY' .ci/original-$slow.log
+            printf '%s\n' "$result" > .ci/$variant-$slow.exitcode
+            grep 'SUMMARY' .ci/$variant-$slow.log
+          done
           done
           # Both positive controls must pass; configured slow SDRAM must expose a failure.
           python3 - <<'PY'
@@ -47,7 +54,13 @@ jobs:
           assert len(rows)==192, len(rows)
           assert all(int(e)==0 for d,p,b,f,l,o,w,e in rows if d=='0'), 'Non-SDRAM control failed'
           assert any(int(e)>0 for d,p,b,f,l,o,w,e in rows if d=='1' and b=='1' and l=='12'), 'Counterexample absent'
-          print('Original fails the configured slow SDRAM burst; positive controls pass.')
+          for slow,cases in ((0,64),(1,192)):
+              assert Path(f'.ci/candidate-{slow}.exitcode').read_text().strip()=='0'
+              assert f'SUMMARY slow={slow} cases={cases} failed=0' in Path(f'.ci/candidate-{slow}.log').read_text()
+          before=[line for line in fast.splitlines() if line.startswith('CASE ')]
+          after=[line for line in Path('.ci/candidate-0.log').read_text().splitlines() if line.startswith('CASE ')]
+          assert before==after, 'Fast-path observations changed'
+          print('Original counterexample reproduced; candidate 256 cases pass; fast-path observations unchanged.')
           PY
       - uses: actions/upload-artifact@v4
         if: always()

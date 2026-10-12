@@ -584,7 +584,14 @@ module SH7604_BSC
 						BS_N <= 0;
 						RD_N <= BUS_WE_LATCH;
 						CACK <= 1;
-						STATE_NEXT = BUS_IS_SDRAM ? (!BUS_WE_LATCH ? TRD : TRAS) : T1;
+						if (BUS_IS_SDRAM && !BUS_WE_LATCH && LL && AREA_SZ == 2'b11 && !BURST_SINGLE) begin
+							STATE_NEXT = TRCAS;
+							BUSY <= 1;
+							if (CBUS_ACTIVE) CBUSY <= 1;
+							if (DBUS_ACTIVE) DBUSY <= 1;
+						end else begin
+							STATE_NEXT = BUS_IS_SDRAM ? (!BUS_WE_LATCH ? TRD : TRAS) : T1;
+						end
 					end
 					else if (BUS_SEL && !BUS_RLS && ((!BGR && MASTER) || (BREQ && !MASTER))) begin
 						BUSY <= 1;
