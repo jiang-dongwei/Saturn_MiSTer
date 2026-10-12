@@ -43,12 +43,16 @@
 | E5 BSC最小候选前后对照 | 仅慢区域32位真实SDRAM burst续读转TRCAS并重新置BUSY/活跃consumer busy；单字dummy burst、16/8位、写、LL0、普通区保持原代码。原版须重复失败，候选256项须零错；非burst须排空。 | 9171350 / Runner38219635675：原版32项失败重现；候选LL0 64/64、LL1 192/192通过，快速路径CASE观察一致。仅在独立分支，生产分支与板端RBF未改 |
 | E6 真实CACHE集成 | 生产CACHE+BSC，CACHE_RAM保留posedge注册读地址，TAG/VALID/LRU按实际MLAB异步读；四偏移、FAST两档、延迟0/1/12/逐词不同。每次miss恰好四次正确cache RAM写入，再四词命中、无新外存请求；换tag同set重测。原版应失败、候选应通过。 | 6b36dbe / 38220310290旧模型PASS保留，但其后三类存储模型误读同名未引用文件，不再计为生产时序匹配。修正08f3b8d / 38221596989：原版24失败、候选快16/慢64全通过；a4d67db / 38221839189追加零初值/旧有效内容两组，候选160/160通过，原版各24失败。均为数字RAM模型，非物理RAM验收 |
 | E7 完整候选构建 | 固定6b36dbe功能源码；三组Runner回归先通过，再Quartus17.0.2综合布局布线及原SDC报告。检查资源与内部/外部setup、hold、recovery，产物SHA唯一识别，不能仅看workflow SUCCESS。 | Runner38220583985三门禁PASS后Fitter失败：需求4207 LAB，器件4191，超出16；没有RBF及完整STA。其CACHE旧模型范围已撤回，额外更正回归38221839189已PASS且功能源码无diff。Info20032并行设4，Warning20031同时报系统检测2，不据此声称4物理核 |
-| E8 资源单变量对照 | 保留BSC/PHY/频率/QSF/SDC，仅关闭APS6408的12个逻辑FB RAM实例在线JTAG编辑；默认其他core为YES。历史31b65d9曾布局成功，但不同基线不能直接推定本轮节省。须检查附加编辑网络消失、功能RAM参数不变、新fit/STA。 | bdbf8e8复用历史三文件；两名独立agent审查地址/容量/字节写/输出时序/默认参数无变，已知仅去掉Memory Content Editor能力。e42c61b加CPU分配日志，Runner38224686093完整重编已启动，尚无新RBF/板测结论 |
+| E8 资源单变量对照 | 保留BSC/PHY/频率/QSF/SDC，仅关闭APS6408的12个逻辑FB RAM实例在线JTAG编辑；默认其他core为YES。历史31b65d9曾布局成功，但不同基线不能直接推定本轮节省。须检查附加编辑网络消失、功能RAM参数不变、新fit/STA。 | e42c61b / Runner38224686093三门禁及完整构建成功，12个FB RAM参数NO、SLD hub消失已由报告确认。最终40117 ALM、43594 FF、4186/4191 LAB、逻辑RAM4006464位。nproc=4、online=4、allowed0-3、Quartus并行4，本轮无20031警告。整体STA仍FAIL；RBF4571892B，SHA3c1c5e9c8dc25da28a0b70615bb83c37df1d7a706efa517cfdee2791e70edced；板测待完成 |
 | E9 官方单SDRAM正对照 | 只切换板端既有官方Saturn_20251003.rbf，保持同boot/真实JP BIOS/其他Saturn.CFG；其RAMH走板载DDR3，CFG中的APS频率位无效。若显示BIOS/游戏，降低HPS/文件/主SDRAM整体失效解释；仍黑则不能把故障仅归于APS路径。不同发布/拟合版本不能独立证明BSC补丁解决原故障。 | 官方Git blob faa1a6fcbfbd7e26cb4c50cea31c215fec8e5c55 / SHA a78fc42b1890e4293e259dacfc871d906873a90013eab5dcb22f6b48adf11a37。板端同boot下显示BIOS界面；同Siikasaurus CUE进入PRESS START，连续截图确认动画更新。用户明确反馈能进入游戏并正常操作。BIOS/INI/CFG SHA不变，未覆盖RBF。记原版DDR3后端正常运行，不计APS8/16/33MHz通过 |
 
 ## 验收层级
 
-源码交叉审查、独立候选BSC消费契约256项及更正后的真实CACHE/M10K/MLAB模型160项前后仿真已完成；生产源码与板端RBF未改。综合布局布线、时序和原板BIOS/游戏验收待完成。历史RBF的构建成功不代表整体时序通过，历史诊断PASS不代表游戏通过。
+源码交叉审查、独立候选BSC消费契约256项及更正后的真实CACHE/M10K/MLAB模型160项前后仿真已完成。候选e42c61b已完成综合布局布线并生成RBF，生产源码及原RBF保留；整体STA未通过，原板BIOS/游戏验收待完成。历史诊断PASS不代表游戏通过。
+
+e42时序证据：四工况最坏全局setup/hold为−37.401/−7.735ns，DDIO到逻辑−0.723/+1.073ns，PSRAM内部寄存器组（含50MHz实验档）−5.501/−1.077ns；默认STA主clk_ram为−1.145/−0.323ns，主clk_sys为+0.153/+0.244ns。实验板测不计时序签核。
+
+E10候选板测预声明：同boot、JP1.01 BIOS、Siikasaurus、其他CFG不变，仅换为e42 RBF；先16.9344MHz再8.4672MHz。若BIOS和游戏恢复且可操作，支持候选整合修复；若仍黑，则H3逻辑缺陷修复已被仿真验证，但不是已确认的唯一黑屏原因，继续E4观测ready/error/stage与CPU活动。截图只判断画面，游戏操作须用户确认，仍不能验收33/50MHz或所有游戏。候选另存APS6408_PLAN_A_e42c61b.rbf，不覆盖原开发/官方RBF。
 
 E7资源证据：新旧同阶段map估算ALM 40581→40734，寄存器41653→41655，逻辑RAMbits均4006464；新Fitter预布局41692ALM/4207LAB，旧完整布局41424ALM/4191LAB。不同阶段FF不直接比较。两个BSC实体组合ALUT总数1100→1099、寄存器不变，因此不能把全设计打包增长说成“七行BSC补丁直接膨胀268ALM”。失败为近满设计的布局容量；本次没有新的时序slack可报告。
 
