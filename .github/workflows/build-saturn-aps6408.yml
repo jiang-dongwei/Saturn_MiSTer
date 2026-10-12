@@ -25,6 +25,8 @@ concurrency:
   group: saturn-aps6408-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  bsc:
+    uses: ./.github/workflows/plan-a-bsc.yml
   diagnostic:
     uses: ./.github/workflows/build-aps6408-diag.yml
     with:
@@ -78,7 +80,7 @@ jobs:
             .ci/testrom-semantics.log
           include-hidden-files: true
   quartus:
-    needs: [diagnostic, runtime]
+    needs: [diagnostic, runtime, bsc]
     if: github.event_name == 'push' || inputs.build_quartus
     runs-on: ubuntu-latest
     timeout-minutes: 360

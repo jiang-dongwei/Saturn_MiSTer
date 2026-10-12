@@ -1,6 +1,7 @@
 name: Plan A SH7604 slow burst counterexample
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     branches: [codex/saturn-plan-a-bsc]
     paths:
@@ -67,4 +68,44 @@ jobs:
         with:
           name: SATURN_PA_BSC_COUNTEREXAMPLE
           path: .ci/*.*
+          include-hidden-files: true
+      - name: Verify production cache fills and hits with registered RAM models
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variant in original candidate; do
+          bsc=.ci/BSC-original.sv
+          if [ "$variant" = candidate ]; then bsc=rtl/SH/SH7604/BSC.sv; fi
+          for slow in 0 1; do
+            verilator --binary --timing -Wno-fatal -Wno-BLKANDNBLK -j 2 --top-module tb_sh7604_cache_slow_burst \
+              -GSLOW=$slow --Mdir .ci/cache-obj-$variant-$slow \
+              rtl/SH/SH7604/SH7604_pkg.sv "$bsc" rtl/SH/SH7604/CACHE.sv \
+              sim/psram/sh7604_cache_memory_models.sv sim/psram/tb_sh7604_cache_slow_burst.sv \
+              > .ci/cache-compile-$variant-$slow.log 2>&1
+            set +e
+            .ci/cache-obj-$variant-$slow/Vtb_sh7604_cache_slow_burst > .ci/cache-$variant-$slow.log 2>&1
+            result=$?
+            set -e
+            printf '%s\n' "$result" > .ci/cache-$variant-$slow.exitcode
+            grep 'CACHE_SUMMARY' .ci/cache-$variant-$slow.log
+          done
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          assert Path('.ci/cache-original-0.exitcode').read_text().strip()=='0'
+          assert 'CACHE_SUMMARY slow=0 cases=16 failed=0' in Path('.ci/cache-original-0.log').read_text()
+          old=Path('.ci/cache-original-1.log').read_text()
+          assert 'CACHE_SUMMARY slow=1 cases=64 failed=0' not in old
+          assert 'Cache slow burst integration failed' in old
+          assert Path('.ci/cache-original-1.exitcode').read_text().strip()!='0'
+          for slow,cases in ((0,16),(1,64)):
+              assert Path(f'.ci/cache-candidate-{slow}.exitcode').read_text().strip()=='0'
+              assert f'CACHE_SUMMARY slow={slow} cases={cases} failed=0' in Path(f'.ci/cache-candidate-{slow}.log').read_text()
+          print('Production CACHE+BSC: original fails, candidate registered-RAM fills and hits pass.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: SATURN_PA_CACHE_INTEGRATION
+          path: .ci/cache-*.*
           include-hidden-files: true
