@@ -69,10 +69,18 @@ jobs:
           name: SATURN_PA_BSC_COUNTEREXAMPLE
           path: .ci/*.*
           include-hidden-files: true
-      - name: Verify production cache fills and hits with registered RAM models
+      - name: Verify production cache fills and hits with actual M10K and MLAB read timing
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          assert 'rtl/SH7604_mem.sv' in Path('files.qip').read_text()
+          mem=Path('rtl/SH7604_mem.sv').read_text()
+          assert mem.count('rdaddress_reg = "UNREGISTERED"')==3
+          assert mem.count('address_reg_b = "CLOCK1"')==1
+          print('Actual files.qip: registered CACHE_RAM and asynchronous TAG/VALID/LRU MLAB reads.')
+          PY
           for variant in original candidate; do
           bsc=.ci/BSC-original.sv
           if [ "$variant" = candidate ]; then bsc=rtl/SH/SH7604/BSC.sv; fi
@@ -101,7 +109,7 @@ jobs:
           for slow,cases in ((0,16),(1,64)):
               assert Path(f'.ci/cache-candidate-{slow}.exitcode').read_text().strip()=='0'
               assert f'CACHE_SUMMARY slow={slow} cases={cases} failed=0' in Path(f'.ci/cache-candidate-{slow}.log').read_text()
-          print('Production CACHE+BSC: original fails, candidate registered-RAM fills and hits pass.')
+          print('Production CACHE+BSC: original fails, candidate M10K/MLAB model fills and hits pass.')
           PY
       - uses: actions/upload-artifact@v4
         if: always()
