@@ -1,6 +1,6 @@
 # SATURN-PA-BOOT-20261012：完整核心黑屏追踪
 
-状态：仍未解决。按用户明确指定的 Kian’s Skills Plan A Debug Mode，由主 agent 与三个子 agent交叉调查。主 agent统一板测和修改，首轮子 agent只读。
+状态：部分改善，游戏验收仍待完成。按用户明确指定的 Kian’s Skills Plan A Debug Mode，由主 agent 与三个子 agent交叉调查。主 agent统一板测和修改，首轮子 agent只读。
 
 ## 固定基线
 
@@ -69,3 +69,10 @@ BIOS静态证据（只读反汇编，不执行）：复位PC=20000200；文件�
 模型纠错与限制：files.qip:5实际引用`rtl/SH7604_mem.sv`，未引用`rtl/SH/SH7604/SH7604_mem.sv`。首次审查据后者误设TAG/VALID/LRU为negedge注册读，撤回生产时序匹配结论；实际前三类为MLAB异步读，CACHE_RAM为M10K注册读地址。生产MLAB允许未知初值，Verilator二态模型只覆盖零和预先有效旧内容，检查DIRTY复位屏蔽及复位后旧cache再次miss；不宣称真实X态或原语CONSTRAINED_DONT_CARE读写冲突行为已覆盖。
 
 E9证据：`PA_STOCK_CORE_IDENTITY_A.log`与官方仓库contents API元数据一致；`PA_NATIVE_BIOS_SCREEN_A.png`为320×224 BIOS/CD控制界面；`PA_NATIVE_SIIKA_SCREEN_A/B.png`均320×240 PRESS START，SHA分别6278f746... / 07dc355b...，背景与三维模型姿态变化；`PA_NATIVE_SIIKA_RUNTIME_A.log`记录同boot、三文件SHA一致及ISO/WAV打开。板上当前临时为官方DDR3后端正常版本，不冒充APS候选。
+
+
+E10初步实板结果：e42独立RBF已上传且板端SHA一致。16MHz无盘BIOS正常（PA_E42_BIOS16_A，1493色）；同Siikasaurus加载过渡图形、纯蓝后晚期全黑（SCREEN16_C），操作反馈/是否手动重载待核对。8MHz首次无盘截图黑，但同游戏稍后到PRESS START，两次标题截图SHA59733f93...相同；不据此宣称动画持续更新或操作通过。板端当前保留e42 APS/8MHz供用户操作，原版DDR3与旧bcff均未覆盖，真实BIOS/INI未改。
+
+H3最小协议缺陷已被前后仿真确认，且候选改善启动；实板包含关闭FB JTAG附加网络及重新拟合，尚不能隔离成唯一黑屏原因。H2在16MHz成功BIOS/8MHz游戏标题阶段不成立为“始终未完成初始化”，但随后运行error触发复位仍保留；H4时序风险仍保留。当前未验收16MHz游戏、33/50MHz、操作流畅度或长期稳定性。
+
+E4接口预备已只读核对：ttyS0/FFC02000为COM13控制台，ttyS1/FFC03000空闲、无uartmode守护标记/占用；TXD目前常量0且与SNAC独立。若继续异常，可构建仅UART观测候选，原域快照握手接出stage、ready/errors及复位分因；当前没有安装/执行该观测RTL。
