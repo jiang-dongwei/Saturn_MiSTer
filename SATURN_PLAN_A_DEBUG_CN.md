@@ -82,3 +82,15 @@ E10重新演示：e42同boot重新演示16.9344MHz：重新加载同Siikasaurus�
 
 
 8MHz重新演示后首次截图全黑，随后PA_E42_REDEMO8_B到PRESS START，320x240，无16MHz重复画面异常；截图SHA ec959b75b75dcd1a33742cdbf4eb7f2bf0d4cdc3a06d0b754ae871aec34d0bb6。已提示用户按Start，操作反馈待确认，板端保持e42/8.4672MHz。
+
+
+E10操作结果及E4下一步：用户确认新APS e42/8.4672MHz画面能到标题或菜单，但Start没有反应；PA_E42_REDEMO8_AFTER_START_A与标题PNG SHA相同ec959b75...。8MHz操作验收亦未通过；目前不能区分输入映射和CPU/内存挂起。已准备独立UART诊断候选，接出Start current/sticky、完成取指访问计数、复位、PSRAM flags/stage；尚未编译/上板。
+
+
+用户澄清此前“菜单”是F12设置菜单，不是游戏菜单；随后明确关闭F12后手柄Start仍无反应。撤回将该用户措辞视作游戏已响应的推论；截图到PRESS START事实独立保留。8MHz操作未通过，输入是否到核心和CPU活动仍待观测。UART1USEFPGA只读0xFFD08718=1；诊断仅独立分支。vvp首轮崩溃无RTL结论，Verilator第二轮复位fresh时延断言失败，修订获取期限后第三轮在Runner验证；原功能协议和保护复位门控不改，尚无新诊断RBF/板测。
+
+
+E4 UART观测判据：先确认帧序号、校验和与分域fresh有效位；无帧不能解释为CPU挂死。Start_seen仅覆盖普通手柄P1 raw joystick_0[7]；用户本轮明确使用手柄。fresh SYS下Start_seen=0支持输入未到该核心入口；Start_seen=1只证明收到输入，不证明游戏处理。fresh RAM下ready=0、error=1、rst_sys=1支持复位门控近端原因；ready正常且CPU复位释放后才分析取指活动/Cache busy/RAMH busy。取指计数8位会循环，相同单值不能证明停机，地址三位仅是大区分类。不同域快照不是同一物理时刻，不能用瞬态不一致直接推定因果。
+
+
+5e2079f/38236922070 UART两分频、停源与reset恢复、BSC256/CACHE160数字回归通过。67f3991追加每个valid字段内容检查及停源首帧全invalid断言，功能观测RTL不变；完整Runner38237273814已启动，需三门禁后才能Quartus。用户关闭F12后手柄Start仍无反应，排除仅在设置菜单内操作这一条件。原板e42/8MHz不变，没有新诊断RBF；输入到达/CPU活动与运行error仍待帧证据。
