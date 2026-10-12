@@ -7,6 +7,8 @@ on:
     paths:
       - .github/workflows/plan-a-bsc.yml
       - sim/psram/tb_sh7604_slow_burst.sv
+      - sim/psram/tb_sh7604_cache_slow_burst.sv
+      - sim/psram/sh7604_cache_memory_models.sv
       - rtl/SH/SH7604/BSC.sv
 permissions:
   contents: read
@@ -90,25 +92,30 @@ jobs:
               rtl/SH/SH7604/SH7604_pkg.sv "$bsc" rtl/SH/SH7604/CACHE.sv \
               sim/psram/sh7604_cache_memory_models.sv sim/psram/tb_sh7604_cache_slow_burst.sv \
               > .ci/cache-compile-$variant-$slow.log 2>&1
-            set +e
-            .ci/cache-obj-$variant-$slow/Vtb_sh7604_cache_slow_burst > .ci/cache-$variant-$slow.log 2>&1
-            result=$?
-            set -e
-            printf '%s\n' "$result" > .ci/cache-$variant-$slow.exitcode
-            grep 'CACHE_SUMMARY' .ci/cache-$variant-$slow.log
+            for initial in zero stale; do
+              args=''
+              if [ "$initial" = stale ]; then args='+stale_init'; fi
+              set +e
+              .ci/cache-obj-$variant-$slow/Vtb_sh7604_cache_slow_burst $args > .ci/cache-$variant-$slow-$initial.log 2>&1
+              result=$?
+              set -e
+              printf '%s\n' "$result" > .ci/cache-$variant-$slow-$initial.exitcode
+              grep 'CACHE_SUMMARY' .ci/cache-$variant-$slow-$initial.log
+            done
           done
           done
           python3 - <<'PY'
           from pathlib import Path
-          assert Path('.ci/cache-original-0.exitcode').read_text().strip()=='0'
-          assert 'CACHE_SUMMARY slow=0 cases=16 failed=0' in Path('.ci/cache-original-0.log').read_text()
-          old=Path('.ci/cache-original-1.log').read_text()
-          assert 'CACHE_SUMMARY slow=1 cases=64 failed=0' not in old
-          assert 'Cache slow burst integration failed' in old
-          assert Path('.ci/cache-original-1.exitcode').read_text().strip()!='0'
-          for slow,cases in ((0,16),(1,64)):
-              assert Path(f'.ci/cache-candidate-{slow}.exitcode').read_text().strip()=='0'
-              assert f'CACHE_SUMMARY slow={slow} cases={cases} failed=0' in Path(f'.ci/cache-candidate-{slow}.log').read_text()
+          for initial in ('zero','stale'):
+              assert Path(f'.ci/cache-original-0-{initial}.exitcode').read_text().strip()=='0'
+              assert 'CACHE_SUMMARY slow=0 cases=16 failed=0' in Path(f'.ci/cache-original-0-{initial}.log').read_text()
+              old=Path(f'.ci/cache-original-1-{initial}.log').read_text()
+              assert 'CACHE_SUMMARY slow=1 cases=64 failed=0' not in old
+              assert 'Cache slow burst integration failed' in old
+              assert Path(f'.ci/cache-original-1-{initial}.exitcode').read_text().strip()!='0'
+              for slow,cases in ((0,16),(1,64)):
+                  assert Path(f'.ci/cache-candidate-{slow}-{initial}.exitcode').read_text().strip()=='0'
+                  assert f'CACHE_SUMMARY slow={slow} cases={cases} failed=0' in Path(f'.ci/cache-candidate-{slow}-{initial}.log').read_text()
           print('Production CACHE+BSC: original fails, candidate M10K/MLAB model fills and hits pass.')
           PY
       - uses: actions/upload-artifact@v4

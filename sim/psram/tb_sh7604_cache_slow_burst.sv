@@ -98,6 +98,7 @@ module tb_sh7604_cache_slow_burst;
       while(phase!=0) tick();
       cpu_a=32'hfffffe92; cpu_di=1; cpu_wr=1; cpu_req=1; tick(); cpu_wr=0; cpu_req=0; repeat(6) tick();
       if(!cache.CCR.CE) $fatal(1,"Cache did not enable");
+      if(cache.HIT || cache.LRU_DATA!=0) $fatal(1,"Reset dirty bits did not hide stale memory");
       line_address=32'h06000120; monitor=1;
       read_cpu(line_address+32'(offset),0);
       if(writes!=4 || seen!=4'hf) begin errors=errors+1; $display("CACHE_FILL_COUNT writes=%0d seen=%h",writes,seen); end
