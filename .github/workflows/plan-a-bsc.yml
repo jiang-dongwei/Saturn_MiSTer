@@ -22,7 +22,7 @@ jobs:
           set -euo pipefail
           mkdir -p .ci
           for slow in 0 1; do
-            verilator --binary --timing -Wno-fatal -j 2 --top-module tb_sh7604_slow_burst \
+            verilator --binary --timing -Wno-fatal -Wno-BLKANDNBLK -j 2 --top-module tb_sh7604_slow_burst \
               -GSLOW=$slow --Mdir .ci/obj-$slow \
               rtl/SH/SH7604/SH7604_pkg.sv rtl/SH/SH7604/BSC.sv \
               sim/psram/tb_sh7604_slow_burst.sv > .ci/compile-$slow.log 2>&1
@@ -39,6 +39,9 @@ jobs:
           from pathlib import Path
           fast=Path('.ci/original-0.log').read_text()
           slow=Path('.ci/original-1.log').read_text()
+          assert Path('.ci/original-0.exitcode').read_text().strip()=='0'
+          assert Path('.ci/original-1.exitcode').read_text().strip()!='0'
+          assert 'Slow-memory burst contract violated' in slow
           assert 'SUMMARY slow=0 cases=64 failed=0' in fast
           rows=re.findall(r'CASE slow=1 dram=(\d) port=(\d) burst=(\d) fast=(\d) delay=(\d+) offset=(\d+) words=(\d+) errors=(\d+)',slow)
           assert len(rows)==192, len(rows)
