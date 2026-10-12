@@ -49,6 +49,14 @@ module tb_plan_a_uart_trace;
             $fatal(1, "Snapshot payload mismatch valid=%h RAM=%h stage=%h SYS=%h",
                    frame[3], {frame[5],frame[4]}, frame[6], {frame[9],frame[8],frame[7]});
     endtask
+    task automatic partial_contents(input reg [15:0] ram_value,
+                                     input reg [7:0] engine_value,
+                                     input reg [23:0] sys_value);
+        if ((frame[3] & 8'hf8) != 0) $fatal(1, "Reserved valid bits set");
+        if (frame[3][0] && {frame[5],frame[4]} !== ram_value) $fatal(1, "Valid RAM snapshot is stale");
+        if (frame[3][1] && frame[6] !== engine_value) $fatal(1, "Valid engine snapshot is stale");
+        if (frame[3][2] && {frame[9],frame[8],frame[7]} !== sys_value) $fatal(1, "Valid SYS snapshot is stale");
+    endtask
     initial begin
         #45;
         if (tx !== 1) $fatal(1, "Reset must hold UART idle high");
@@ -88,6 +96,7 @@ module tb_plan_a_uart_trace;
         frame_read(0);
         contents(0, 0, 0, 0);
         frame_read(1);
+        partial_contents(16'h2468, 8'h69, 24'h123456);
         frame_read(2);
         contents(7, 16'h2468, 8'h69, 24'h123456);
         wait (dut.engine_request == 1 && dut.engine_ready && dut.engine_valid);
@@ -95,14 +104,18 @@ module tb_plan_a_uart_trace;
         reset = 1;
         #50 reset = 0;
         frame_read(0);
+        contents(0, 0, 0, 0);
         frame_read(1);
+        partial_contents(16'h2468, 0, 24'h123456);
         if (frame[3] & 2) $fatal(1, "Reset/stopped-source old ACK must not validate stale data");
         frame_read(2);
         contents(5, 16'h2468, 0, 24'h123456);
         reset = 1;
         #50 reset = 0;
         frame_read(0);
+        contents(0, 0, 0, 0);
         frame_read(1);
+        partial_contents(16'h2468, 0, 24'h123456);
         if (frame[3] & 2) $fatal(1, "Reset of pending request must stay invalid");
         frame_read(2);
         contents(5, 16'h2468, 0, 24'h123456);
