@@ -69,7 +69,11 @@ module SH7604
 	input             FAST
 
 `ifdef SATURN_APS6408_DEBUG_UART
-    ,output [15:0] PA_TRACE_CPU
+    ,input [2:0] PA_TRACE_PAGE
+    ,input PA_TRACE_SAMPLE
+    ,output reg [15:0] PA_TRACE_CPU
+    ,output [2:0] PA_TRACE_PAGE_ACTUAL
+    ,output PA_FETCH_PROGRESS
 `endif
 	
 `ifdef DEBUG
@@ -214,13 +218,35 @@ module SH7604
 	bit        RES_SYNC_N;
 `ifdef SATURN_APS6408_DEBUG_UART
     reg [7:0] pa_fetch_count = 0;
+    wire pa_accepted_fetch = CE_R && EN && RES_SYNC_N && CBUS_REQ && CBUS_ID && !(CACHE_BUSY | (MULT_BUSY & ~FAST));
+    (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+    reg [2:0] pa_page_meta = 0, pa_page_sync = 0;
+    wire [2:0] pa_page = {pa_page_sync[2], pa_page_sync[2] ^ pa_page_sync[1],
+                        pa_page_sync[2] ^ pa_page_sync[1] ^ pa_page_sync[0]};
+    wire [15:0] pa_address_word;
+    wire [15:0] pa_cache_flags, pa_bus_flags;
+    assign PA_TRACE_PAGE_ACTUAL = pa_page;
+    plan_a_trace_address_bank pa_addresses(CLK, PA_TRACE_SAMPLE, pa_page, CBUS_A, IBUS_A, pa_address_word);
+    plan_a_fetch_progress pa_activity(CLK, !RST_N || !RES_SYNC_N, PA_TRACE_SAMPLE,
+                                     pa_accepted_fetch, PA_FETCH_PROGRESS);
+    always @(posedge CLK) begin
+        pa_page_meta <= PA_TRACE_PAGE;
+        pa_page_sync <= pa_page_meta;
+    end
     always @(posedge CLK) begin
         if (!RST_N || !RES_SYNC_N) pa_fetch_count <= 0;
         else if (CE_R && EN && CBUS_REQ && CBUS_ID && !(CACHE_BUSY | (MULT_BUSY & ~FAST)))
             pa_fetch_count <= pa_fetch_count + 1'b1;
     end
-    assign PA_TRACE_CPU = {pa_fetch_count, RES_SYNC_N, CBUS_REQ, CBUS_ID,
-                           CACHE_BUSY, MULT_BUSY, CBUS_A[26:24]};
+    always @* begin
+        case (pa_page)
+            0: PA_TRACE_CPU = {pa_fetch_count, RES_SYNC_N, CBUS_REQ, CBUS_ID, CACHE_BUSY, MULT_BUSY, CBUS_A[26:24]};
+            1: PA_TRACE_CPU = pa_cache_flags;
+            2, 3, 4, 5: PA_TRACE_CPU = pa_address_word;
+            6: PA_TRACE_CPU = pa_bus_flags;
+            default: PA_TRACE_CPU = 0;
+        endcase
+    end
 `endif
 	always @(posedge CLK or negedge RST_N) begin
 		if (!RST_N) begin
@@ -336,6 +362,9 @@ module SH7604
 		.IBUS_BURST(IBUS_BURST),
 		.IBUS_LOCK(IBUS_LOCK),
 		.IBUS_WAIT(IBUS_WAIT)
+`ifdef SATURN_APS6408_DEBUG_UART
+        ,.PA_CACHE_FLAGS(pa_cache_flags)
+`endif
 	);
 	
 	assign IBUS_DI = INTC_ACT ? INTC_DO : 
@@ -572,6 +601,9 @@ module SH7604
 		.BUS_RLS(BUS_RLS),
 		
 		.FAST(FAST)
+`ifdef SATURN_APS6408_DEBUG_UART
+        ,.PA_BUS_FLAGS(pa_bus_flags)
+`endif
 	);
 	
 	assign {A,DO}                                 = !BUS_RLS ? {IA,IDO}                                     : {EA,EDO};

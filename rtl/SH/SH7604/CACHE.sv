@@ -27,6 +27,9 @@ module SH7604_CACHE (
 	output            IBUS_BURST,
 	output            IBUS_LOCK,
 	input             IBUS_WAIT
+`ifdef SATURN_APS6408_DEBUG_UART
+    ,output [15:0] PA_CACHE_FLAGS
+`endif
 );
 
 	import SH7604_PKG::*;
@@ -428,6 +431,11 @@ module SH7604_CACHE (
 	                 IBDATA_RDY ? IBUS_DI : 
 						  CACHE_DATA;
 	assign CBUS_BUSY = CBUS_REQ && (IBUS_READ || IBUS_READARRAY || IBUS_READ_PEND || IBUS_WRITE_PEND);
+`ifdef SATURN_APS6408_DEBUG_UART
+    assign PA_CACHE_FLAGS = {CCR.CE, HIT, CACHE_AREA, NOCACHE_AREA, IBUS_BURST, IBUS_PREREQ,
+                            CBUS_REQ, CBUS_ID, CBUS_WR, CBUS_BUSY, IBREQ, IBUS_WAIT,
+                            IBUS_READ, IBUS_READARRAY, IBUS_READ_PEND, IBUS_WRITE_PEND};
+`endif
 						  
 	assign IBUS_A = IBADDR;
 	assign IBUS_DO = IBDATA;

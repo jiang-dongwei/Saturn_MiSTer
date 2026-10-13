@@ -924,6 +924,8 @@ module emu
 `ifdef SATURN_APS6408_DEBUG_UART
         .PA_TRACE_CPU(pa_trace_cpu),
         .PA_CPU_RESET_N(pa_cpu_reset_n),
+        .PA_TRACE_PAGE(pa_trace_page_select), .PA_TRACE_SAMPLE(pa_trace_sample),
+        .PA_TRACE_PAGE_ACTUAL(pa_trace_page), .PA_FETCH_PROGRESS(pa_fetch_progress),
 `endif
 		.EN(~DBG_PAUSE),
 		
@@ -1697,12 +1699,14 @@ module emu
     wire [15:0] pa_trace_cpu;
     wire [1:0] pa_cpu_reset_n;
     wire [7:0] pa_stage;
+    wire [2:0] pa_trace_page_select, pa_trace_page;
+    wire pa_trace_sample, pa_fetch_progress;
     reg pa_start_seen = 0;
     always @(posedge clk_sys) begin
         if (reset || bios_download) pa_start_seen <= 0;
         else if (joystick_0[7]) pa_start_seen <= 1;
     end
-    plan_a_uart_trace pa_trace (
+    plan_a_uart_trace #(.PAGED_CPU(1)) pa_trace (
         .clk(CLK_50M), .reset(RESET), .ram_clk(clk_ram),
         .engine_clk(psram_engine_clk), .sys_clk(clk_sys),
         .ram_data({psram_clock_mode, psram_selected_speed, ~RAMH_CS_N & ~MEM_RD_N,
@@ -1710,8 +1714,9 @@ module emu
                    reset, rst_sys, psram_opi_ready, psram_adapter_error,
                    psram_qpi_init_error, psram_qpi_init_done}),
         .engine_data(pa_stage),
-        .sys_data({2'b00, pa_cpu_reset_n, 2'b00, pa_start_seen, joystick_0[7], pa_trace_cpu}),
-        .tx(UART_TXD)
+        .sys_data({pa_trace_page[1:0], pa_cpu_reset_n, pa_trace_page[2], pa_fetch_progress,
+                   pa_start_seen, joystick_0[7], pa_trace_cpu}),
+        .tx(UART_TXD), .sys_page_select(pa_trace_page_select), .sys_sample_taken(pa_trace_sample)
     );
 `endif
 	wire psram_engine_clk, psram_phy_clk, psram_pll_locked;

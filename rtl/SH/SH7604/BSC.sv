@@ -71,6 +71,9 @@ module SH7604_BSC
 	output            BUS_RLS,
 	
 	input             FAST
+`ifdef SATURN_APS6408_DEBUG_UART
+    ,output [15:0] PA_BUS_FLAGS
+`endif
 	
 );
 
@@ -1043,6 +1046,10 @@ module SH7604_BSC
 		
 	assign CBUS_DO = REG_SEL ? REG_DO : CBUS_ACTIVE ? DAT_BUF : '0;
 	assign CBUS_BUSY = CBUSY | CBUSY2 | ((BUS_RLS | (BGR & MASTER) | (~BREQ & ~MASTER)) & CBUS_EXT_REQ) | ((DBUS_ACTIVE | VBUS_ACTIVE | REFRESH_ACTIVE) & ~CBUS_PER_REQ);
+`ifdef SATURN_APS6408_DEBUG_UART
+    assign PA_BUS_FLAGS = {BUS_STATE, BUS_RLS, BGR, CBUSY, CBUSY2, DBUS_ACTIVE, VBUS_ACTIVE,
+                          REFRESH_ACTIVE, CBUS_EXT_REQ, CBUS_PER_REQ, CBUS_ACTIVE, BUS_END, CBUS_REQ};
+`endif
 	assign CBUS_ACT = REG_SEL;
 	
 	assign DBUS_DO = DBUS_ACTIVE ? DAT_BUF : '0;

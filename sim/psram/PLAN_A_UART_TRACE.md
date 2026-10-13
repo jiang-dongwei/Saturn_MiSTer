@@ -53,3 +53,31 @@ stopped engine clock heartbeats, invalid snapshots, and source clock recovery.
 The tests include source-stopped resets with acknowledged and pending requests,
 and both accelerated 8-cycle and actual 434-cycle baud dividers.
 Digital simulation and experimental board observation do not establish timing signoff.
+
+
+## Paged v2 (experimental)
+
+PAGED_CPU=1 emits A6 5A with the same eleven-byte layout and XOR-zero checksum.
+The CPU word is page-specific. SYS byte bits 7:6 are page[1:0], bit3 is page[2],
+bit2 is fetch progress since the last source snapshot (including this sampling edge).
+Bits5/4 remain system/master reset released and bits1/0 Start seen/current.
+Only decode source data when its valid bit is set; the actual source page tag is authoritative.
+
+| Page | CPU word |
+| --- | --- |
+| 0 | Legacy modulo fetch count and CPU state |
+| 1 | CACHE: CE,HIT,CACHE_AREA,NOCACHE_AREA,IBUS_BURST,IBUS_PREREQ,CBUS_REQ,CBUS_ID,CBUS_WR,CBUS_BUSY,IBREQ,IBUS_WAIT,IBUS_READ,IBUS_READARRAY,IBUS_READ_PEND,IBUS_WRITE_PEND |
+| 2 | Current CBUS address low16; freezes full CBUS/IBUS at this snapshot edge |
+| 3 | Frozen CBUS address high16 |
+| 4 | Frozen IBUS address low16 |
+| 5 | Frozen IBUS address high16 |
+| 6 | BSC: BUS_STATE[3:0],BUS_RLS,BGR,CBUSY,CBUSY2,DBUS_ACTIVE,VBUS_ACTIVE,REFRESH_ACTIVE,CBUS_EXT_REQ,CBUS_PER_REQ,CBUS_ACTIVE,BUS_END,CBUS_REQ |
+| 7 | SCU: CBUS_ST[3:0],DMA_ST[4:0],CBRLS,CBREQ_N,CBACK_N,ECWAIT_N_FF,CBUS_REQ,CBUS_REL,CBUS_WAIT |
+
+Flags are listed MSB first. SCU CBUS_WAIT describes CPU access to the A/B bus;
+it is not the APS adapter busy flag. Different status pages are sampled at different times.
+Only pages2 through5 represent one frozen address pair. Reconstruct only a consecutive,
+valid2/3/4/5 group with continuous sequence and released resets. Discard partial groups
+on invalid data, gaps, reset, repeated tags or reconnection. These bus addresses are
+not an architectural PC or instruction-retirement counter. No performance or timing
+acceptance follows from a successful diagnostic build.

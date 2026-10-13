@@ -12,6 +12,8 @@ module tb_plan_a_uart_trace;
     reg [7:0] engine_data = 8'hc6;
     reg [23:0] sys_data = 24'habcdef;
     wire tx;
+    wire [2:0] sys_page_select;
+    wire sys_sample_taken;
     plan_a_uart_trace #(.DIVIDER(DIVIDER)) dut(.*);
     reg [7:0] frame [0:10];
     integer frames = 0;

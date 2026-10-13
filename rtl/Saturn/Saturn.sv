@@ -5,6 +5,10 @@ module Saturn
 `ifdef SATURN_APS6408_DEBUG_UART
     output [15:0] PA_TRACE_CPU,
     output [1:0] PA_CPU_RESET_N,
+    input [2:0] PA_TRACE_PAGE,
+    input PA_TRACE_SAMPLE,
+    output [2:0] PA_TRACE_PAGE_ACTUAL,
+    output PA_FETCH_PROGRESS,
 `endif
 	input              RST_N,
 	input              EN,
@@ -218,6 +222,8 @@ module Saturn
 	bit         MSHRES_N;
 `ifdef SATURN_APS6408_DEBUG_UART
     assign PA_CPU_RESET_N = {SYSRES_N, MSHRES_N};
+    wire [15:0] pa_msh_trace_cpu, pa_scu_flags;
+    assign PA_TRACE_CPU = PA_TRACE_PAGE_ACTUAL == 7 ? pa_scu_flags : pa_msh_trace_cpu;
 `endif
 	bit         MSHNMI_N;
 	bit         MSHBGR_N;
@@ -408,7 +414,8 @@ module Saturn
 		
 		.FAST(FAST)
 `ifdef SATURN_APS6408_DEBUG_UART
-        ,.PA_TRACE_CPU(PA_TRACE_CPU)
+        ,.PA_TRACE_CPU(pa_msh_trace_cpu), .PA_TRACE_PAGE(PA_TRACE_PAGE), .PA_TRACE_SAMPLE(PA_TRACE_SAMPLE),
+        .PA_TRACE_PAGE_ACTUAL(PA_TRACE_PAGE_ACTUAL), .PA_FETCH_PROGRESS(PA_FETCH_PROGRESS)
 `endif
 `ifdef DEBUG
 		,
@@ -478,6 +485,10 @@ module Saturn
 		.MD(6'b101000),
 		
 		.FAST(FAST)
+`ifdef SATURN_APS6408_DEBUG_UART
+        ,.PA_TRACE_PAGE(3'b000), .PA_TRACE_SAMPLE(1'b0), .PA_TRACE_CPU(),
+        .PA_TRACE_PAGE_ACTUAL(), .PA_FETCH_PROGRESS()
+`endif
 `ifdef DEBUG
 		,
 		.DBG_REGN('0),
@@ -629,6 +640,9 @@ module Saturn
 		.IRQS_N(IRQS_N),
 	
 		.MIREQ_N(MIRQ_N),
+`ifdef SATURN_APS6408_DEBUG_UART
+        .PA_SCU_FLAGS(pa_scu_flags),
+`endif
 		
 		.FAST(FAST)
 	);

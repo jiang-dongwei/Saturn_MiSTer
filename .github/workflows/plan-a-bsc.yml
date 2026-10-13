@@ -12,6 +12,10 @@ on:
       - rtl/SH/SH7604/BSC.sv
       - rtl/plan_a_uart_trace.sv
       - sim/psram/tb_plan_a_uart_trace.sv
+      - sim/psram/tb_plan_a_uart_paged.sv
+      - sim/psram/tb_plan_a_trace_address_bank.sv
+      - sim/psram/tb_plan_a_fetch_progress.sv
+      - rtl/SH/SH7604/SH7604.sv
 permissions:
   contents: read
 jobs:
@@ -33,6 +37,18 @@ jobs:
               -GDIVIDER=$divider --Mdir .ci/uart-$divider rtl/plan_a_uart_trace.sv sim/psram/tb_plan_a_uart_trace.sv \
               > .ci/uart-compile-$divider.log 2>&1
             .ci/uart-$divider/Vtb_plan_a_uart_trace | tee -a .ci/plan-a-uart.log
+          done
+          for divider in 8 434; do
+            verilator --binary --timing -Wno-fatal -j "$(nproc)" --top-module tb_plan_a_uart_paged \
+              -GDIVIDER=$divider --Mdir .ci/uart-paged-$divider rtl/plan_a_uart_trace.sv sim/psram/tb_plan_a_uart_paged.sv \
+              > .ci/uart-paged-compile-$divider.log 2>&1
+            .ci/uart-paged-$divider/Vtb_plan_a_uart_paged | tee -a .ci/plan-a-uart-paged.log
+          done
+          for unit in trace_address_bank fetch_progress; do
+            verilator --binary --timing -Wno-fatal -Wno-BLKANDNBLK -j "$(nproc)" --top-module tb_plan_a_$unit \
+              --Mdir .ci/uart-$unit rtl/plan_a_uart_trace.sv sim/psram/tb_plan_a_$unit.sv \
+              > .ci/uart-$unit-compile.log 2>&1
+            .ci/uart-$unit/Vtb_plan_a_$unit | tee .ci/uart-$unit.log
           done
       - name: Compile on Runner and record original contract failures
         shell: bash

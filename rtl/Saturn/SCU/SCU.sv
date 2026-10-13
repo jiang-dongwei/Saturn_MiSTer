@@ -71,6 +71,9 @@ module SCU
 	input             MIREQ_N,
 	
 	input             FAST
+`ifdef SATURN_APS6408_DEBUG_UART
+    ,output [15:0] PA_SCU_FLAGS
+`endif
 	
 `ifdef DEBUG
 	                  ,
@@ -342,6 +345,9 @@ module SCU
 		DMA_STOP
 	} DMAState_t;
 	DMAState_t DMA_ST;
+`ifdef SATURN_APS6408_DEBUG_UART
+    assign PA_SCU_FLAGS = {CBUS_ST, DMA_ST, CBRLS, CBREQ_N, CBACK_N, ECWAIT_N_FF, CBUS_REQ, CBUS_REL, CBUS_WAIT};
+`endif
 	
 	bit  [26:0] DMA_IA;
 	bit  [26:0] DMA_RA;
