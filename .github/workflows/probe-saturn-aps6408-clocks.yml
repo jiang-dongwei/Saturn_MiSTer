@@ -1,0 +1,63 @@
+name: Probe Saturn APS6408 clock constraints
+on:
+  push:
+    branches: [codex/qpi-33m87-validation]
+    paths:
+      - .github/workflows/probe-saturn-aps6408-clocks.yml
+      - sim/psram/probe_saturn_aps6408_clocks.tcl
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: saturn-aps6408-clock-probe-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Free runner disk
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune --all --force
+      - name: Pull fixed Quartus
+        run: docker pull theypsilon/quartus-lite-c5:17.0.2
+      - name: Restore unchanged HDL mapping for current SDC inspection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code 9cd78fd0af49a5e4966808458724b4727ec2ad42 HEAD -- \
+            '*.sv' '*.v' '*.vhd' '*.qip' '*.qsf' '*.qsys' '*.ip' '*.mif' '*.hex' '*.qpf' 'sys/*.tcl'
+          mkdir -p .ci/clock-cache
+          gh run download 37713782497 --repo "$GITHUB_REPOSITORY" \
+            --name Saturn_APS6408_Clock_Probe --dir .ci/clock-cache
+          tar -xzf .ci/clock-cache/.ci/aps-clock-map-db.tar.gz
+      - name: Inspect post-map clock model with Quartus 17
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          docker run --rm -v "$GITHUB_WORKSPACE:/project" -w /project \
+            theypsilon/quartus-lite-c5:17.0.2 \
+            bash -lc 'set -euo pipefail; quartus_sta -t sim/psram/probe_saturn_aps6408_clocks.tcl 2>&1 | tee .ci/aps-clock-probe.log'
+      - name: Preserve mapped database for clock investigation
+        if: always()
+        run: |
+          if test -d db; then tar -czf .ci/aps-clock-map-db.tar.gz db Saturn_APS6408.qsf; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Saturn_APS6408_Clock_Probe
+          include-hidden-files: true
+          retention-days: 7
+          path: |
+            .ci/aps-clock-*.log
+            .ci/aps-clock-*.rpt
+            .ci/aps-clock-map-db.tar.gz
+            output_files_aps6408/*.map.rpt

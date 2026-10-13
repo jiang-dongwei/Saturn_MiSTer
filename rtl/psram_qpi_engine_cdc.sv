@@ -13,7 +13,8 @@ module psram_qpi_engine_cdc
 	parameter integer POWERUP_CYCLES = 20000,
 	parameter [5:0]   HALF_DIVIDER = 6'd1,
 	parameter [7:0]   GUARD_CYCLES = 8'd8,
-	parameter integer DIRECT_READ_CAPTURE = 0
+	parameter integer DIRECT_READ_CAPTURE = 0,
+	parameter integer FAST_READ_PIPELINE = 0
 )
 (
 	input              src_clk,
@@ -169,7 +170,8 @@ module psram_qpi_engine_cdc
 		.POWERUP_CYCLES(POWERUP_CYCLES),
 		.HALF_DIVIDER(HALF_DIVIDER),
 		.GUARD_CYCLES(GUARD_CYCLES),
-		.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE)
+		.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE),
+		.FAST_READ_PIPELINE(FAST_READ_PIPELINE)
 	)
 	engine_core
 	(

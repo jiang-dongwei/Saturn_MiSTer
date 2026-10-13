@@ -143,7 +143,12 @@ module emu
 	// 3SQR QPI PSRAM adapter used as the Saturn High Work RAM backend.
 	output        PSRAM_CLK,
 	output        PSRAM_CE_N,
+`ifdef SATURN_APS6408
+	inout   [7:0] PSRAM_DQ,
+	inout         PSRAM_DQS,
+`else
 	inout   [3:0] PSRAM_DQ,
+`endif
 `endif
 
 `ifdef MISTER_DUAL_SDRAM
@@ -311,8 +316,12 @@ module emu
 		"S1,SAV,Mount Backup RAM;",
 		"D0R[25],Save Backup RAM;",
 `endif
-		"D0O[26],Autosave,Off,On;", 
+		"D0O[26],Autosave,Off,On;",
 		"-;",
+`ifdef SATURN_APS6408
+		"O[83:82],PSRAM clock,33.87 MHz,16.93 MHz,8.47 MHz,50.80 MHz EXP;",
+		"-;",
+`endif
 
 		"P1,Audio & Video;",
 		"P1-;",
@@ -644,7 +653,12 @@ module emu
 		end
 	end
 	
+`ifdef SATURN_APS6408
+	wire psram_opi_ready;
+	wire rst_sys = reset | download | rst_ram | stv_res | !psram_opi_ready;
+`else
 	wire rst_sys = reset | download | rst_ram | stv_res;
+`endif
 	
 `ifndef MISTER_DUAL_SDRAM
 	wire fast_timing = status[28];
@@ -1670,6 +1684,61 @@ module emu
 	wire [15:0] psram_qpi_device_id;
 	wire        psram_adapter_error;
 
+`ifdef SATURN_APS6408
+	wire psram_engine_clk, psram_phy_clk, psram_pll_locked;
+	wire psram_control_clk, psram_fast_clk, psram_reference_clk;
+	wire psram_clk_33_unused;
+	reg [2:0] psram_reset_pipe = 3'b111;
+	(* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
+	reg [1:0] psram_mode_meta = 0, psram_mode_sync = 0;
+	reg [1:0] psram_clock_mode = 0;
+	reg psram_mode_restart = 0;
+	always @(posedge CLK_50M) begin
+		psram_mode_meta <= status[83:82];
+		psram_mode_sync <= psram_mode_meta;
+		psram_mode_restart <= 0;
+		if (psram_clock_mode != psram_mode_sync) begin
+			psram_clock_mode <= psram_mode_sync;
+			psram_mode_restart <= 1;
+		end
+	end
+	wire [1:0] psram_selected_speed = psram_clock_mode == 2 ? 2'd0 : psram_clock_mode == 1 ? 2'd1 : psram_clock_mode == 3 ? 2'd3 : 2'd2;
+	altclkctrl #(
+		.clock_type("Global Clock"), .intended_device_family("Cyclone V"),
+		.number_of_clocks(1), .ena_register_mode("falling edge")
+	) psram_reference_control (
+		.inclk({3'b000,CLK_50M}), .clkselect(2'b00), .ena(1'b1), .outclk(psram_reference_clk)
+	);
+	aps6408_runtime_pll psram_speed_pll (
+		.refclk(psram_reference_clk), .rst(1'b0), .outclk_0(psram_clk_33_unused),
+		.outclk_1(psram_control_clk), .outclk_2(psram_phy_clk), .outclk_3(psram_fast_clk), .locked(psram_pll_locked)
+	);
+	altclkctrl #(
+		.clock_type("Global Clock"), .intended_device_family("Cyclone V"),
+		.number_of_clocks(4), .ena_register_mode("falling edge"),
+		.use_glitch_free_switch_over_implementation("ON")
+	) psram_clock_control (
+		.inclk({psram_fast_clk,psram_control_clk,1'b0,CLK_50M}),
+		.clkselect({1'b1,psram_clock_mode==3}), .ena(1'b1), .outclk(psram_engine_clk)
+	);
+	wire psram_reset_request = reset || rst_ram || !psram_pll_locked || psram_mode_restart || psram_clock_mode != psram_mode_sync;
+	always @(posedge psram_engine_clk) begin
+		if (psram_reset_request) psram_reset_pipe <= 3'b111;
+		else psram_reset_pipe <= {psram_reset_pipe[1:0],1'b0};
+	end
+	assign psram_opi_ready = psram_qpi_init_done && !psram_qpi_init_error && !psram_adapter_error;
+	ramh_aps6408_adapter ramh_psram (
+		.clk(clk_ram), .reset(psram_reset_request), .engine_clk(psram_engine_clk),
+		.engine_reset(psram_reset_pipe[2]), .clk_phy(psram_phy_clk),
+		.speed_select(psram_selected_speed),
+		.addr(MEM_A[19:2]), .din(ramh_din), .wr(ramh_wr),
+		.rd(~RAMH_CS_N & ~MEM_RD_N), .burst(RAMH_BURST), .rfs(~RAMH_CS_N & RAMH_RFS),
+		.dout(psram_ramh_do), .busy(psram_ramh_busy),
+		.init_done(psram_qpi_init_done), .init_error(psram_qpi_init_error),
+		.adapter_error(psram_adapter_error), .device_id(psram_qpi_device_id), .stage_code(),
+		.PSRAM_CLK(PSRAM_CLK), .PSRAM_CE_N(PSRAM_CE_N), .PSRAM_DQ(PSRAM_DQ), .PSRAM_DQS(PSRAM_DQS)
+	);
+`else
 `ifdef SATURN_PSRAM_33M87
 	// Keep the Saturn-side cache and RAMH handshake in clk_ram.  Only the QPI
 	// transaction engine moves to the already hardware-tested 67.7376 MHz PLL
@@ -1708,6 +1777,7 @@ module emu
 		.GUARD_CYCLES(8'd8),
 		.READ_LINE_BYTES(16),
 		.DIRECT_READ_CAPTURE(0),
+		.FAST_READ_PIPELINE(1),
 		.ASYNC_ENGINE(1)
 	)
 `endif
@@ -1736,6 +1806,7 @@ module emu
 		.PSRAM_CE_N(PSRAM_CE_N),
 		.PSRAM_DQ(PSRAM_DQ)
 	);
+`endif
 `endif
 
 `ifdef MISTER_DUAL_SDRAM

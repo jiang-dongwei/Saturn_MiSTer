@@ -1,9 +1,26 @@
 `timescale 1ns/1ps
 
-module tb_ramh_psram_adapter;
+module tb_ramh_psram_adapter #(
+	parameter integer ASYNC_ENGINE = 0,
+	parameter integer FAST_READ_PIPELINE = 0,
+	parameter integer READ_OUTPUT_DELAY_NS = 16
+);
 
 reg clk = 1'b0;
 always #4.365 clk = ~clk;
+
+reg engine_clk = 1'b0;
+integer engine_phase_ns = 0;
+initial begin
+	if ($value$plusargs("ENGINE_PHASE_NS=%d", engine_phase_ns)) begin end
+	#(engine_phase_ns);
+	forever #7.381 engine_clk = ~engine_clk;
+end
+reg [1:0] engine_reset_pipe = 2'b11;
+always @(posedge engine_clk or posedge reset) begin
+	if (reset) engine_reset_pipe <= 2'b11;
+	else engine_reset_pipe <= {engine_reset_pipe[0], 1'b0};
+end
 
 reg reset = 1'b1;
 reg [19:2] addr = '0;
@@ -25,13 +42,17 @@ wire [3:0] psram_dq;
 ramh_psram_adapter
 #(
 	.POWERUP_CYCLES(4),
-	.HALF_DIVIDER(6'd2),
-	.GUARD_CYCLES(8'd8)
+	.HALF_DIVIDER(ASYNC_ENGINE ? 6'd1 : 6'd2),
+	.GUARD_CYCLES(8'd8),
+	.FAST_READ_PIPELINE(FAST_READ_PIPELINE),
+	.ASYNC_ENGINE(ASYNC_ENGINE)
 )
 dut
 (
 	.clk(clk),
 	.reset(reset),
+	.engine_clk(engine_clk),
+	.engine_reset(engine_reset_pipe[1]),
 	.addr(addr),
 	.din(din),
 	.wr(wr),
@@ -51,7 +72,7 @@ dut
 
 psram_diag_model
 #(
-	.READ_OUTPUT_DELAY_NS(16)
+	.READ_OUTPUT_DELAY_NS(READ_OUTPUT_DELAY_NS)
 )
 memory
 (
@@ -274,7 +295,36 @@ initial begin
 	if (transaction_count != before_count || busy)
 		$fatal(1, "FAIL: rfs generated PSRAM traffic or busy");
 
-	$display("PASS: S2-B RAMH adapter line fill/hit, endian mapping, direct writes, invalidation, and RFS no-op");
+	if (ASYNC_ENGINE) begin
+		// Abort a line fill, then hold a new read through both reset releases.
+		@(negedge clk);
+		addr = 20'h00100 >> 2;
+		rd = 1'b1;
+		@(negedge psram_ce_n);
+		repeat (5) @(negedge clk);
+		reset = 1'b1;
+		addr = 20'h00110 >> 2;
+		repeat (6) @(negedge clk);
+		reset = 1'b0;
+		init_timeout = 0;
+		while ((!init_done || busy) && init_timeout < 100000) begin
+			@(posedge clk);
+			#1;
+			if (!init_done && !busy)
+				$fatal(1, "FAIL: reset exposed an uninitialized CDC response");
+			init_timeout = init_timeout + 1;
+		end
+		if (!init_done || busy || init_error || adapter_error ||
+		    dout !== 32'h01234567)
+			$fatal(1, "FAIL: CDC reset/read recovery data=%08h", dout);
+		@(negedge clk);
+		rd = 1'b0;
+		repeat (12) @(posedge clk);
+		if (busy || adapter_error)
+			$fatal(1, "FAIL: late CDC completion after reset");
+	end
+
+	$display("PASS: RAMH adapter ASYNC_ENGINE=%0d FAST_READ_PIPELINE=%0d phase=%0dns line fill/hit, endian mapping, all write masks, invalidation, RFS and reset", ASYNC_ENGINE, FAST_READ_PIPELINE, engine_phase_ns);
 	$finish;
 end
 

@@ -1,7 +1,17 @@
 name: Build APS6408 diagnostic
 
 on:
+  workflow_call:
+    inputs:
+      simulation_only:
+        type: boolean
+        default: true
   workflow_dispatch:
+    inputs:
+      simulation_only:
+        description: Run protocol simulations without rebuilding Quartus
+        type: boolean
+        default: false
   push:
     branches:
       - feature/saturn-psram-33m87-slow1
@@ -11,6 +21,7 @@ on:
       - Saturn_APS6408_Diag.*
       - files_aps6408_diag.qip
       - rtl/aps6408_diag_*.sv
+      - rtl/aps6408_diag_pll/**
       - sim/psram/tb_aps6408_diag.sv
       - sys/sys_psram_opi.tcl
       - sys/sys.tcl
@@ -33,11 +44,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y iverilog
           mkdir -p .ci
-          iverilog -g2012 -s tb_aps6408_diag -o .ci/aps6408_diag.vvp \
-            rtl/aps6408_diag_core.sv sim/psram/tb_aps6408_diag.sv
+          iverilog -g2012 -DAPS6408_DIAG_SIM -s tb_aps6408_diag -o .ci/aps6408_diag.vvp \
+            rtl/aps6408_diag_core.sv rtl/aps6408_diag_rx.sv rtl/aps6408_diag_ddio_input.sv sim/psram/tb_aps6408_diag.sv
           vvp .ci/aps6408_diag.vvp +speed16
+          vvp .ci/aps6408_diag.vvp +speed16 +dq_lags_dqs
+          vvp .ci/aps6408_diag.vvp +speed16 +late_memory_fall
+          vvp .ci/aps6408_diag.vvp +speed16 +corrupt
           vvp .ci/aps6408_diag.vvp +speed33
           vvp .ci/aps6408_diag.vvp +speed33 +corrupt
+          vvp .ci/aps6408_diag.vvp +speed33 +dq_leads_dqs
+          vvp .ci/aps6408_diag.vvp +speed33 +dq_lags_dqs
+          vvp .ci/aps6408_diag.vvp +speed33 +dq_lags_dqs +corrupt
+          vvp .ci/aps6408_diag.vvp +speed33 +dq_lags_dqs +bad_id
+          vvp .ci/aps6408_diag.vvp +speed33 +late_memory_fall
+          vvp .ci/aps6408_diag.vvp +speed33 +bad_id
+          for delay in 2 6 7.2 10 13; do
+            vvp .ci/aps6408_diag.vvp +speed33 "+dqs_delay_ns=$delay" +dq_skew_ns=0.6
+          done
           for scenario in normal corrupt no_dqs missing_slot1 alias_bit12 bad_id early_dqs; do
             if [ "$scenario" = normal ]; then
               vvp .ci/aps6408_diag.vvp
@@ -46,7 +69,37 @@ jobs:
             fi
           done
 
+          for speed in speed16 speed33; do
+            for mode in low_write low_read; do
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$mode"
+              for fault in high_write_fault high_read_fault corrupt; do
+                vvp .ci/aps6408_diag.vvp "+$speed" "+$mode" "+$fault"
+              done
+            done
+          done
+
+          for speed in speed16 speed33; do
+            vvp .ci/aps6408_diag.vvp "+$speed" +burst_tail
+            for phase in d1early d1late d1fall; do
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$phase" +burst_tail
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$phase" +burst_tail +low_write
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$phase" +burst_tail +low_write +high_read_fault
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$phase" +burst_tail +low_read +high_read_fault
+            done
+            vvp .ci/aps6408_diag.vvp "+$speed" +d1fall +burst_tail +low_write +late_memory_fall
+          done
+          vvp .ci/aps6408_diag.vvp +drive_half +burst_tail
+          vvp .ci/aps6408_diag.vvp +drive_half +drop_drive_write
+          for speed in speed16 speed33; do
+            for phase in fixed d1late d1fall; do
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$phase" +drive_half +burst_tail
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$phase" +drive_half +burst_tail +low_write +high_read_fault
+              vvp .ci/aps6408_diag.vvp "+$speed" "+$phase" +drive_half +burst_tail +low_read +high_read_fault
+            done
+          done
+
       - name: Free runner disk space
+        if: ${{ !inputs.simulation_only }}
         shell: bash
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
@@ -54,9 +107,11 @@ jobs:
           df -h
 
       - name: Pull fixed Quartus image
+        if: ${{ !inputs.simulation_only }}
         run: docker pull theypsilon/quartus-lite-c5:17.0.2
 
       - name: Compile diagnostic revision
+        if: ${{ !inputs.simulation_only }}
         shell: bash
         run: |
           mkdir -p .ci
@@ -66,15 +121,28 @@ jobs:
             theypsilon/quartus-lite-c5:17.0.2 \
             bash -lc 'set -euo pipefail; cores=$(nproc); sed -i -E "s/(NUM_PARALLEL_PROCESSORS) [0-9]+/\1 ${cores}/" Saturn_APS6408_Diag.qsf; printf "Available compile processors: %s\n" "$cores"; quartus_sh --flow compile Saturn_APS6408_Diag 2>&1 | tee .ci/aps6408-build.log'
 
+      - name: Report APS6408 critical timing paths
+        if: ${{ !inputs.simulation_only }}
+        shell: bash
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/project" \
+            --workdir /project \
+            theypsilon/quartus-lite-c5:17.0.2 \
+            bash -lc 'set -euo pipefail; quartus_sta -t sim/psram/report_aps6408_timing.tcl 2>&1 | tee .ci/aps6408-critical-paths.log'
+
       - name: Upload bitstream and reports
-        if: always()
+        if: ${{ always() && !inputs.simulation_only }}
         uses: actions/upload-artifact@v4
         with:
           name: APS6408_Diag-${{ github.run_number }}
           if-no-files-found: warn
           retention-days: 30
+          include-hidden-files: true
           path: |
             .ci/aps6408-build.log
+            .ci/aps6408-critical-paths.log
+            .ci/aps6408-*.rpt
             output_files_aps6408_diag/Saturn_APS6408_Diag.rbf
             output_files_aps6408_diag/Saturn_APS6408_Diag.flow.rpt
             output_files_aps6408_diag/Saturn_APS6408_Diag.fit.rpt

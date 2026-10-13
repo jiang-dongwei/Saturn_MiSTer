@@ -13,15 +13,22 @@ module aps6408_diag_video
 	input      [15:0] actual_data,
 	input       [2:0] speed_index,
 	input       [1:0] mode,
+    input       [1:0] d1_mode,
+    input             drive_half,
+    input      [15:0] mr_pair0, mr_pair1,
+    input      [15:0] reference_mr0, reference_mr1,
 	input      [23:0] matrix_a,
 	input      [23:0] matrix_b,
 	input      [23:0] matrix_c,
 	input      [15:0] read_edge_pair,
 	input      [15:0] read_sample_early,
 	input      [15:0] read_sample_mid,
+    input      [15:0] read_sample_center,
 	input      [15:0] read_sample_late,
 	input      [15:0] retry_read_data,
 	input             retry_read_valid,
+	input      [1:0]  read_capture_tap,
+    input      [1:0] read_capture_tap_second,
 
 	output            ce_pixel,
 	output reg  [7:0] red,
@@ -60,9 +67,9 @@ localparam [383:0] TXT_RESULT = {"RESULT:", {41{8'h20}}};
 localparam [383:0] TXT_STAGE = {"STAGE:", {42{8'h20}}};
 localparam [383:0] TXT_ID = {"MR1/MR2:", {40{8'h20}}};
 localparam [383:0] TXT_KGD = {"INTERFACE: X8 DDR", {31{8'h20}}};
-localparam [383:0] TXT_SPEED8 = {"CLOCK: 8.47 MHZ", {33{8'h20}}};
-localparam [383:0] TXT_SPEED16 = {"CLOCK: 16.93 MHZ", {32{8'h20}}};
-localparam [383:0] TXT_SPEED33 = {"CLOCK: 33.87 MHZ", {32{8'h20}}};
+localparam [383:0] TXT_SPEED8 = {"TARGET: 8.47 MHZ", {32{8'h20}}};
+localparam [383:0] TXT_SPEED16 = {"TARGET: 16.93 MHZ", {31{8'h20}}};
+localparam [383:0] TXT_SPEED33 = {"TARGET: 33.87 MHZ", {31{8'h20}}};
 localparam [383:0] TXT_ADDRESS = {"ADDRESS:", {40{8'h20}}};
 localparam [383:0] TXT_EXPECTED = {"EXPECTED:", {39{8'h20}}};
 localparam [383:0] TXT_ACTUAL = {"ACTUAL:", {41{8'h20}}};
@@ -74,6 +81,10 @@ localparam [383:0] TXT_HELP3 = {"E1 DQS E2 DATA E4 SAMPLE E5 MR MAP E6 EDGE", {6
 localparam [383:0] TXT_HELP4 = {"OSD SELECT CLOCK  LED7 FAIL LED6 PASS", {11{8'h20}}};
 localparam [383:0] TXT_E2_SAMPLES = {"EARLY:      MID:      LATE:    ", {17{8'h20}}};
 localparam [383:0] TXT_E2_EDGES = {"DQS EDGES:", {38{8'h20}}};
+localparam [383:0] TXT_RX_EARLY = {"RX TAP: EARLY", {35{8'h20}}};
+localparam [383:0] TXT_RX_MID = {"RX TAP: MID", {37{8'h20}}};
+localparam [383:0] TXT_RX_LATE = {"RX TAP: LATE", {36{8'h20}}};
+localparam [383:0] TXT_RX_CENTER = {"RX TAP: CENTER", {34{8'h20}}};
 
 function [7:0] fixed_char;
 	input [383:0] text;
@@ -214,11 +225,27 @@ function [7:0] screen_char;
 		value = 8'h20;
 		case (row)
 			1: value = fixed_char(TXT_TITLE, column);
+            2: begin
+                value = fixed_char({"WRITE:            READ: ", {24{8'h20}}}, column);
+                if (column >= 7 && column < 16)
+                    value = fixed_char((mode == 1 || speed_index == 0) ? {"8.47 MHZ", {40{8'h20}}} :
+                        speed_index == 1 ? {"16.93 MHZ", {39{8'h20}}} : {"33.87 MHZ", {39{8'h20}}}, column-7);
+                if (column >= 24 && column < 33)
+                    value = fixed_char((mode == 2 || speed_index == 0) ? {"8.47 MHZ", {40{8'h20}}} :
+                        speed_index == 1 ? {"16.93 MHZ", {39{8'h20}}} : {"33.87 MHZ", {39{8'h20}}}, column-24);
+            end
+            3: value = fixed_char(mode == 1 ? {"MODE: LOW WRITE", {33{8'h20}}} :
+                                  mode == 2 ? {"MODE: LOW READ", {34{8'h20}}} :
+                                  {"MODE: SAME SPEED", {32{8'h20}}}, column);
 			4: begin
 				value = fixed_char(TXT_RESULT, column);
 				if ((column >= 8) && (column < 15))
 					value = result_char(column - 8);
 			end
+            5: value = fixed_char(d1_mode == 1 ? {"D1 TIMING: EARLIER", {30{8'h20}}} :
+                                  d1_mode == 2 ? {"D1 TIMING: LATER", {32{8'h20}}} :
+                                  d1_mode == 3 ? {"D1 TIMING: DQS FALL", {29{8'h20}}} :
+                                  {"D1 TIMING: FIXED", {32{8'h20}}}, column);
 			6: begin
 				value = fixed_char(TXT_STAGE, column);
 				if (column == 8) value = hex_char(stage_code[7:4]);
@@ -236,7 +263,18 @@ function [7:0] screen_char;
 						value = hex_char(id_value[15-((column-10)*4) -: 4]);
 				end
 			end
-			10: value = fixed_char(TXT_KGD, column);
+            9: begin
+                value = fixed_char({"MR0:       MR1:", {33{8'h20}}}, column);
+                if (column >= 5 && column < 9) value = hex_char(mr_pair0[15-((column-5)*4) -: 4]);
+                if (column >= 16 && column < 20) value = hex_char(mr_pair1[15-((column-16)*4) -: 4]);
+            end
+            10: value = fixed_char(drive_half ? {"PSRAM DRIVE: 50 OHM", {29{8'h20}}} :
+                                              {"PSRAM DRIVE: 100 OHM", {28{8'h20}}}, column);
+            11: begin
+                value = fixed_char({"REF0:       REF1:", {31{8'h20}}}, column);
+                if (column >= 6 && column < 10) value = hex_char(reference_mr0[15-((column-6)*4) -: 4]);
+                if (column >= 18 && column < 22) value = hex_char(reference_mr1[15-((column-18)*4) -: 4]);
+            end
 			12: value = fixed_char(speed_index == 3'd0 ? TXT_SPEED8 :
 			                       speed_index == 3'd1 ? TXT_SPEED16 : TXT_SPEED33, column);
 			14: begin
@@ -336,10 +374,17 @@ function [7:0] screen_char;
 				end
 			end
 			20: begin
-				value = fixed_char(TXT_MODE, column);
-				if ((column >= 7) && (column < 18))
-					value = mode_char(column - 7);
+                value = fixed_char({"CENTER:", {41{8'h20}}}, column);
+                if (column >= 10 && column < 14)
+                    value = hex_char(read_sample_center[15-((column-10)*4) -: 4]);
 			end
+            21: begin
+                value = fixed_char(read_capture_tap == 2 ? TXT_RX_LATE : read_capture_tap == 1 ? TXT_RX_MID :
+                                   read_capture_tap == 3 ? TXT_RX_CENTER : TXT_RX_EARLY, column);
+                if (column >= 20 && column < 24) value = fixed_char({"D1: ", {44{8'h20}}}, column-20);
+                if (column >= 24) value = fixed_char(read_capture_tap_second == 2 ? TXT_RX_LATE :
+                    read_capture_tap_second == 1 ? TXT_RX_MID : read_capture_tap_second == 3 ? TXT_RX_CENTER : TXT_RX_EARLY, column-16);
+            end
 			23: begin
 				value = fixed_char((stage_code == 8'hE2 || stage_code == 8'hE6) ? TXT_E2_SAMPLES :
 				                   stage_code == 8'h58 ? TXT_HELP_DDIO : TXT_HELP1, column);
@@ -358,7 +403,7 @@ function [7:0] screen_char;
 					value = hex_char(read_edge_pair[15-((column-11)*4) -: 4]);
 				if (stage_code == 8'hE2 && retry_read_valid) begin
 					if (column >= 18 && column < 23)
-						value = fixed_char({"SLOW:", {43{8'h20}}}, column-18);
+						value = fixed_char({"R8:  ", {43{8'h20}}}, column-18);
 					if (column >= 24 && column < 28)
 						value = hex_char(retry_read_data[15-((column-24)*4) -: 4]);
 				end

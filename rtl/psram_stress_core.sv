@@ -12,7 +12,9 @@ module psram_stress_core
 	parameter integer READ_LINE_BYTES = 16,
 	parameter integer CONFIRM_ON_MISMATCH = 0,
 	parameter integer DUPLICATE_WRITES = 0,
-	parameter integer DIRECT_READ_CAPTURE = 0
+	parameter integer DIRECT_READ_CAPTURE = 0,
+	parameter integer FAST_READ_PIPELINE = 0,
+	parameter integer ASYNC_ENGINE = 0
 )
 (
 	input              clk,
@@ -36,7 +38,9 @@ module psram_stress_core
 	output             activity,
 	output             PSRAM_CLK,
 	output             PSRAM_CE_N,
-	inout       [3:0]  PSRAM_DQ
+	inout       [3:0]  PSRAM_DQ,
+	input              engine_clk,
+	input              engine_reset
 );
 
 wire [19:2] ramh_addr;
@@ -55,12 +59,16 @@ ramh_psram_adapter
 	.HALF_DIVIDER(HALF_DIVIDER),
 	.GUARD_CYCLES(GUARD_CYCLES),
 	.READ_LINE_BYTES(READ_LINE_BYTES),
-	.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE)
+	.DIRECT_READ_CAPTURE(DIRECT_READ_CAPTURE),
+	.FAST_READ_PIPELINE(FAST_READ_PIPELINE),
+	.ASYNC_ENGINE(ASYNC_ENGINE)
 )
 adapter
 (
 	.clk(clk),
 	.reset(reset),
+	.engine_clk(engine_clk),
+	.engine_reset(engine_reset),
 	.addr(ramh_addr),
 	.din(ramh_din),
 	.wr(ramh_wr),

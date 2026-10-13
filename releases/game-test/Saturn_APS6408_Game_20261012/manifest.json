@@ -1,0 +1,58 @@
+{
+  "name": "Saturn_APS6408_Game_20261012",
+  "date": "2026-10-12",
+  "purpose": "Complete Saturn core for user game testing",
+  "source_commit": "bcff435025423293ca23c2e34bedfbab61537f93",
+  "runner": 37732550491,
+  "runner_url": "https://github.com/jiang-dongwei/Saturn_MiSTer/actions/runs/37732550491",
+  "new_quartus_build": false,
+  "rbf_bytes": 4615740,
+  "rbf_sha256": "34031f562b05b7c49b33c9d33ed1f98f50883b7ee75ef60139755d859fc6f17b",
+  "default_psram_mhz": 16.9344,
+  "default_from": "Bundled CFG or installer, not a changed HDL default",
+  "osd_mhz": [
+    33.8688,
+    16.9344,
+    8.4672,
+    50.8032
+  ],
+  "frequency_status_bits": [
+    82,
+    83
+  ],
+  "configuration_name": "Saturn.CFG",
+  "cfg_byte10_mode_mask": 12,
+  "core_name": "Saturn",
+  "ramh_slow": 1,
+  "validation": {
+    "8MHz_full_diagnostic": "PASS",
+    "16MHz_full_diagnostic": "PASS",
+    "33MHz_full_diagnostic": "FAIL",
+    "50MHz_board": "NOT_ACCEPTED",
+    "overall_sta": "FAIL",
+    "bios_and_games": "NOT_TESTED"
+  },
+  "bios_or_games_included": false,
+  "files": {
+    "Install.ps1": {
+      "bytes": 4121,
+      "sha256": "e17c0ebb6b24c56a9b07d483b919426ad99e7fcd30ec529d72cde06a4a7a1a29"
+    },
+    "SD/_Console/Saturn_APS6408_Game_20261012.rbf": {
+      "bytes": 4615740,
+      "sha256": "34031f562b05b7c49b33c9d33ed1f98f50883b7ee75ef60139755d859fc6f17b"
+    },
+    "SD/config/Saturn.CFG": {
+      "bytes": 16,
+      "sha256": "0007ce742536ed2e7cf949bae045978ca974afd6f000cdd69084ec7d3e620ba9"
+    },
+    "使用说明.md": {
+      "bytes": 3494,
+      "sha256": "0addbc91d1d3173f15264012d1090705eba62f1dc9da225b17d42d8872af7a73"
+    },
+    "游戏测试结果.csv": {
+      "bytes": 190,
+      "sha256": "5006525d446c0db3267cf6a1e09f915c8864a81246292b679ece21b72756469b"
+    }
+  }
+}
