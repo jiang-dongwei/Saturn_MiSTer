@@ -81,3 +81,11 @@ valid2/3/4/5 group with continuous sequence and released resets. Discard partial
 on invalid data, gaps, reset, repeated tags or reconnection. These bus addresses are
 not an architectural PC or instruction-retirement counter. No performance or timing
 acceptance follows from a successful diagnostic build.
+
+
+### Activity counter semantic correction
+
+The current REQ/ID/unblocked predicate can include stores: core BUS_ID is not
+an exclusive instruction-fetch tag. Count and progress therefore measure this
+CPU bus activity predicate, not retired instructions or a precise fetch rate.
+A zero-progress observation must be interpreted with the pending/wait flags.
