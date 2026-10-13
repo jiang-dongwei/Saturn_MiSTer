@@ -141,3 +141,13 @@ UART2观察语义补充：源码core.BUS_ID并不严格等于指令取指（stor
 - 稍后PA_UART2_SONIC8_WAIT_20261013_A：372连续valid7帧、全部progress1、46组地址，无CRC错误/序号缺口。截图B352×240已进入SonicZtreme 3D场景，SHA682009ebe3b899ab7b521596c3bd450f31d8cb9d62ba8b45f548f22bc92b5194。当前窗口未重现Siikasaurus固定写等待，不能据此认定长期稳定或流畅度/时序通过。
 
 raw SHA early=0305268b9886d0ad113c1c1da754a693788ecd6b3c2c277db12f3ec57872d11d、late=f3545d2650bdfd3ce5c329eb03c9619d28ef8face7cc35591bce2cb37f10fd8f、wait=29adacf6dc892a238b33c92522fd4e24f8164c2562ec719ff9b958fb324dab51。证据均在chat/work对应tag。当前保持8MHz Sonic场景，已请求用户手柄移动反馈，未判交互PASS。16MHz对照尚未执行。
+
+### 2026-10-13 Sonic冻结、DDR3正常对照及APS16自动重启
+
+用户确认APS UART2 8.47MHz Sonic声音流畅但画面冻结，不能把进入3D场景当交互PASS。PA_UART2_SONIC8_USER_FREEZE_20261013_A：372连续valid7、全部progress1，RAM8209、PSRAM busy/read=0；CACHE EB00/E900（HIT、IBREQ/WAIT/WRITE_PEND=0），CBUS反复06000950/954、IBUS保持06000014，BSC多数T0无释放/仲裁阻塞、SCU idle/WAIT0。与Siikasaurus固定写pending/无活动不同，更像软件热循环等待；缺少副SH/帧中断/等待对象数据，未确认具体原因。原始SHA deafbb27d7e7703e59e416fcaf05c00838ce2c58c750f6f8bcdaa5499553a7fb。
+
+原版单SDRAM/DDR3核心Saturn_20251003（SHA a78fc42b1890e4293e259dacfc871d906873a90013eab5dcb22f6b48adf11a37）同次boot、同JP1.01、同Sonic CUE对照：实际打开正确镜像/音轨。两张352×240截图相差13185/84480像素，出现分数/时间/生命HUD；用户明确确认“画面变化且能操作”。原版RAMH走DDR3，此PASS不对应APS8/16MHz。证明本次游戏文件和手柄存在正常对照，APS问题仍未解决。
+
+随后按单变量对照加载UART2 APS16.9344MHz。PA_UART2_SONIC16_EARLY_20261013_A：372连续valid7、363窗口progress1、训练成功；截图A352×240进入场景，SHA adcdaca402774a94d9658dc869c5c1cd39231e164382c88670d062b8502c30b0。下一次LATE采集失败RC1，被旧boot_id校验挡住，无raw数据，不能填成PSRAM读错或UART无帧。
+
+只读复核发现新boot_id 971aa937-2f1a-4cc7-bb44-21317fd202a6、CORENAME MENU；用户明确确认没有手动操作、板卡自行重启。记录APS16试运行期间整机自动重启事件，不直接断定由频率/PSRAM/时序引发。重启前没有捕到panic/watchdog信息；新系统无/sys/fs/pstore和/proc/last_kmsg，启动日志有USB无线网卡/蓝牙-110、USB存储离线异常，仅为重启后的观察，不作为重启根因。当前保留菜单，未继续更高频率；16MHz功能仍未通过。
