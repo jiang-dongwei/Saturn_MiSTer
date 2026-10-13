@@ -1706,7 +1706,7 @@ module emu
         if (reset || bios_download) pa_start_seen <= 0;
         else if (joystick_0[7]) pa_start_seen <= 1;
     end
-    plan_a_uart_trace #(.PAGED_CPU(1)) pa_trace (
+    plan_a_uart_trace #(.PAGED_CPU(1), .PAGED_HEADER(8'ha7)) pa_trace (
         .clk(CLK_50M), .reset(RESET), .ram_clk(clk_ram),
         .engine_clk(psram_engine_clk), .sys_clk(clk_sys),
         .ram_data({psram_clock_mode, psram_selected_speed, ~RAMH_CS_N & ~MEM_RD_N,

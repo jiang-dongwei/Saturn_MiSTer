@@ -35,6 +35,10 @@ module SH_core
 	input             VECT_WAIT,
 	
 	output            SLEEP
+`ifdef SATURN_APS6408_DEBUG_UART
+    ,output PA_FAULT_EVENT
+    ,output [62:0] PA_FAULT_DETAILS
+`endif
 `ifdef DEBUG
 	                  ,
 	output     [31:0] DBG_BUS_A,
@@ -302,6 +306,13 @@ module SH_core
 	assign BR_T = PIPE.EX.DI.CTRL.W && PIPE.EX.DI.CTRL.S == SR_ ? SR_NEW.T : SR.T;
 
 	assign ID_DECI = Decode(DEC_IR, STATE, BR_T, ID_DELAY_SLOT, RES_EXP, INT_REQ_LATCH, ILI_EXP, ILSI, VER);
+`ifdef SATURN_APS6408_DEBUG_UART
+    assign PA_FAULT_EVENT = RST_N && RES_N && EN && CE && !ID_STALL &&
+        ID_DECI.ILI && !RES_EXP && !INT_EXP && !ILI_EXP;
+    assign PA_FAULT_DETAILS = {ID_DELAY_SLOT, IFID_STALL, MA_ACTIVE, IF_ACTIVE,
+        STATE, (ID_DELAY_SLOT ? 8'h06 : 8'h04), DEC_IR,
+        (IFID_STALL ? PIPE.EX.PC : PIPE.ID.PC)};
+`endif
 	
 	wire [ 2: 0] NEXT_STATE = STATE == ID_DECI.LST ? 3'd0 : STATE + 3'd1;
 	always @(posedge CLK or negedge RST_N) begin

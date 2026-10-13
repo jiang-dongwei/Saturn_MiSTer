@@ -46,6 +46,9 @@ module DCC
 	output             MWR_N,
 	
 	input              FAST
+`ifdef SATURN_APS6408_DEBUG_UART
+    ,output [1:0] PA_BUS_OWNERS
+`endif
 );
 
 	const bit [3:0] DRAM_CYC = 4'd7;
@@ -54,6 +57,9 @@ module DCC
 	//SCU bus arbitration
 	bit          SSH_ACTIVE;
 	bit          SCU_ACTIVE;
+`ifdef SATURN_APS6408_DEBUG_UART
+    assign PA_BUS_OWNERS = {SSH_ACTIVE, SCU_ACTIVE};
+`endif
 	always @(posedge CLK or negedge RST_N) begin
 		if (!RST_N) begin
 			SSH_ACTIVE <= '0;

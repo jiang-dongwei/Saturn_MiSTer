@@ -3,7 +3,7 @@ module Saturn
 (
 	input              CLK,
 `ifdef SATURN_APS6408_DEBUG_UART
-    output [15:0] PA_TRACE_CPU,
+    output reg [15:0] PA_TRACE_CPU,
     output [1:0] PA_CPU_RESET_N,
     input [2:0] PA_TRACE_PAGE,
     input PA_TRACE_SAMPLE,
@@ -222,8 +222,33 @@ module Saturn
 	bit         MSHRES_N;
 `ifdef SATURN_APS6408_DEBUG_UART
     assign PA_CPU_RESET_N = {SYSRES_N, MSHRES_N};
-    wire [15:0] pa_msh_trace_cpu, pa_scu_flags;
-    assign PA_TRACE_CPU = PA_TRACE_PAGE_ACTUAL == 7 ? pa_scu_flags : pa_msh_trace_cpu;
+    wire [15:0] pa_msh_trace_cpu, pa_scu_flags, pa_ssh_bus;
+    wire [1:0] pa_bus_owners;
+    wire pa_ssh_progress, pa_vblank_progress;
+    wire pa_master_fault, pa_slave_fault;
+    wire [62:0] pa_master_details, pa_slave_details;
+    wire [63:0] pa_first_fault;
+    plan_a_first_fault pa_fault_record(CLK, !RST_N || !SYSRES_N,
+        pa_master_fault, pa_slave_fault, pa_master_details, pa_slave_details, pa_first_fault);
+    reg pa_vblank_old = 1;
+    always @(posedge CLK) pa_vblank_old <= VBL_N;
+    plan_a_fetch_progress pa_frames(CLK, !RST_N || !SYSRES_N,
+        PA_TRACE_SAMPLE && PA_TRACE_PAGE_ACTUAL == 0,
+        pa_vblank_old && !VBL_N, pa_vblank_progress);
+    wire [7:0] pa_arbitration = {SSHBREQ_N, SSHBACK_N, MSHBRLS_N, MSHBGR_N,
+        pa_bus_owners, pa_ssh_progress, pa_vblank_progress};
+    always @* begin
+        case (PA_TRACE_PAGE_ACTUAL)
+            0: PA_TRACE_CPU = {pa_arbitration, pa_msh_trace_cpu[7:0]};
+            2: PA_TRACE_CPU = pa_first_fault[15:0];
+            3: PA_TRACE_CPU = pa_first_fault[31:16];
+            4: PA_TRACE_CPU = pa_first_fault[47:32];
+            5: PA_TRACE_CPU = pa_first_fault[63:48];
+            6: PA_TRACE_CPU = pa_ssh_bus;
+            7: PA_TRACE_CPU = pa_scu_flags;
+            default: PA_TRACE_CPU = pa_msh_trace_cpu;
+        endcase
+    end
 `endif
 	bit         MSHNMI_N;
 	bit         MSHBGR_N;
@@ -415,7 +440,8 @@ module Saturn
 		.FAST(FAST)
 `ifdef SATURN_APS6408_DEBUG_UART
         ,.PA_TRACE_CPU(pa_msh_trace_cpu), .PA_TRACE_PAGE(PA_TRACE_PAGE), .PA_TRACE_SAMPLE(PA_TRACE_SAMPLE),
-        .PA_TRACE_PAGE_ACTUAL(PA_TRACE_PAGE_ACTUAL), .PA_FETCH_PROGRESS(PA_FETCH_PROGRESS)
+        .PA_TRACE_PAGE_ACTUAL(PA_TRACE_PAGE_ACTUAL), .PA_FETCH_PROGRESS(PA_FETCH_PROGRESS),
+        .PA_FAULT_EVENT(pa_master_fault), .PA_FAULT_DETAILS(pa_master_details)
 `endif
 `ifdef DEBUG
 		,
@@ -486,8 +512,10 @@ module Saturn
 		
 		.FAST(FAST)
 `ifdef SATURN_APS6408_DEBUG_UART
-        ,.PA_TRACE_PAGE(3'b000), .PA_TRACE_SAMPLE(1'b0), .PA_TRACE_CPU(),
-        .PA_TRACE_PAGE_ACTUAL(), .PA_FETCH_PROGRESS()
+        ,.PA_TRACE_PAGE(3'b101),
+        .PA_TRACE_SAMPLE(PA_TRACE_SAMPLE && PA_TRACE_PAGE_ACTUAL == 0),
+        .PA_TRACE_CPU(pa_ssh_bus), .PA_TRACE_PAGE_ACTUAL(), .PA_FETCH_PROGRESS(pa_ssh_progress),
+        .PA_FAULT_EVENT(pa_slave_fault), .PA_FAULT_DETAILS(pa_slave_details)
 `endif
 `ifdef DEBUG
 		,
@@ -696,6 +724,9 @@ module Saturn
 		.MWR_N(MWR_N),
 		
 		.FAST(FAST)
+`ifdef SATURN_APS6408_DEBUG_UART
+        ,.PA_BUS_OWNERS(pa_bus_owners)
+`endif
 	);
 	
 	assign MEM_A     = CA[24:0];

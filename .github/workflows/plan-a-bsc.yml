@@ -16,6 +16,11 @@ on:
       - sim/psram/tb_plan_a_trace_address_bank.sv
       - sim/psram/tb_plan_a_fetch_progress.sv
       - rtl/SH/SH7604/SH7604.sv
+      - rtl/Saturn/DCC.sv
+      - rtl/SH/core/SH_core.sv
+      - sim/psram/tb_plan_a_first_fault.sv
+      - sim/psram/tb_plan_a_core_fault.sv
+      - sim/psram/tb_plan_a_dcc_owners.sv
 permissions:
   contents: read
 jobs:
@@ -45,12 +50,30 @@ jobs:
               > .ci/uart-paged-compile-$divider.log 2>&1
             .ci/uart-paged-$divider/Vtb_plan_a_uart_paged | tee -a .ci/plan-a-uart-paged.log
           done
-          for unit in trace_address_bank fetch_progress; do
+          for divider in 8 434; do
+            verilator --binary --timing -Wno-fatal -j "$(nproc)" --top-module tb_plan_a_uart_paged \
+              -GDIVIDER=$divider -GHEADER=167 --Mdir .ci/uart-arb-$divider \
+              rtl/plan_a_uart_trace.sv sim/psram/tb_plan_a_uart_paged.sv \
+              > .ci/uart-arb-compile-$divider.log 2>&1
+            .ci/uart-arb-$divider/Vtb_plan_a_uart_paged | tee -a .ci/plan-a-uart-arb.log
+          done
+          for unit in trace_address_bank fetch_progress first_fault; do
             verilator --binary --timing -Wno-fatal -Wno-BLKANDNBLK -j "$(nproc)" --top-module tb_plan_a_$unit \
               --Mdir .ci/uart-$unit rtl/plan_a_uart_trace.sv sim/psram/tb_plan_a_$unit.sv \
               > .ci/uart-$unit-compile.log 2>&1
             .ci/uart-$unit/Vtb_plan_a_$unit | tee .ci/uart-$unit.log
           done
+          verilator --binary --timing -Wno-fatal -Wno-BLKANDNBLK -j "$(nproc)" \
+            +define+SATURN_APS6408_DEBUG_UART --top-module tb_plan_a_dcc_owners \
+            --Mdir .ci/dcc-observer rtl/Saturn/DCC.sv sim/psram/tb_plan_a_dcc_owners.sv \
+            > .ci/dcc-observer-compile.log 2>&1
+          .ci/dcc-observer/Vtb_plan_a_dcc_owners | tee .ci/dcc-observer.log
+          verilator --binary --timing -Wno-fatal -Wno-BLKANDNBLK -j "$(nproc)" \
+            +define+SATURN_APS6408_DEBUG_UART +define+SIM --top-module tb_plan_a_core_fault \
+            --Mdir .ci/core-fault rtl/SH/core/SH_pkg.sv rtl/SH/core/SH_regfile.sv \
+            rtl/SH/core/SH_core.sv sim/psram/tb_plan_a_core_fault.sv \
+            > .ci/core-fault-compile.log 2>&1
+          .ci/core-fault/Vtb_plan_a_core_fault | tee .ci/core-fault.log
       - name: Compile on Runner and record original contract failures
         shell: bash
         run: |

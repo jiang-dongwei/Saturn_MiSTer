@@ -71,6 +71,8 @@ module SH7604
 `ifdef SATURN_APS6408_DEBUG_UART
     ,input [2:0] PA_TRACE_PAGE
     ,input PA_TRACE_SAMPLE
+    ,output PA_FAULT_EVENT
+    ,output [62:0] PA_FAULT_DETAILS
     ,output reg [15:0] PA_TRACE_CPU
     ,output [2:0] PA_TRACE_PAGE_ACTUAL
     ,output PA_FETCH_PROGRESS
@@ -223,10 +225,8 @@ module SH7604
     reg [2:0] pa_page_meta = 0, pa_page_sync = 0;
     wire [2:0] pa_page = {pa_page_sync[2], pa_page_sync[2] ^ pa_page_sync[1],
                         pa_page_sync[2] ^ pa_page_sync[1] ^ pa_page_sync[0]};
-    wire [15:0] pa_address_word;
     wire [15:0] pa_cache_flags, pa_bus_flags;
     assign PA_TRACE_PAGE_ACTUAL = pa_page;
-    plan_a_trace_address_bank pa_addresses(CLK, PA_TRACE_SAMPLE, pa_page, CBUS_A, IBUS_A, pa_address_word);
     plan_a_fetch_progress pa_activity(CLK, !RST_N || !RES_SYNC_N, PA_TRACE_SAMPLE,
                                      pa_accepted_fetch, PA_FETCH_PROGRESS);
     always @(posedge CLK) begin
@@ -242,7 +242,7 @@ module SH7604
         case (pa_page)
             0: PA_TRACE_CPU = {pa_fetch_count, RES_SYNC_N, CBUS_REQ, CBUS_ID, CACHE_BUSY, MULT_BUSY, CBUS_A[26:24]};
             1: PA_TRACE_CPU = pa_cache_flags;
-            2, 3, 4, 5: PA_TRACE_CPU = pa_address_word;
+            2, 3, 4, 5: PA_TRACE_CPU = 0;
             6: PA_TRACE_CPU = pa_bus_flags;
             default: PA_TRACE_CPU = 0;
         endcase
@@ -294,6 +294,9 @@ module SH7604
 		.VECT_WAIT(VECT_WAIT),
 		
 		.SLEEP(SLEEP)
+`ifdef SATURN_APS6408_DEBUG_UART
+        ,.PA_FAULT_EVENT(PA_FAULT_EVENT), .PA_FAULT_DETAILS(PA_FAULT_DETAILS)
+`endif
 `ifdef DEBUG
 		,
 		.DBG_REGN(DBG_REGN),

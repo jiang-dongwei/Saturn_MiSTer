@@ -1,6 +1,7 @@
 `timescale 1ns/1ps
 module tb_plan_a_uart_paged;
     parameter integer DIVIDER = 8;
+    parameter [7:0] HEADER = 8'ha6;
     localparam integer BIT_NS = DIVIDER * 20;
     reg clk=0, ram_clk=0, engine_clk=0, sys_clk=0, reset=1, sys_running=1;
     always #10 clk=!clk;
@@ -19,7 +20,7 @@ module tb_plan_a_uart_paged;
     wire [23:0] sys_data={input_byte,13'h1420,page};
     wire [15:0] ram_data=16'h1357;
     wire [7:0] engine_data=8'hc6;
-    plan_a_uart_trace #(.DIVIDER(DIVIDER),.PAGED_CPU(1)) dut(.*);
+    plan_a_uart_trace #(.DIVIDER(DIVIDER),.PAGED_CPU(1),.PAGED_HEADER(HEADER)) dut(.*);
     reg [7:0] frame[0:10];
     integer valid_frames=0, invalid_sys_frames=0, last_page=-1;
     reg [7:0] previous_sequence;
@@ -38,7 +39,7 @@ module tb_plan_a_uart_paged;
             frame[index]=value;
             checksum=checksum^value;
         end
-        if(frame[0]!==8'ha6 || frame[1]!==8'h5a || checksum!==0) $fatal(1,"Paged header/checksum");
+        if(frame[0]!==HEADER || frame[1]!==8'h5a || checksum!==0) $fatal(1,"Paged header/checksum");
         if(frame[3][2]) begin
             decoded_page={frame[9][3],frame[9][7:6]};
             if ({frame[8],frame[7]} !== (16'ha100 | decoded_page))
@@ -63,7 +64,7 @@ module tb_plan_a_uart_paged;
         sys_running=1;
         for(integer n=0;n<10;n=n+1) receive;
         if(valid_frames<24 || invalid_sys_frames<4) $fatal(1,"Insufficient page/source-stop coverage");
-        $display("PASS PAGED UART divider=%0d valid=%0d invalid_sys=%0d",DIVIDER,valid_frames,invalid_sys_frames);
+        $display("PASS PAGED UART divider=%0d header=%h valid=%0d invalid_sys=%0d",DIVIDER,HEADER,valid_frames,invalid_sys_frames);
         $finish;
     end
     initial begin #(BIT_NS*110*50); $fatal(1,"Paged timeout"); end

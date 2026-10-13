@@ -76,11 +76,19 @@ def cpu_state(word):
     }
 
 
-def decode_page(page, word):
+def decode_page(page, word, protocol="A6"):
+    if protocol == "A7" and page == 0:
+        state = cpu_state(word & 255)
+        state.pop("fetch_count")
+        names = ("SSH_BREQ_N", "SSH_BACK_N", "MSH_BRLS_N", "MSH_BGR_N",
+                 "DCC_SSH_ACTIVE", "DCC_SCU_ACTIVE", "slave_activity", "vblank_event")
+        return {"kind": "arbitration_and_master_state", **state, **unpack_flags(word >> 8, names)}
     if page == 0:
         return {"kind": "cpu_activity", **cpu_state(word)}
     if page == 1:
         return {"kind": "cache_flags", **unpack_flags(word, CACHE_FLAGS)}
+    if protocol == "A7" and page in (2,3,4,5):
+        return {"kind": "first_illegal_fault_word", "word_index": page-2, "value": word}
     if page in (2, 3, 4, 5):
         return {
             "kind": "address_half",
@@ -90,7 +98,7 @@ def decode_page(page, word):
         }
     if page == 6:
         state = word >> 12
-        return {"kind": "bsc_flags", "BUS_STATE": state,
+        return {"kind": "slave_bsc_flags" if protocol == "A7" else "bsc_flags", "BUS_STATE": state,
                 "BUS_STATE_name": state_name(state, BSC_STATES),
                 **unpack_flags(word, BSC_FLAGS)}
     cbus, dma = word >> 12, (word >> 7) & 31
@@ -120,11 +128,11 @@ def decode_frame(data, offset, previous_sequence, discarded_before):
     ram = data[4] | data[5] << 8
     word = data[7] | data[8] << 8
     source = data[9]
-    paged = data[0] == 0xA6
+    paged = data[0] in (0xA6, 0xA7)
     page = ((source >> 6) & 3) | (((source >> 3) & 1) << 2)
     valid_raw = data[3]
     frame = {
-        "offset": offset, "protocol": "A6" if paged else "A5",
+        "offset": offset, "protocol": f"{data[0]:02X}",
         "raw_hex": data.hex(), "sequence": data[2],
         "sequence_continuity": sequence_info(previous_sequence, data[2]),
         "discarded_bytes_before": discarded_before,
@@ -148,7 +156,7 @@ def decode_frame(data, offset, previous_sequence, discarded_before):
     }
     if paged:
         frame.update({"page": page, "fetch_progress": bool(source & 4),
-                      "page_data": decode_page(page, word)})
+                      "page_data": decode_page(page, word, frame["protocol"])})
     else:
         frame.update(cpu_state(word))
         frame["reserved_source_bits"] = source & 0xCC
@@ -173,17 +181,17 @@ def address_mapping(address):
     return result
 
 
-def assemble_addresses(frames):
+def assemble_addresses(frames, protocols=("A6",)):
     groups, discarded = [], []
     active = []
     for frame in frames:
         reason = None
-        usable = (frame["protocol"] == "A6" and frame["valid_raw"] == 7
+        usable = (frame["protocol"] in protocols and frame["valid_raw"] == 7
                   and frame["master_reset_released"]
                   and frame["system_reset_released"]
                   and not frame["reset"] and not frame["rst_sys"])
         if active:
-            if frame["protocol"] != "A6":
+            if frame["protocol"] not in protocols or frame["protocol"] != active[0]["protocol"]:
                 reason = "protocol_change"
             elif frame["valid_raw"] != 7:
                 reason = "invalid_domain_mask"
@@ -220,12 +228,37 @@ def assemble_addresses(frames):
     return groups, discarded
 
 
+def assemble_faults(frames):
+    raw_groups, dropped = assemble_addresses(frames, ("A7",))
+    confirmed, previous = [], None
+    for group in raw_groups:
+        value = group["CBUS_A"]["value"] | group["IBUS_A"]["value"] << 32
+        span = [f for f in frames if previous is not None and
+                previous["offset"] <= f["offset"] <= group["start_offset"] + 33]
+        uninterrupted = bool(span) and all(f["valid_raw"] == 7 and
+            f["master_reset_released"] and f["system_reset_released"] and
+            not f["reset"] and not f["rst_sys"] and f["protocol"] == "A7" and
+            not f["discarded_bytes_before"] and
+            (i == 0 or f["sequence_continuity"]["status"] == "continuous")
+            for i,f in enumerate(span))
+        if value >> 63 and previous is not None and value == previous["value"] and uninterrupted:
+            flags = value >> 48
+            confirmed.append({"offset": group["start_offset"], "record_hex": f"{value:016X}",
+                "PC": f"0x{value & 0xFFFFFFFF:08X}", "IR": f"0x{(value >> 32) & 0xFFFF:04X}",
+                "vector": flags & 255, "slave": bool(flags & 1024),
+                "delay_slot": bool(flags & 16384), "IFID_STALL": bool(flags & 8192),
+                "MA_ACTIVE": bool(flags & 4096), "IF_ACTIVE": bool(flags & 2048),
+                "state_low2": (flags >> 8) & 3})
+        previous = {"value": value, "offset": group["start_offset"]}
+    return confirmed, dropped
+
+
 def decode_capture(raw):
     frames = []
     index = last_end = bad_crc = truncated = 0
     previous = None
     while index < len(raw):
-        if raw[index:index + 2] not in (b"\xA5\x5A", b"\xA6\x5A"):
+        if raw[index:index + 2] not in (b"\xA5\x5A", b"\xA6\x5A", b"\xA7\x5A"):
             index += 1
             continue
         if index + FRAME_SIZE > len(raw):
@@ -243,12 +276,13 @@ def decode_capture(raw):
         index += FRAME_SIZE
         last_end = index
     groups, dropped = assemble_addresses(frames)
+    faults, fault_dropped = assemble_faults(frames)
     continuity = Counter(frame["sequence_continuity"]["status"] for frame in frames)
     protocols = Counter(frame["protocol"] for frame in frames)
     pages = Counter(str(frame["page"]) for frame in frames
-                    if frame["protocol"] == "A6" and frame["sys_valid"])
+                    if frame["protocol"] in ("A6", "A7") and frame["sys_valid"])
     progress_frames = [frame for frame in frames
-                       if frame["protocol"] == "A6" and frame["valid_raw"] == 7
+                       if frame["protocol"] in ("A6", "A7") and frame["valid_raw"] == 7
                        and frame["master_reset_released"] and frame["system_reset_released"]
                        and not frame["reset"] and not frame["rst_sys"]]
     stats = {
@@ -261,6 +295,7 @@ def decode_capture(raw):
         "trailing_discarded_bytes": len(raw) - last_end,
         "bad_checksum_candidates": bad_crc, "truncated_header_candidates": truncated,
         "address_groups": len(groups), "discarded_address_groups": len(dropped),
+        "confirmed_fault_records": len(faults),
         "progress_observations_released": len(progress_frames),
         "progress_true_released": sum(frame["fetch_progress"] for frame in progress_frames),
         "progress_false_released": sum(not frame["fetch_progress"] for frame in progress_frames),
@@ -273,6 +308,7 @@ def decode_capture(raw):
         "stage_note": "Stage is the last engine stage code, not proof of an active transaction.",
         "scu_wait_note": "SCU CBUS_WAIT is the CPU A/B bus wait state, not PSRAM busy or a generic DMA wait.",
         "stats": stats, "frames": frames, "address_groups": groups,
+        "confirmed_first_illegal_faults": faults, "discarded_fault_groups": fault_dropped,
         "discarded_address_groups": dropped,
     }
 
@@ -280,7 +316,7 @@ def decode_capture(raw):
 def test_frame(sequence, page=0, word=0, valid=7, released=True,
                progress=False, protocol=0xA6, ram=0x8209):
     source = (0x30 if released else 0) | 2
-    if protocol == 0xA6:
+    if protocol in (0xA6, 0xA7):
         source |= (page & 3) << 6 | ((page >> 2) & 1) << 3 | int(progress) << 2
     data = bytes([protocol, 0x5A, sequence & 255, valid, ram & 255, ram >> 8,
                   0x20, word & 255, word >> 8, source])
@@ -370,6 +406,33 @@ def run_self_tests():
                             + b"".join(group(20)))
     assert len(result["address_groups"]) == 1
     assert result["discarded_address_groups"][0]["reason"] == "protocol_change"
+    cases += 1
+    result = decode_capture(test_frame(1, 0, 0xF3F7, protocol=0xA7))
+    flags = result["frames"][0]["page_data"]
+    assert flags["SSH_BREQ_N"] and flags["slave_activity"] and flags["vblank_event"]
+    assert not flags["DCC_SSH_ACTIVE"] and "fetch_count" not in flags
+    cases += 1
+    result = decode_capture(test_frame(1, 6, 0x0C13, protocol=0xA7))
+    assert result["frames"][0]["page_data"]["kind"] == "slave_bsc_flags"
+    cases += 1
+    result = decode_capture(b"".join(test_frame(i+10, i+2, v, protocol=0xA7)
+                                   for i,v in enumerate((0x5678,0x0700,0xABCD,0x2700))))
+    assert not result["address_groups"]
+    cases += 1
+    result = decode_capture(test_frame(10, 2, 0x5678) + test_frame(11, 3, 0x0700, protocol=0xA7))
+    assert not result["address_groups"]
+    assert result["discarded_address_groups"][0]["reason"] == "protocol_change"
+    cases += 1
+    def fault_cycle(seq, pc=0x06004020, flags=0x8004):
+        words = (pc & 65535, pc >> 16, 0xFFFF, flags)
+        return b"".join(test_frame(seq+i, i+2, word, protocol=0xA7) for i,word in enumerate(words))
+    result = decode_capture(fault_cycle(1, pc=0) + fault_cycle(5) + fault_cycle(9))
+    assert len(result["confirmed_first_illegal_faults"]) == 1
+    assert result["confirmed_first_illegal_faults"][0]["PC"] == "0x06004020"
+    assert not result["address_groups"]
+    cases += 1
+    result = decode_capture(fault_cycle(1) + test_frame(5, protocol=0xA7, released=False) + fault_cycle(6))
+    assert not result["confirmed_first_illegal_faults"]
     cases += 1
     print(f"PASS: {cases} protocol positive/negative cases; no board or HDL execution")
 

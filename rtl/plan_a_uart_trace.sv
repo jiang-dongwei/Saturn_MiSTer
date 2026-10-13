@@ -47,7 +47,7 @@ module plan_a_trace_snapshot #(parameter integer WIDTH = 8) (
     end
 endmodule
 
-module plan_a_uart_trace #(parameter integer DIVIDER = 434, parameter bit PAGED_CPU = 0) (
+module plan_a_uart_trace #(parameter integer DIVIDER = 434, parameter bit PAGED_CPU = 0, parameter [7:0] PAGED_HEADER = 8'ha6) (
     input clk, reset, ram_clk, engine_clk, sys_clk,
     input [15:0] ram_data,
     input [7:0] engine_data,
@@ -77,7 +77,7 @@ module plan_a_uart_trace #(parameter integer DIVIDER = 434, parameter bit PAGED_
     reg [7:0] next_byte;
     always @* begin
         case (index)
-            0: next_byte = PAGED_CPU ? 8'ha6 : 8'ha5;
+            0: next_byte = PAGED_CPU ? PAGED_HEADER : 8'ha5;
             1: next_byte = 8'h5a;
             2: next_byte = payload[7:0];
             3: next_byte = payload[15:8];
@@ -105,7 +105,7 @@ module plan_a_uart_trace #(parameter integer DIVIDER = 434, parameter bit PAGED_
                 payload <= next_payload;
                 checksum <= next_payload[7:0] ^ next_payload[15:8] ^ next_payload[23:16] ^
                             next_payload[31:24] ^ next_payload[39:32] ^ next_payload[47:40] ^
-                            next_payload[55:48] ^ next_payload[63:56] ^ (PAGED_CPU ? 8'hfc : 8'hff);
+                            next_payload[55:48] ^ next_payload[63:56] ^ (PAGED_CPU ? (PAGED_HEADER ^ 8'h5a) : 8'hff);
                 sequence_number <= sequence_number + 1'b1;
                 if (ram_ready) ram_request <= !ram_request;
                 if (engine_ready) engine_request <= !engine_request;
@@ -161,5 +161,18 @@ module plan_a_fetch_progress (
     always @(posedge clk) begin
         if (reset || sample_taken) seen <= 0;
         else if (accepted) seen <= 1;
+    end
+endmodule
+
+module plan_a_first_fault (
+    input clk, reset, master_event, slave_event,
+    input [62:0] master_details, slave_details,
+    output reg [63:0] fault = 0
+);
+    wire [62:0] selected = master_event ? master_details : slave_details;
+    always @(posedge clk) begin
+        if (reset) fault <= 0;
+        else if ((master_event || slave_event) && !fault[63])
+            fault <= {1'b1, selected[62:59], !master_event, selected[57:0]};
     end
 endmodule

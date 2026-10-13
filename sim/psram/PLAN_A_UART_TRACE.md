@@ -89,3 +89,27 @@ The current REQ/ID/unblocked predicate can include stores: core BUS_ID is not
 an exclusive instruction-fetch tag. Count and progress therefore measure this
 CPU bus activity predicate, not retired instructions or a precise fetch rate.
 A zero-progress observation must be interpreted with the pending/wait flags.
+
+
+## Arbitration v3 (A7 5A, eleven bytes)
+
+The valid/source bytes retain their v2 meaning. Pages2--5 now contain the shared
+first accepted illegal-instruction record, not live bus addresses: PC low16, PC high16,
+IR16, then metadata16. Metadata bits15=valid,14=delay slot,13=IFID_STALL,12=MA_ACTIVE,
+11=IF_ACTIVE,10=slave,9:8=STATE low2,7:0=vector (4 or6). Simultaneous events prefer
+master; reset clears the record. Other exception classes are not captured.
+Require two consecutive identical valid record groups without reset/gaps before
+interpreting PC: the initial fault may appear halfway through a page cycle.
+Page0 high byte replaces the old modulo counter, MSB first:
+SSH_BREQ_N, SSH_BACK_N, MSH_BRLS_N, MSH_BGR_N, DCC_SSH_ACTIVE,
+DCC_SCU_ACTIVE, slave bus activity, vertical-blank falling-edge observed.
+Both last flags accumulate until the next actual page0 snapshot, including that edge;
+a reset clears them. They are event/window flags, not measured game FPS.
+Page0 low byte retains master state. Page6 now reports the slave BSC flags
+with the same 16-bit map as the old master BSC page. Page7 retains SCU flags.
+The main activity bit in every source byte is unchanged. A7 distinguishes these
+semantics from A6 recordings. The old 64-bit master address bank is removed; one shared64-bit first-fault latch replaces it.
+DCC selection bits are not authorization by themselves; combine with grant signals.
+Slave activity0 is not proof of a halt, and slave BSC BGR is an internal state.
+VBL events do not prove CPU interrupt delivery or game FPS.
+No bus ownership, reset or video control logic is modified by these observations.
