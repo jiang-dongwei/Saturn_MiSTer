@@ -116,3 +116,18 @@ E4 UART观测判据：先确认帧序号、校验和与分域fresh有效位；�
 - 用户视频为1280×720、约7.24秒、手机记录29fps；29fps不能当游戏帧率。图像显示BIOS动画缓慢推进；音频能量后半降低包含环境噪声，尚不能据此断言SCSP停机。视频是辅助证据，串口与日志为主要定位依据。
 
 原始证据位于chat/work：PA_UART67_BIOS8_20261013_A/B、SIIKA8_UART_20261013_A/B/C、SIIKA8_AFTER_START_20261013_A、SIIKA8_NO_INPUT_EARLY/TITLE_20261013_A、BIOS16_20261013_A、SIIKA16_EARLY_20261013_A各uart.bin/json/log。所有现有时序FAIL保留；提高外部PSRAM频率改善主观流畅度不能代替功能、吞吐或时序验收。
+
+### 2026-10-13 UART2 880fa28 正式上板诊断
+
+完整构建38337782678于11:31完成：Quartus含详细STA 42分14秒，总流程53分36秒；4CPU全部启用。41112ALM/43438FF/4189LAB，仍仅余2LAB；RBF4569832B、SHA256 540a15a37dc2859a4234abb7b98e1bd6389f02ff8f923327a014506fba34dd98。四角同clk_sys +0.354/+0.080ns、同clk_ram +0.547/+0.156ns、ENGINE33同钟 +0.468/+0.113ns；入站clk_sys -0.231/-0.028ns、clk_ram -1.001/-0.051ns，整体STA仍FAIL，观察器跨CLK50链未单独签核。
+
+用户明确授权上板。COM13预检新boot_id 8dac8acd-3b9a-4c4b-9f32-8e61025c8d50，MiSTer菜单正常、UART1 FPGA路由=1；新RBF独立上传且板端大小/SHA一致，旧核心保留。
+
+- 8.4672MHz首次加载PA_UART2_BIOS8_20261013_A：372个连续valid7 A6帧，RAM8616、stageE6、训练错误和整机复位保持；记录FAIL，不以重试覆盖。重新加载B：371个连续valid7帧，训练成功，全部窗口有完成取指，46组地址变化，主要访问RAMH。
+- 同核Siikasaurus早期PA_UART2_SIIKA8_EARLY_20261013_A：371帧，353窗口有完成取指；后续LATE与TITLE各371帧全部progress1。正常PRESS START截图B为320×240，SHA ec959b75b75dcd1a33742cdbf4eb7f2bf0d4cdc3a06d0b754ae871aec34d0bb6；截图不代替游戏功能验收。
+- 再后续WAIT_INPUT与STALL_CONFIRM两次各371连续valid7帧，无序号缺口/校验错，全部progress0，Start_seen0，RAM8209（ready/init_done=1、init/adapter_error=0、RAMH busy/read=0）、stage20。page0 E4F7、page1 83F1、page6 0C13、page7 0079固定；每次46组完整同拍地址固定CBUS_A=FFFFFFFE、IBUS_A=00000002。确认这两个采样窗口内没有完成取指，排除了单靠8位计数回绕产生的假停顿；不等同于已知异常起因或永久全CPU停止。
+- CACHE保持IBREQ/IBUS_WAIT/IBUS_WRITE_PEND，BSC在T0且BUS_RLS/BGR置位；SCU idle、CBUS_WAIT置位。地址不再支持“当前停在0700 RAMH”的旧推测，需检查地址回绕、未完成写/预取与总线释放组合。不同页状态分时采样，固定多轮仍不能将动态状态当同拍。
+
+原始uart.bin/log、v2decoded.json保存在chat/work对应tag；两次固定停顿raw SHA分别2a4df126c80d67760fca8568921aba6bfbaf231f7b6e0b9291c1f81ea4c6f9f3、6ff04c14bc72709cd2cbc6c5b92e45923657f9b158e5fc21e45ff1d6bacbe540。仍未游戏PASS，未将软件异常定为DQ7硬件问题。板端保持新版8.47MHz PRESS START，已请求用户Start反馈，16MHz对照待此反馈后执行。
+
+UART2观察语义补充：源码core.BUS_ID并不严格等于指令取指（store也可能ID=1）。本轮progress/count只表示符合REQ/ID且缓存/MULT未阻塞条件的CPU总线访问活动，不能计为指令退休或精确取指率；前述“完成取指”应按此理解。progress0与WRITE_PEND/IBUS_WAIT固定组合仍支持持续等待。83F1表明写pending，0C13表明主SH让出总线；0079表明SCU无DMA却有CPU A/B等待。副SH仲裁/外设响应链为新候选，缺少副SH与SCU A/B状态，尚未确认根因。
