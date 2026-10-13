@@ -103,3 +103,16 @@ E4 UART观测判据：先确认帧序号、校验和与分域fresh有效位；�
 
 
 67f3991新增分组STA复核：clk_ram入站setup -0.737ns为SCU.CBUS_WR[0](clk_sys)到ramh_din[6](clk_ram)，hold -0.294ns为VDP2.VRAMA_D[60]到sdram1.din[0][60]；主PLL相关功能通路，不能任意false-path。同clk_ram setup/hold -0.065/-0.254ns仍负。clk_sys入站setup -0.350ns是adapter cache_addr[9]到Saturn.OPEN_BUS[19]；四角hold最坏 -0.088ns，默认+0.051ns不是四角签核。ENGINE33同钟四角最坏 -1.259ns、ENGINE50 -6.180ns，训练reference_mr0到memory_training；新观测/模式迁移跨域须另证，不以整体FAIL仅归外部模型。另保留H8未缓存dummy读跨SCU仲裁可能漏单拍请求假设：仅静态允许前提，未跑反例/上板，不改协议。
+
+### 2026-10-13 UART67 串口优先复测与帧率调查
+
+本轮未新增RBF：板端为67f3991、SHA256 363afeaba8c07bf36023e68440b1adb2e8ae5e0818b4dbcd2dbda286f53e4a70；boot_id 8d07c902-5aa7-4cab-9129-b4ce75f3877a。COM13控制台与FPGA ttyS1诊断分开；每次采集核对启动ID、RBF摘要和MiSTer命令行，恢复ttyS1设置。
+
+- 8.4672MHz首次BIOS加载：372有效帧，stage E6、init_error/adapter_error=1、ready=0，表示启动ID/模式寄存器训练签名失败；未输出实际读值，不能据此指定DQ7。相同设置重新加载后训练成功、取指计数变化，启动结果存在波动。
+- Siikasaurus 8.4672MHz早期有197种取指计数；随后连续采集为CPU状态F7（REQ/ID/CACHE_BUSY置位）、计数227、ready=1、RAMH busy/read=0。用户关闭F12按Start仍无反应；原始Start_seen=1只证明输入进入FPGA，不能证明游戏已处理。
+- 不按键对照也出现F7等待形态，Start_seen始终0；早期/后期计数分别0和190，不能说CPU从未再前进。后期4096字节仅202有效帧，须保留原始日志并核查串口垃圾/缺帧。撤回“Start导致卡住”的推断。
+- 16.9344MHz同核、同BIOS、同游戏：训练成功；371有效帧为CPU F0、计数3、ready=1、RAMH busy/read=0。用户明确反馈启动动画明显更流畅，但画面异常（截图352×720、重复/颜色异常）；不是游戏通过。板端本轮最后停在此16MHz实验状态。
+- 8位取指计数存在256次回绕别名，固定值不是永久停机证明；stage20是最近读取状态，不代表此刻持续读取。下一诊断候选增加不回绕的窗口进展位、完整CBUS/IBUS地址、CACHE/BSC/SCU等待页；不同状态页分时采样，仅地址页2～5冻结同一对地址。
+- 用户视频为1280×720、约7.24秒、手机记录29fps；29fps不能当游戏帧率。图像显示BIOS动画缓慢推进；音频能量后半降低包含环境噪声，尚不能据此断言SCSP停机。视频是辅助证据，串口与日志为主要定位依据。
+
+原始证据位于chat/work：PA_UART67_BIOS8_20261013_A/B、SIIKA8_UART_20261013_A/B/C、SIIKA8_AFTER_START_20261013_A、SIIKA8_NO_INPUT_EARLY/TITLE_20261013_A、BIOS16_20261013_A、SIIKA16_EARLY_20261013_A各uart.bin/json/log。所有现有时序FAIL保留；提高外部PSRAM频率改善主观流畅度不能代替功能、吞吐或时序验收。
