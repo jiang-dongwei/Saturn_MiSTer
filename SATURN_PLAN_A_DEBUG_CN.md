@@ -131,3 +131,13 @@ E4 UART观测判据：先确认帧序号、校验和与分域fresh有效位；�
 原始uart.bin/log、v2decoded.json保存在chat/work对应tag；两次固定停顿raw SHA分别2a4df126c80d67760fca8568921aba6bfbaf231f7b6e0b9291c1f81ea4c6f9f3、6ff04c14bc72709cd2cbc6c5b92e45923657f9b158e5fc21e45ff1d6bacbe540。仍未游戏PASS，未将软件异常定为DQ7硬件问题。板端保持新版8.47MHz PRESS START，已请求用户Start反馈，16MHz对照待此反馈后执行。
 
 UART2观察语义补充：源码core.BUS_ID并不严格等于指令取指（store也可能ID=1）。本轮progress/count只表示符合REQ/ID且缓存/MULT未阻塞条件的CPU总线访问活动，不能计为指令退休或精确取指率；前述“完成取指”应按此理解。progress0与WRITE_PEND/IBUS_WAIT固定组合仍支持持续等待。83F1表明写pending，0C13表明主SH让出总线；0079表明SCU无DMA却有CPU A/B等待。副SH仲裁/外设响应链为新候选，缺少副SH与SCU A/B状态，尚未确认根因。
+
+### 2026-10-13 用户改换 SonicZtreme Metal 对照
+
+用户明确要求停止用Siikasaurus，改用板上已有SonicZtreme Metal。保持UART2 880fa28、同boot_id 8dac8acd-3b9a-4c4b-9f32-8e61025c8d50、同JP1.01 BIOS及8.4672MHz，仅更换S0 CUE：/media/fat/games/Saturn/SonicZtremeMetal/SONICZTREME_METAL.cue。CUE引用sl_coff.iso（2654208B）及TRACK01.WAV（31881464B），文件齐全；MiSTer实际fd分别打开镜像/音轨，MGL命令RC0。
+
+- PA_UART2_SONIC8_EARLY_20261013_A：372连续valid7帧、357窗口有访问活动，46组冻结地址；初始化成功，未检测Start。
+- PA_UART2_SONIC8_LATE_20261013_A：371连续valid7帧，全部progress1、RAM8209、BSC T0无BUS_RLS/BGR、CACHE命中且IBREQ/IBUS_WAIT/WRITE_PEND为0。地址主要06000950/954、IBUS保留06000014。截图A为正常Saturn BIOS画面，不能当游戏卡死。
+- 稍后PA_UART2_SONIC8_WAIT_20261013_A：372连续valid7帧、全部progress1、46组地址，无CRC错误/序号缺口。截图B352×240已进入SonicZtreme 3D场景，SHA682009ebe3b899ab7b521596c3bd450f31d8cb9d62ba8b45f548f22bc92b5194。当前窗口未重现Siikasaurus固定写等待，不能据此认定长期稳定或流畅度/时序通过。
+
+raw SHA early=0305268b9886d0ad113c1c1da754a693788ecd6b3c2c277db12f3ec57872d11d、late=f3545d2650bdfd3ce5c329eb03c9619d28ef8face7cc35591bce2cb37f10fd8f、wait=29adacf6dc892a238b33c92522fd4e24f8164c2562ec719ff9b958fb324dab51。证据均在chat/work对应tag。当前保持8MHz Sonic场景，已请求用户手柄移动反馈，未判交互PASS。16MHz对照尚未执行。
